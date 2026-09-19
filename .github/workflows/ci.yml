@@ -225,7 +225,7 @@ jobs:
       - name: Create the GitHub release
         # Last on purpose: every installed client polls the latest release, so this is the moment
         # the build reaches devices.
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             out/AppPortal-client-win-x64.zip

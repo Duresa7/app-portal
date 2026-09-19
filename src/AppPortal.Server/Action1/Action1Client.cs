@@ -44,8 +44,8 @@ public sealed class Action1Client : IAction1Client
         }
 
         await EnsureSuccessAsync(response, ct);
-        var dto = await response.Content.ReadFromJsonAsync<EndpointDto>(Json, ct)
-                  ?? throw new Action1Exception("Empty endpoint response.");
+        var dto = await ReadJsonAsync<EndpointDto>(response, ct)
+                  ?? throw new Action1Exception("Action1 returned an empty endpoint record.");
         return new Action1Endpoint(dto.Id ?? endpointId, dto.Name ?? dto.DeviceName ?? endpointId, dto.Status ?? "Unknown", Action1Time.Parse(dto.LastSeen));
     }
 
@@ -59,7 +59,7 @@ public sealed class Action1Client : IAction1Client
             pages++;
             using var response = await SendAsync(HttpMethod.Get, path, null, ct);
             await EnsureSuccessAsync(response, ct);
-            var page = await response.Content.ReadFromJsonAsync<ResultPage<ReportRow>>(Json, ct);
+            var page = await ReadJsonAsync<ResultPage<ReportRow>>(response, ct);
             if (page?.Items is null)
             {
                 break;
@@ -91,7 +91,7 @@ public sealed class Action1Client : IAction1Client
         }
 
         await EnsureSuccessAsync(response, ct);
-        var package = await response.Content.ReadFromJsonAsync<PackageDto>(Json, ct);
+        var package = await ReadJsonAsync<PackageDto>(response, ct);
         var versions = package?.Versions?.Items ?? [];
         var published = versions
             .Where(v => !string.IsNullOrWhiteSpace(v.Version))
@@ -140,7 +140,7 @@ public sealed class Action1Client : IAction1Client
 
         using var response = await SendAsync(HttpMethod.Post, $"automations/instances/{_options.OrgId}", body, ct);
         await EnsureSuccessAsync(response, ct);
-        var instance = await response.Content.ReadFromJsonAsync<AutomationInstanceDto>(Json, ct);
+        var instance = await ReadJsonAsync<AutomationInstanceDto>(response, ct);
         if (string.IsNullOrWhiteSpace(instance?.Id))
         {
             throw new Action1Exception("Action1 accepted the deployment but returned no automation ID.");
@@ -154,7 +154,7 @@ public sealed class Action1Client : IAction1Client
         using var results = await SendAsync(HttpMethod.Get, $"automations/instances/{_options.OrgId}/{Uri.EscapeDataString(automationId)}/endpoint-results?limit=100", null, ct);
         if (results.IsSuccessStatusCode)
         {
-            var page = await results.Content.ReadFromJsonAsync<ResultPage<EndpointResultDto>>(Json, ct);
+            var page = await ReadJsonAsync<ResultPage<EndpointResultDto>>(results, ct);
             var mine = page?.Items?.FirstOrDefault(r => string.Equals(r.Id, endpointId, StringComparison.OrdinalIgnoreCase))
                        ?? page?.Items?.FirstOrDefault();
             if (mine?.Status is not null)
@@ -165,7 +165,7 @@ public sealed class Action1Client : IAction1Client
 
         using var instance = await SendAsync(HttpMethod.Get, $"automations/instances/{_options.OrgId}/{Uri.EscapeDataString(automationId)}", null, ct);
         await EnsureSuccessAsync(instance, ct);
-        var dto = await instance.Content.ReadFromJsonAsync<AutomationInstanceDto>(Json, ct);
+        var dto = await ReadJsonAsync<AutomationInstanceDto>(instance, ct);
         return new Action1DeploymentStatus(dto?.Status ?? "Pending", ParsePercent(dto?.PercentCompleted), null);
     }
 
@@ -179,7 +179,7 @@ public sealed class Action1Client : IAction1Client
             pages++;
             using var response = await SendAsync(HttpMethod.Get, path, null, ct);
             await EnsureSuccessAsync(response, ct);
-            var page = await response.Content.ReadFromJsonAsync<ResultPage<PackageDto>>(Json, ct);
+            var page = await ReadJsonAsync<ResultPage<PackageDto>>(response, ct);
             if (page?.Items is null)
             {
                 break;
@@ -207,6 +207,8 @@ public sealed class Action1Client : IAction1Client
             }
 
             var response = await _http.SendAsync(request, ct);
+            // The error text names the request path; not every handler fills this in.
+            response.RequestMessage ??= request;
             if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0)
             {
                 response.Dispose();
@@ -247,7 +249,7 @@ public sealed class Action1Client : IAction1Client
                 throw new Action1Exception($"Action1 token request failed with HTTP {(int)response.StatusCode}.");
             }
 
-            var token = await response.Content.ReadFromJsonAsync<TokenDto>(Json, ct);
+            var token = await ReadJsonAsync<TokenDto>(response, ct);
             if (string.IsNullOrWhiteSpace(token?.AccessToken))
             {
                 throw new Action1Exception("Action1 token response had no access token.");
@@ -274,7 +276,38 @@ public sealed class Action1Client : IAction1Client
         var text = await response.Content.ReadAsStringAsync(ct);
         _logger.LogWarning("Action1 call {Method} {Path} failed with {Status}: {Body}",
             response.RequestMessage?.Method, response.RequestMessage?.RequestUri?.PathAndQuery, (int)response.StatusCode, Truncate(text));
-        throw new Action1Exception($"Action1 returned HTTP {(int)response.StatusCode} for {response.RequestMessage?.RequestUri?.AbsolutePath}.");
+        throw new Action1Exception($"Action1 returned HTTP {(int)response.StatusCode} for {Describe(response)}.");
+    }
+
+    /// <summary>
+    /// Action1 answers some lookups for an identifier it does not know with HTTP 200 and an empty body
+    /// rather than 404. ReadFromJsonAsync throws on that, and the exception surfaced as a 500 from the
+    /// API and a crash of the CLI. Read the body first, treat nothing as null, and turn a body that is
+    /// not JSON into the Action1Exception every caller already handles.
+    /// </summary>
+    private async Task<T?> ReadJsonAsync<T>(HttpResponseMessage response, CancellationToken ct) where T : class
+    {
+        var text = await response.Content.ReadAsStringAsync(ct);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<T>(text, Json);
+        }
+        catch (JsonException ex)
+        {
+            throw new Action1Exception($"Action1 returned a response that could not be read for {Describe(response)}.", ex);
+        }
+    }
+
+    /// <summary>The request path with the organisation identifier taken out, since the text reaches device clients.</summary>
+    private string Describe(HttpResponseMessage response)
+    {
+        var path = response.RequestMessage?.RequestUri?.AbsolutePath ?? "(unknown path)";
+        return string.IsNullOrEmpty(_options.OrgId) ? path : path.Replace(_options.OrgId, "{org}", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? NextPagePath(string? nextPage)

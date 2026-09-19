@@ -66,7 +66,7 @@ if (args.Length > 0 && args[0] is "catalog" or "packages")
 
 var options = app.Services.GetRequiredService<IOptions<Action1Options>>().Value;
 app.Logger.LogInformation("Action1 mode: {Mode}; base URL {BaseUrl}; organization {Org}",
-    options.IsFake ? "Fake" : "Live", options.BaseUrl, string.IsNullOrEmpty(options.OrgId) ? "(not set)" : options.OrgId);
+    options.IsFake ? "Fake" : "Live", options.BaseUrl, string.IsNullOrEmpty(options.OrgId) ? "(not set)" : "(set)");
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 

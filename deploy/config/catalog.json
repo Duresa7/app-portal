@@ -14,9 +14,9 @@
       "id": "mozilla-firefox",
       "name": "Mozilla Firefox",
       "publisher": "Mozilla",
-      "description": "Web browser, 64-bit English (US) build.",
+      "description": "Web browser, English (US) build.",
       "category": "Browsers",
-      "action1": { "packageId": "Mozilla_Mozilla_Firefox__x64_en_US__1570578162075_builtin", "version": "latest" },
+      "action1": { "packageId": "Mozilla_Mozilla_Firefox_1570490818160_builtin", "version": "latest" },
       "match": { "nameContains": "Mozilla Firefox" }
     },
     {
@@ -34,7 +34,7 @@
       "publisher": "VideoLAN",
       "description": "Plays most audio and video formats without extra codecs.",
       "category": "Media",
-      "action1": { "packageId": "VideoLAN_VLC_media_player_1570578162075_builtin", "version": "latest" },
+      "action1": { "packageId": "VideoLAN_VLC_Media_Player_1606575317968_builtin", "version": "latest" },
       "match": { "nameContains": "VLC" }
     },
     {
@@ -44,7 +44,7 @@
       "description": "Source code editor. System-wide (all users) install.",
       "category": "Developer tools",
       "featured": true,
-      "action1": { "packageId": "Microsoft_Visual_Studio_Code_1570578162075_builtin", "version": "latest" },
+      "action1": { "packageId": "Microsoft_Microsoft_Visual_Studio_Code_1685726188601_builtin", "version": "latest" },
       "match": { "nameContains": "Visual Studio Code" }
     }
   ]

@@ -17,14 +17,13 @@ public sealed class PortalApiTests : IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "app-portal-tests", Guid.NewGuid().ToString("N"));
+    private readonly TestDatabase _test = new();
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _token;
 
     public PortalApiTests()
     {
-        Directory.CreateDirectory(_root);
-        var catalogPath = Path.Combine(_root, "catalog.json");
+        var catalogPath = Path.Combine(_test.Root, "catalog.json");
         File.WriteAllText(catalogPath, """
         {
           "apps": [
@@ -35,16 +34,14 @@ public sealed class PortalApiTests : IDisposable
           ]
         }
         """);
-        var devicesPath = Path.Combine(_root, "devices.json");
-        _token = new DeviceStore(devicesPath).Add("TESTPC", "endpoint-1234");
+        _token = new DeviceStore(_test.Database).Add("TESTPC", "endpoint-1234");
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("Action1:Mode", "Fake");
             builder.UseSetting("Portal:CatalogPath", catalogPath);
-            builder.UseSetting("Portal:DevicesPath", devicesPath);
-            builder.UseSetting("Portal:DataDirectory", Path.Combine(_root, "data"));
+            builder.UseSetting("Portal:DataDirectory", _test.DataDirectory);
             builder.UseSetting("Portal:StatusPollSeconds", "3600");
             builder.UseSetting("Portal:MaxActiveInstallsPerDevice", "1");
         });
@@ -169,7 +166,7 @@ public sealed class PortalApiTests : IDisposable
         var created = await (await client.PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest("chrome"), Json))
             .Content.ReadFromJsonAsync<InstallRequest>(Json);
 
-        var otherToken = new DeviceStore(Path.Combine(_root, "devices.json")).Add("OTHERPC", "endpoint-9999");
+        var otherToken = new DeviceStore(_test.Database).Add("OTHERPC", "endpoint-9999");
         var other = _factory.CreateClient();
         other.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", otherToken);
         var response = await other.GetAsync($"{ApiRoutes.Installs}/{created!.Id}");
@@ -179,12 +176,6 @@ public sealed class PortalApiTests : IDisposable
     public void Dispose()
     {
         _factory.Dispose();
-        try
-        {
-            Directory.Delete(_root, recursive: true);
-        }
-        catch (IOException)
-        {
-        }
+        _test.Dispose();
     }
 }

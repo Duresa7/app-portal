@@ -41,6 +41,13 @@ done
 [[ "$status" == healthy ]] || { echo "HEALTHCHECK status is '$status'"; exit 1; }
 echo "docker reports $status"
 
+step "The checked-in catalog seeded the database"
+docker exec "$name" dotnet AppPortal.Server.dll catalog export > /tmp/catalog-export.json
+python3 -c 'import json,sys; apps=json.load(open("/tmp/catalog-export.json"))["apps"]; assert apps, "empty export"; print(len(apps), "apps exported")'
+
+step "catalog import is idempotent"
+docker exec "$name" dotnet AppPortal.Server.dll catalog import /app/config/catalog.json
+
 step "catalog verify resolves every package"
 docker exec "$name" dotnet AppPortal.Server.dll catalog verify
 

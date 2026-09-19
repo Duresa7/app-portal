@@ -3,7 +3,7 @@ using AppPortal.Server.Devices;
 namespace AppPortal.Server.Cli;
 
 /// <summary>
-/// `device add|list|remove` administration, run against the same devices file the server reads.
+/// `device add|list|remove` administration, run against the same database the server reads.
 /// The plaintext token is printed exactly once; store it in a password manager, not in a file in this repository.
 /// </summary>
 public static class DeviceCli
@@ -49,8 +49,16 @@ public static class DeviceCli
                         return Usage(output);
                     }
 
-                    output.WriteLine(store.Remove(name) ? $"Removed '{name}'." : $"No device named '{name}'.");
-                    return 0;
+                    try
+                    {
+                        output.WriteLine(store.Remove(name) ? $"Removed '{name}'." : $"No device named '{name}'.");
+                        return 0;
+                    }
+                    catch (DeviceInUseException ex)
+                    {
+                        output.WriteLine(ex.Message);
+                        return 1;
+                    }
                 }
 
             default:

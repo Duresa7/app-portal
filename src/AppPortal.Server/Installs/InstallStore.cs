@@ -1,10 +1,7 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-
-using AppPortal.Server.Options;
+using AppPortal.Server.Data;
 using AppPortal.Shared;
 
-using Microsoft.Extensions.Options;
+using Microsoft.Data.Sqlite;
 
 namespace AppPortal.Server.Installs;
 
@@ -15,8 +12,14 @@ public sealed class InstallRecord
     public string EndpointId { get; set; } = "";
     public string AppId { get; set; } = "";
     public string AppName { get; set; } = "";
+
+    /// <summary>
+    /// The package this install was started from. Not persisted: nothing reads it after the deployment
+    /// has been started, and the app's current package is always in the catalog under <see cref="AppId"/>.
+    /// </summary>
     public string PackageId { get; set; } = "";
     public string Version { get; set; } = "";
+
     public string? AutomationId { get; set; }
     public DateTimeOffset RequestedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
@@ -31,56 +34,33 @@ public sealed class InstallRecord
         => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail);
 }
 
-/// <summary>Install history, persisted as one JSON file under the data directory.</summary>
-public sealed class InstallStore
+/// <summary>Install history, one row per request, in the database under the data directory.</summary>
+public sealed class InstallStore(Database database)
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true,
-        Converters = { new JsonStringEnumConverter() },
-    };
-
-    private readonly string _path;
-    private readonly object _gate = new();
-    private List<InstallRecord>? _records;
-
-    public InstallStore(IOptions<PortalOptions> options, IHostEnvironment env)
-        : this(Path.Combine(Path.IsPathRooted(options.Value.DataDirectory) ? options.Value.DataDirectory : Path.Combine(env.ContentRootPath, options.Value.DataDirectory), "installs.json"))
-    {
-    }
-
-    public InstallStore(string path)
-    {
-        _path = path;
-    }
-
     public IReadOnlyList<InstallRecord> All()
     {
-        lock (_gate)
-        {
-            return Load().Select(Clone).ToList();
-        }
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " ORDER BY i.requested_at DESC;";
+        return Read(command);
     }
 
     public IReadOnlyList<InstallRecord> ForDevice(string deviceName)
     {
-        lock (_gate)
-        {
-            return Load()
-                .Where(r => string.Equals(r.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(r => r.RequestedAt)
-                .Select(Clone)
-                .ToList();
-        }
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE d.name = @name COLLATE NOCASE ORDER BY i.requested_at DESC;";
+        command.Parameters.AddWithValue("@name", deviceName);
+        return Read(command);
     }
 
     public InstallRecord? Find(string id)
     {
-        lock (_gate)
-        {
-            var record = Load().FirstOrDefault(r => r.Id == id);
-            return record is null ? null : Clone(record);
-        }
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE i.id = @id;";
+        command.Parameters.AddWithValue("@id", id);
+        return Read(command).FirstOrDefault();
     }
 
     /// <summary>
@@ -92,76 +72,116 @@ public sealed class InstallStore
     /// </summary>
     public bool Upsert(InstallRecord record)
     {
-        lock (_gate)
-        {
-            var records = Load();
-            var index = records.FindIndex(r => r.Id == record.Id);
-            if (index < 0)
-            {
-                records.Add(Clone(record));
-                Save(records);
-                return true;
-            }
+        using var connection = database.Open();
+        // Immediate takes the write lock now rather than at the first write, so two callers reading the
+        // stored row and deciding whether to overwrite it cannot interleave.
+        using var transaction = connection.BeginTransaction(deferred: false);
 
-            var stored = records[index];
-            if (!stored.IsActive && record.IsActive)
+        string? storedState = null;
+        string? storedChecked = null;
+        using (var stored = connection.CreateCommand())
+        {
+            stored.Transaction = transaction;
+            stored.CommandText = "SELECT state, last_checked_at FROM installs WHERE id = @id;";
+            stored.Parameters.AddWithValue("@id", record.Id);
+            using var reader = stored.ExecuteReader();
+            if (reader.Read())
+            {
+                storedState = reader.GetString(0);
+                storedChecked = reader.GetString(1);
+            }
+        }
+
+        if (storedState is not null)
+        {
+            var storedIsActive = ParseState(storedState) is InstallState.Queued or InstallState.Running;
+            if (!storedIsActive && record.IsActive)
             {
                 return false;
             }
 
-            if (stored.LastCheckedAt is { } storedChecked && record.LastCheckedAt is { } incoming && incoming < storedChecked)
+            if (record.LastCheckedAt is { } incoming && incoming < SqlTime.Parse(storedChecked!))
             {
                 return false;
             }
-
-            records[index] = Clone(record);
-            Save(records);
-            return true;
         }
-    }
 
-    private List<InstallRecord> Load()
-    {
-        if (_records is not null)
+        using (var write = connection.CreateCommand())
         {
-            return _records;
+            write.Transaction = transaction;
+            write.CommandText = """
+                INSERT INTO installs (id, device_id, app_id, app_name, requested_by, engine, external_ref,
+                                      state, percent, detail, requested_at, completed_at, last_checked_at)
+                VALUES (@id, @device, @appId, @appName, NULL, 'action1', @external,
+                        @state, @percent, @detail, @requested, @completed, @checked)
+                ON CONFLICT(id) DO UPDATE SET
+                    app_name = excluded.app_name, external_ref = excluded.external_ref, state = excluded.state,
+                    percent = excluded.percent, detail = excluded.detail, completed_at = excluded.completed_at,
+                    last_checked_at = excluded.last_checked_at;
+                """;
+            write.Parameters.AddWithValue("@id", record.Id);
+            // Always supplied: the column is not null, and SQLite checks that before it decides the row conflicts.
+            write.Parameters.AddWithValue("@device", DeviceId(connection, transaction, record.DeviceName));
+            write.Parameters.AddWithValue("@appId", record.AppId);
+            write.Parameters.AddWithValue("@appName", record.AppName);
+            write.Parameters.AddWithValue("@external", (object?)record.AutomationId ?? DBNull.Value);
+            write.Parameters.AddWithValue("@state", record.State.ToString());
+            write.Parameters.AddWithValue("@percent", record.PercentComplete);
+            write.Parameters.AddWithValue("@detail", (object?)record.Detail ?? DBNull.Value);
+            write.Parameters.AddWithValue("@requested", SqlTime.From(record.RequestedAt));
+            write.Parameters.AddWithValue("@completed", (object?)SqlTime.FromOptional(record.CompletedAt) ?? DBNull.Value);
+            // The column is not null: an install that has never been refreshed was last seen when it was made.
+            write.Parameters.AddWithValue("@checked", SqlTime.From(record.LastCheckedAt ?? record.RequestedAt));
+            write.ExecuteNonQuery();
         }
 
-        _records = File.Exists(_path)
-            ? JsonSerializer.Deserialize<List<InstallRecord>>(File.ReadAllText(_path), Json) ?? []
-            : [];
-        return _records;
+        transaction.Commit();
+        return true;
     }
 
-    private void Save(List<InstallRecord> records)
+    private const string Select = """
+        SELECT i.id, d.name, d.action1_endpoint_id, i.app_id, i.app_name, i.external_ref,
+               i.state, i.percent, i.detail, i.requested_at, i.completed_at, i.last_checked_at
+        FROM installs i
+        JOIN devices d ON d.id = i.device_id
+        """;
+
+    private static List<InstallRecord> Read(SqliteCommand command)
     {
-        var directory = Path.GetDirectoryName(_path);
-        if (!string.IsNullOrEmpty(directory))
+        var records = new List<InstallRecord>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
         {
-            Directory.CreateDirectory(directory);
+            records.Add(new InstallRecord
+            {
+                Id = reader.GetString(0),
+                DeviceName = reader.GetString(1),
+                EndpointId = reader.IsDBNull(2) ? "" : reader.GetString(2),
+                AppId = reader.GetString(3),
+                AppName = reader.GetString(4),
+                AutomationId = reader.IsDBNull(5) ? null : reader.GetString(5),
+                State = ParseState(reader.GetString(6)),
+                PercentComplete = (int)reader.GetInt64(7),
+                Detail = reader.IsDBNull(8) ? null : reader.GetString(8),
+                RequestedAt = SqlTime.Parse(reader.GetString(9)),
+                CompletedAt = SqlTime.ParseOptional(reader.IsDBNull(10) ? null : reader.GetString(10)),
+                LastCheckedAt = SqlTime.Parse(reader.GetString(11)),
+            });
         }
 
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(records, Json));
-        File.Move(temp, _path, overwrite: true);
-        _records = records;
+        return records;
     }
 
-    private static InstallRecord Clone(InstallRecord r) => new()
+    private static string DeviceId(SqliteConnection connection, SqliteTransaction transaction, string deviceName)
     {
-        Id = r.Id,
-        DeviceName = r.DeviceName,
-        EndpointId = r.EndpointId,
-        AppId = r.AppId,
-        AppName = r.AppName,
-        PackageId = r.PackageId,
-        Version = r.Version,
-        AutomationId = r.AutomationId,
-        RequestedAt = r.RequestedAt,
-        CompletedAt = r.CompletedAt,
-        LastCheckedAt = r.LastCheckedAt,
-        State = r.State,
-        PercentComplete = r.PercentComplete,
-        Detail = r.Detail,
-    };
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT id FROM devices WHERE name = @name COLLATE NOCASE;";
+        command.Parameters.AddWithValue("@name", deviceName);
+        return command.ExecuteScalar() as string
+               ?? throw new InvalidOperationException($"No device named '{deviceName}' is registered, so its install cannot be recorded.");
+    }
+
+    private static InstallState ParseState(string text)
+        => Enum.TryParse<InstallState>(text, ignoreCase: true, out var state) ? state : InstallState.Failed;
 }

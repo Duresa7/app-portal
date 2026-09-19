@@ -49,7 +49,7 @@ Demo mode fills the whole interface with sample data held in memory. Installs ad
 | Path | What |
 |---|---|
 | `src/AppPortal.Shared` | API contracts shared by client and server |
-| `src/AppPortal.Server` | ASP.NET Core minimal API, Action1 client, catalog and device stores, CLI |
+| `src/AppPortal.Server` | ASP.NET Core minimal API, Action1 client, SQLite storage and migrations, CLI |
 | `src/AppPortal.Client` | Avalonia desktop client (Windows target; runs on Linux for development) |
 | `src/AppPortal.Updater` | Self-contained updater run by a SYSTEM scheduled task; replaces the client from GitHub releases |
 | `tests/AppPortal.Server.Tests` | xUnit tests against an in-memory Action1 stand-in |
@@ -63,7 +63,7 @@ Requirements: Docker and an Action1 API credential. A secrets manager whose CLI 
 
 1. **Create the API credential** in the Action1 console under Configuration, API Credentials. Store the Client ID and Client Secret in your secrets manager together with your organization ID (the `org=` value in the console URL). The server needs `view_endpoints`, `view_software_repository`, `view_installed_software`, `view_automations` and `run_automations`.
 2. **Write the environment file.** Copy `deploy/server.env.example` to `deploy/server.env`, which is gitignored, and fill in the three `Action1__` values, either by hand or by rendering the file from your secrets manager's references. Keep it mode 600; it is the only place the credential exists on the host.
-3. **Write the catalog** in `deploy/config/catalog.json`. See [deploy/config/README.md](deploy/config/README.md). Package IDs must exist in your Software Repository; the checked-in file is a starting point, not a verified list.
+3. **Write the catalog** in `deploy/config/catalog.json`. See [deploy/config/README.md](deploy/config/README.md). Package IDs must exist in your Software Repository; the checked-in file is a starting point, not a verified list. The file seeds the database the first time the server starts; after that, apply an edit with `catalog import` and write the database back out with `catalog export`.
 4. **Start the server**:
    ```bash
    docker compose -f deploy/compose.yaml up -d
@@ -74,7 +74,7 @@ Requirements: Docker and an Action1 API credential. A secrets manager whose CLI 
    ```bash
    docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll device add --name OBIPC --endpoint-id <endpoint-id>
    ```
-   The token prints once. Store it in your secrets manager; the server keeps only its SHA-256, in `devices.json` inside the data volume.
+   The token prints once. Store it in your secrets manager; the server keeps only its SHA-256, in `app-portal.db` inside the data volume.
 
 Put the server behind TLS (a reverse proxy or your tunnel) before a device on another network uses it. The token is a bearer secret.
 
@@ -161,7 +161,7 @@ A few behaviours are deliberate and were put in after a review found the failure
 
 - **One install request per device at a time wins.** `InstallService.CreateAsync` takes a per-device gate, so two overlapping requests cannot both pass the duplicate and concurrency checks and start two Action1 deployments.
 - **A finished install stays finished.** The background poller and every client refresh update the same record from their own snapshots. `InstallStore.Upsert` drops a write that carries an older `LastCheckedAt` than what is stored, and never moves a terminal state back to active.
-- **A damaged device file does not take the API down.** `devices.json` is written to a temporary file and renamed, and a file that fails to parse is logged while the last good device list keeps serving.
+- **State is one database, written in transactions.** Catalog, devices and install history live in `app-portal.db` on the data volume. A refresh that would overwrite a newer one is dropped inside the same transaction that read it, so two callers cannot interleave. A file that cannot be opened stops the server at start rather than leaving it serving an empty catalog to every device.
 - **The client does not die on a bad response.** An empty body or an unexpected content type, which a reverse proxy can produce, surfaces as a message in the window rather than an unhandled exception from a timer callback. Anything that still escapes is appended to `%LocalAppData%\AppPortal\client.log`.
 
 ## Limits

@@ -1,16 +1,18 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 
-using AppPortal.Server.Options;
+using AppPortal.Server.Data;
 
-using Microsoft.Extensions.Options;
+using Microsoft.Data.Sqlite;
 
 namespace AppPortal.Server.Devices;
 
 public sealed class DeviceRecord
 {
+    public string Id { get; set; } = "";
     public string Name { get; set; } = "";
+
+    /// <summary>The Action1 endpoint this device maps to, or empty when it has none.</summary>
     public string EndpointId { get; set; } = "";
     public string TokenSha256 { get; set; } = "";
     public bool Enabled { get; set; } = true;
@@ -26,36 +28,14 @@ public sealed class DevicesFile
 /// Devices that may call the API, each with the SHA-256 of its bearer token. The plaintext token is shown once,
 /// when the device is added, and is never stored.
 /// </summary>
-public sealed class DeviceStore
+public sealed class DeviceStore(Database database)
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
-
-    private readonly string _path;
-    private readonly ILogger<DeviceStore>? _logger;
-    private readonly object _gate = new();
-    private DevicesFile _file = new();
-    private DateTime _loadedStamp = DateTime.MinValue;
-
-    public DeviceStore(IOptions<PortalOptions> options, IHostEnvironment env, ILogger<DeviceStore> logger)
-        : this(Path.IsPathRooted(options.Value.DevicesPath) ? options.Value.DevicesPath : Path.Combine(env.ContentRootPath, options.Value.DevicesPath), logger)
-    {
-    }
-
-    public DeviceStore(string path, ILogger<DeviceStore>? logger = null)
-    {
-        _path = path;
-        _logger = logger;
-    }
-
-    public string Path_ => _path;
-
     public IReadOnlyList<DeviceRecord> All()
     {
-        lock (_gate)
-        {
-            Reload();
-            return _file.Devices.ToList();
-        }
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " ORDER BY name;";
+        return Read(command);
     }
 
     public DeviceRecord? Authenticate(string token)
@@ -66,60 +46,132 @@ public sealed class DeviceStore
         }
 
         var hash = Hash(token);
-        lock (_gate)
-        {
-            Reload();
-            foreach (var device in _file.Devices)
-            {
-                if (device.Enabled && FixedTimeEquals(device.TokenSha256, hash))
-                {
-                    return device;
-                }
-            }
-        }
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE token_hash = @hash AND enabled = 1;";
+        command.Parameters.AddWithValue("@hash", hash);
+        var device = Read(command).FirstOrDefault();
 
-        return null;
+        // The lookup already matched on a hash of the secret rather than the secret. Comparing in fixed
+        // time as well costs nothing and keeps the guarantee if this ever reads more than one row.
+        return device is not null && FixedTimeEquals(device.TokenSha256, hash) ? device : null;
     }
 
     /// <summary>Adds a device and returns its plaintext token. Replaces an existing device of the same name.</summary>
     public string Add(string name, string endpointId)
     {
         var token = GenerateToken();
-        lock (_gate)
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+
+        // Names are matched without regard to case, as they were when this lived in a JSON file.
+        string? existing;
+        using (var find = connection.CreateCommand())
         {
-            Reload();
-            _file.Devices.RemoveAll(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase));
-            _file.Devices.Add(new DeviceRecord
-            {
-                Name = name,
-                EndpointId = endpointId,
-                TokenSha256 = Hash(token),
-                Enabled = true,
-                CreatedAt = DateTimeOffset.UtcNow,
-            });
-            Save();
+            find.Transaction = transaction;
+            find.CommandText = "SELECT id FROM devices WHERE name = @name COLLATE NOCASE;";
+            find.Parameters.AddWithValue("@name", name);
+            existing = find.ExecuteScalar() as string;
         }
 
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = existing is null
+                ? """
+                  INSERT INTO devices (id, name, token_hash, enabled, action1_endpoint_id, has_agent, created_at)
+                  VALUES (@id, @name, @hash, 1, @endpoint, 0, @now);
+                  """
+                // An existing device keeps its row, and with it its install history, and gets a new token.
+                : """
+                  UPDATE devices SET name = @name, token_hash = @hash, enabled = 1, action1_endpoint_id = @endpoint
+                  WHERE id = @id;
+                  """;
+            command.Parameters.AddWithValue("@id", existing ?? NewId());
+            command.Parameters.AddWithValue("@name", name);
+            command.Parameters.AddWithValue("@hash", Hash(token));
+            command.Parameters.AddWithValue("@endpoint", string.IsNullOrEmpty(endpointId) ? DBNull.Value : endpointId);
+            command.Parameters.AddWithValue("@now", SqlTime.Now());
+            command.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
         return token;
     }
 
+    /// <summary>
+    /// Removes a device. False means there was no such device. A device with install history cannot be
+    /// removed: the history points at it, and until M1-09 stores the device name alongside each install,
+    /// removing the device would take the history with it.
+    /// </summary>
     public bool Remove(string name)
     {
-        lock (_gate)
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+        string id;
+        using (var find = connection.CreateCommand())
         {
-            Reload();
-            var removed = _file.Devices.RemoveAll(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)) > 0;
-            if (removed)
+            find.Transaction = transaction;
+            find.CommandText = "SELECT id FROM devices WHERE name = @name COLLATE NOCASE;";
+            find.Parameters.AddWithValue("@name", name);
+            if (find.ExecuteScalar() is not string found)
             {
-                Save();
+                return false;
             }
 
-            return removed;
+            id = found;
         }
+
+        using (var installs = connection.CreateCommand())
+        {
+            installs.Transaction = transaction;
+            installs.CommandText = "SELECT COUNT(*) FROM installs WHERE device_id = @id;";
+            installs.Parameters.AddWithValue("@id", id);
+            var count = Convert.ToInt32(installs.ExecuteScalar());
+            if (count > 0)
+            {
+                throw new DeviceInUseException($"'{name}' has {count} install(s) in its history and cannot be removed. Disable it instead.");
+            }
+        }
+
+        using (var delete = connection.CreateCommand())
+        {
+            delete.Transaction = transaction;
+            delete.CommandText = "DELETE FROM devices WHERE id = @id;";
+            delete.Parameters.AddWithValue("@id", id);
+            delete.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        return true;
     }
 
     public static string Hash(string token)
         => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
+    public static string NewId() => Guid.NewGuid().ToString("N");
+
+    private const string Select = "SELECT id, name, token_hash, enabled, action1_endpoint_id, created_at FROM devices";
+
+    private static List<DeviceRecord> Read(SqliteCommand command)
+    {
+        var devices = new List<DeviceRecord>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            devices.Add(new DeviceRecord
+            {
+                Id = reader.GetString(0),
+                Name = reader.GetString(1),
+                TokenSha256 = reader.GetString(2),
+                Enabled = reader.GetInt64(3) != 0,
+                EndpointId = reader.IsDBNull(4) ? "" : reader.GetString(4),
+                CreatedAt = SqlTime.Parse(reader.GetString(5)),
+            });
+        }
+
+        return devices;
+    }
 
     private static string GenerateToken()
     {
@@ -133,48 +185,7 @@ public sealed class DeviceStore
         var right = Encoding.ASCII.GetBytes(b);
         return left.Length == right.Length && CryptographicOperations.FixedTimeEquals(left, right);
     }
-
-    private void Reload()
-    {
-        if (!File.Exists(_path))
-        {
-            _file = new DevicesFile();
-            _loadedStamp = DateTime.MinValue;
-            return;
-        }
-
-        var stamp = File.GetLastWriteTimeUtc(_path);
-        if (stamp == _loadedStamp)
-        {
-            return;
-        }
-
-        try
-        {
-            _file = JsonSerializer.Deserialize<DevicesFile>(File.ReadAllText(_path), Json) ?? new DevicesFile();
-        }
-        catch (Exception ex) when (ex is JsonException or IOException)
-        {
-            // A half-written or unreadable file must not throw out of Authenticate, which would make
-            // every API request fail with an unhandled exception. Keep serving the last good list.
-            _logger?.LogError(ex, "Device file {Path} could not be read; keeping the previously loaded devices", _path);
-        }
-
-        _loadedStamp = stamp;
-    }
-
-    private void Save()
-    {
-        var directory = Path.GetDirectoryName(_path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        // Write then rename, so a crash mid-write cannot leave a truncated device file behind.
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(_file, Json));
-        File.Move(temp, _path, overwrite: true);
-        _loadedStamp = File.GetLastWriteTimeUtc(_path);
-    }
 }
+
+/// <summary>Raised when a device cannot be removed because its install history refers to it.</summary>
+public sealed class DeviceInUseException(string message) : Exception(message);

@@ -1,9 +1,14 @@
+using System.Text.Json;
+
 using AppPortal.Server.Action1;
 using AppPortal.Server.Catalog;
 
 namespace AppPortal.Server.Cli;
 
-/// <summary>`catalog verify` checks every catalog package against the Software Repository; `packages search` finds IDs.</summary>
+/// <summary>
+/// `catalog verify` checks every catalog package against the Software Repository, `catalog import` and
+/// `catalog export` move the catalog between the database and a file, and `packages search` finds IDs.
+/// </summary>
 public static class CatalogCli
 {
     public static async Task<int> RunAsync(string[] args, CatalogStore catalog, IAction1Client action1, TextWriter output, CancellationToken ct)
@@ -37,6 +42,35 @@ public static class CatalogCli
             return failures == 0 ? 0 : 1;
         }
 
+        if (args.Length >= 3 && args[0] == "catalog" && args[1] == "import")
+        {
+            var path = args[2];
+            if (!File.Exists(path))
+            {
+                output.WriteLine($"No such file: {path}");
+                return 1;
+            }
+
+            try
+            {
+                var entries = CatalogStore.Parse(await File.ReadAllTextAsync(path, ct));
+                catalog.Import(entries);
+                output.WriteLine($"Imported {entries.Count} app(s) from {path}.");
+                return 0;
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidDataException)
+            {
+                output.WriteLine($"{path} is not a valid catalog: {ex.Message}");
+                return 1;
+            }
+        }
+
+        if (args.Length >= 2 && args[0] == "catalog" && args[1] == "export")
+        {
+            output.WriteLine(catalog.ExportJson());
+            return 0;
+        }
+
         if (args.Length >= 3 && args[0] == "packages" && args[1] == "search")
         {
             var filter = string.Join(' ', args.Skip(2));
@@ -57,6 +91,8 @@ public static class CatalogCli
 
         output.WriteLine("Usage:");
         output.WriteLine("  AppPortal.Server catalog verify");
+        output.WriteLine("  AppPortal.Server catalog import <file>");
+        output.WriteLine("  AppPortal.Server catalog export");
         output.WriteLine("  AppPortal.Server packages search <name>");
         return 2;
     }

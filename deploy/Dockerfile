@@ -14,6 +14,9 @@ WORKDIR /app
 COPY --from=build /app ./
 RUN mkdir -p /app/config /app/data && chown -R app:app /app
 USER app
+# The data directory holds app-portal.db, which is catalog, devices and install history.
+# CatalogPath seeds an empty database on the first start; DevicesPath is read only to import a
+# 0.2.x deployment's devices.json once. Neither is read again after that.
 ENV ASPNETCORE_URLS=http://+:8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     Portal__CatalogPath=/app/config/catalog.json \

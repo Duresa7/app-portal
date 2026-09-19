@@ -5,7 +5,7 @@
 #   server.env  container environment, including the Action1 API credential. Render it from
 #               1Password references: op inject -i deploy/server.env.example -o deploy/server.env
 #   .env        compose variable interpolation, read only by compose itself. It sets
-#               APP_PORTAL_BIND, for example APP_PORTAL_BIND=192.168.40.35:3004. Compose does not
+#               APP_PORTAL_BIND, for example APP_PORTAL_BIND=192.0.2.10:8080. Compose does not
 #               interpolate from env_file, so the bind address cannot live in server.env.
 services:
   app-portal:
@@ -18,7 +18,7 @@ services:
     env_file:
       - server.env
     ports:
-      # APP_PORTAL_BIND pins the listener to one interface, for example 192.168.40.35:3004
+      # APP_PORTAL_BIND pins the listener to one interface, for example 192.0.2.10:8080
       - "${APP_PORTAL_BIND:-8080}:8080"
     volumes:
       - ./config:/app/config:ro

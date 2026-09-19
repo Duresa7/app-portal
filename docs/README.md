@@ -3,6 +3,7 @@
 - `images/apps-light.png`, `images/apps-dark.png`: the Apps view in each theme, with two apps installed and one queued.
 - `images/installed.png`: the inventory reported for the device.
 - `images/activity.png`: the install history.
+- `images/demo.png`: demo mode, which runs the whole interface from in-memory sample data with no server.
 
 All four were produced with `dotnet run -- --screenshot <file> <section> --theme <light|dark>` under Xvfb against the fake Action1 backend; they contain no data from a real tenant.
 

@@ -34,6 +34,16 @@ The Action1 API credential lives only on the server, injected from 1Password at 
 
 Action1 announced a Self-Service App Portal in October 2025 and lists it as an upcoming release on its roadmap. Until it ships, this is the gap-filler for a locked-down workstation where AppLocker allows only what lands in Program Files through the management agent. The client itself installs to Program Files for that reason.
 
+## Try it without a server
+
+Download `AppPortal-client-win-x64.zip` from the [latest release](https://github.com/Duresa7/app-portal/releases/latest), unzip it, and run:
+
+```
+AppPortal.exe --demo
+```
+
+Demo mode fills the whole interface with sample data held in memory. Installs advance through queued, installing and installed over about twelve seconds, then appear under Installed. Nothing is installed on the machine and nothing leaves it. The build is self-contained, so no .NET runtime is needed, and it is unsigned, so Windows SmartScreen will ask before running it the first time.
+
 ## Repository layout
 
 | Path | What |
@@ -43,7 +53,7 @@ Action1 announced a Self-Service App Portal in October 2025 and lists it as an u
 | `src/AppPortal.Client` | Avalonia desktop client (Windows target; runs on Linux for development) |
 | `tests/AppPortal.Server.Tests` | xUnit tests against an in-memory Action1 stand-in |
 | `deploy/` | Dockerfile, compose file, environment template, Windows install script |
-| `docs/` | Screenshots and notes |
+| `docs/` | Screenshots and design notes |
 
 ## Server setup
 
@@ -54,7 +64,7 @@ Requirements: Docker, the 1Password CLI, and an Action1 API credential.
    ```bash
    op inject -i deploy/server.env.example -o deploy/server.env
    ```
-   `server.env` is gitignored. Set `Action1__BaseUrl` to your region, for example `https://app.na-2.action1.com/api/3.0`. Copy `deploy/env.example` to `deploy/.env` as well and set `APP_PORTAL_BIND` to the interface and port you want, for example `192.168.40.35:3004`. Compose only interpolates from `.env`, so that one variable cannot live in `server.env`.
+   `server.env` is gitignored. Set `Action1__BaseUrl` to your region, for example `https://app.na-2.action1.com/api/3.0`. Copy `deploy/env.example` to `deploy/.env` as well and set `APP_PORTAL_BIND` to the interface and port you want, for example `192.0.2.10:8080`. Compose only interpolates from `.env`, so that one variable cannot live in `server.env`.
 3. **Write the catalog** in `deploy/config/catalog.json`. See [deploy/config/README.md](deploy/config/README.md). Package IDs must exist in your Software Repository; the checked-in file is a starting point, not a verified list.
 4. **Start the server**:
    ```bash

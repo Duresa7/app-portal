@@ -20,14 +20,15 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly IconCache _icons = new();
     private IReadOnlyList<InstalledApp> _installedRaw = [];
 
-    public MainViewModel() : this(null, new ClientSettings())
+    public MainViewModel() : this(null, new ClientSettings(), false)
     {
     }
 
-    public MainViewModel(IPortalApiClient? api, ClientSettings settings)
+    public MainViewModel(IPortalApiClient? api, ClientSettings settings, bool isDemo = false)
     {
         _api = api;
-        IsConfigured = api is not null && settings.IsConfigured;
+        IsDemo = isDemo;
+        IsConfigured = api is not null && (settings.IsConfigured || isDemo);
         ConfigPath = ClientSettings.DefaultPath;
         _timer = new DispatcherTimer(TimeSpan.FromSeconds(Math.Max(3, settings.RefreshSeconds)), DispatcherPriority.Background, async (_, _) => await TickAsync());
         if (IsConfigured)
@@ -37,6 +38,10 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     public bool IsConfigured { get; }
+
+    /// <summary>True when the app was started with --demo: sample data, no server, nothing leaves the machine.</summary>
+    public bool IsDemo { get; }
+
     public string ConfigPath { get; }
 
     public ObservableCollection<AppItemViewModel> Apps { get; } = [];
@@ -157,7 +162,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task TickAsync()
     {
         // Poll faster while something is installing; otherwise every few ticks is enough.
-        if (ActiveInstallCount > 0 || LastRefreshed is null || DateTimeOffset.Now - LastRefreshed > TimeSpan.FromSeconds(60))
+        if (IsDemo || ActiveInstallCount > 0 || LastRefreshed is null || DateTimeOffset.Now - LastRefreshed > TimeSpan.FromSeconds(60))
         {
             await RefreshAsync();
         }

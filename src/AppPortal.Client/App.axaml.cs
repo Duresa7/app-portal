@@ -25,8 +25,11 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var settings = ClientSettings.Load();
-            IPortalApiClient? api = settings.IsConfigured ? new PortalApiClient(settings) : null;
-            var viewModel = new MainViewModel(api, settings);
+            var demo = (desktop.Args ?? []).Contains("--demo");
+            IPortalApiClient? api = demo
+                ? new DemoPortalApiClient()
+                : settings.IsConfigured ? new PortalApiClient(settings) : null;
+            var viewModel = new MainViewModel(api, settings, demo);
             var window = new MainWindow { DataContext = viewModel };
             desktop.MainWindow = window;
             if (api is not null)

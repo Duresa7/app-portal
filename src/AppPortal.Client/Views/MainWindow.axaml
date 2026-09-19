@@ -99,6 +99,12 @@
                             <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" MaxWidth="700" />
                         </StackPanel>
                     </Border>
+                    <Border Classes="infoBar caution" IsVisible="{Binding IsDemo}">
+                        <StackPanel Orientation="Horizontal">
+                            <PathIcon Data="{StaticResource IconWarning}" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                            <TextBlock TextWrapping="Wrap" MaxWidth="700" Text="Demo mode. Everything here is sample data held in memory, nothing is installed, and nothing leaves this computer. Close and reopen without --demo to use a real server." />
+                        </StackPanel>
+                    </Border>
                     <Border Classes="infoBar caution" IsVisible="{Binding !IsConfigured}">
                         <StackPanel Orientation="Horizontal">
                             <PathIcon Data="{StaticResource IconWarning}" Foreground="{DynamicResource SystemFillColorCautionBrush}" />

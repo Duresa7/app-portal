@@ -63,6 +63,28 @@ Requirements: Docker and an Action1 API credential. A secrets manager whose CLI 
 
 1. **Create the API credential** in the Action1 console under Configuration, API Credentials. Store the Client ID and Client Secret in your secrets manager together with your organization ID (the `org=` value in the console URL). The server needs `view_endpoints`, `view_software_repository`, `view_installed_software`, `view_automations` and `run_automations`.
 2. **Write the environment file.** Copy `deploy/server.env.example` to `deploy/server.env`, which is gitignored, and fill in the three `Action1__` values, either by hand or by rendering the file from your secrets manager's references. Keep it mode 600; it is the only place the credential exists on the host.
+3. **Write the catalog** in `deploy/config/catalog.json`. See [deploy/config/README.md](deploy/config/README.md). Package IDs must exist in your Software Repository; the checked-in file is a starting point, not a verified list.
+4. **Start the server**:
+   ```bash
+   docker compose -f deploy/compose.yaml up -d --build
+   docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll catalog verify
+   ```
+   `catalog verify` resolves every package against Action1 and exits non-zero if one is missing.
+5. **Register a device.** Find the endpoint ID in the Action1 console (the endpoint's URL) and run:
+   ```bash
+   docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll device add --name OBIPC --endpoint-id <endpoint-id>
+   ```
+   The token prints once. Store it in your secrets manager; the server keeps only its SHA-256, in `devices.json` inside the data volume.
+
+Put the server behind TLS (a reverse proxy or your tunnel) before a device on another network uses it. The token is a bearer secret.
+
+## Client deployment
+
+The CI workflow publishes `AppPortal-client-win-x64.zip`: a self-contained build plus `Install-AppPortalClient.ps1`. Deploy it through Action1 as a custom package (or run it as SYSTEM any other way):
+
+```powershell
+.\Install-AppPortalClient.ps1 -ServerUrl https://portal.example.internal -DeviceToken <token>
+```
 
 The script copies the client to `%ProgramFiles%\App Portal`, writes `%ProgramData%\AppPortal\client.json` readable by Users and writable only by Administrators, adds a Start menu shortcut for all users, registers an uninstall entry, and registers the updater task described next. Pass the token through the RMM's secret parameter rather than embedding it in the package.
 

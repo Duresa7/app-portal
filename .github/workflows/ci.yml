@@ -69,7 +69,7 @@ jobs:
         run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --no-restore -c Release
       - run: dotnet test --no-build -c Release --logger "trx;LogFileName=results.trx"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-${{ matrix.os }}
@@ -98,7 +98,7 @@ jobs:
           cp deploy/windows/Uninstall-AppPortalClient.ps1 out/package/client/
           cd out/package && zip -qr ../AppPortal-client-win-x64.zip .
           cd .. && sha256sum AppPortal-client-win-x64.zip > SHA256SUMS && cat SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: AppPortal-client-win-x64
           path: |
@@ -169,7 +169,7 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "AppPortal.exe exited with $($p.ExitCode)" }
           if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 1024) { throw 'No screenshot was written.' }
           "Client rendered $((Get-Item $out).Length) bytes in $out"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: client-smoke-screenshot
@@ -188,7 +188,7 @@ jobs:
         run: deploy/smoke-test.sh "$IMAGE:ci"
       - name: Save the tested image for the release job
         run: docker save "$IMAGE:ci" | gzip > server-image.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: server-image
           path: server-image.tar.gz

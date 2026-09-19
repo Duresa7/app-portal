@@ -10,208 +10,236 @@
         x:DataType="vm:MainViewModel"
         Icon="/Assets/app-portal.ico"
         Title="App Portal"
-        Width="1100" Height="720" MinWidth="760" MinHeight="480">
+        Width="1100" Height="720" MinWidth="800" MinHeight="520"
+        TransparencyLevelHint="Mica, None"
+        Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+        FontFamily="{DynamicResource PortalFontFamily}">
 
     <Design.DataContext>
         <vm:MainViewModel />
     </Design.DataContext>
 
-    <Window.Styles>
-        <Style Selector="Button.nav">
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="Padding" Value="14,10" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="CornerRadius" Value="6" />
-        </Style>
-        <Style Selector="Button.nav.selected">
-            <Setter Property="Background" Value="{DynamicResource PortalCard}" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-        </Style>
-        <Style Selector="Border.card">
-            <Setter Property="Background" Value="{DynamicResource PortalCard}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource PortalCardBorder}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="16" />
-            <Setter Property="Margin" Value="0,0,12,12" />
-            <Setter Property="Width" Value="300" />
-        </Style>
-        <Style Selector="TextBlock.muted">
-            <Setter Property="Foreground" Value="{DynamicResource PortalMuted}" />
-        </Style>
-        <Style Selector="TextBlock.h1">
-            <Setter Property="FontSize" Value="24" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-        </Style>
-        <Style Selector="Button.primary">
-            <Setter Property="Background" Value="{DynamicResource PortalAccent}" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="Padding" Value="16,6" />
-            <Setter Property="CornerRadius" Value="4" />
-        </Style>
-    </Window.Styles>
+    <!-- Two-layer layout: the base layer (Mica) carries navigation; the content layer is a lighter
+         surface with an 8px top-left corner, as in Windows 11 NavigationView. -->
+    <Grid ColumnDefinitions="280,*">
 
-    <Grid ColumnDefinitions="220,*">
+        <!-- Navigation pane -->
+        <DockPanel Grid.Column="0" Margin="8,8,0,0">
+            <StackPanel DockPanel.Dock="Top" Margin="4,0,4,12">
+                <StackPanel Orientation="Horizontal" Spacing="12" Margin="16,8,16,16">
+                    <Border Width="28" Height="28" CornerRadius="6" Background="{DynamicResource AccentFillColorDefaultBrush}">
+                        <PathIcon Data="{StaticResource IconApps}" Width="16" Height="16" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                    </Border>
+                    <TextBlock Text="App Portal" Classes="bodyStrong" VerticalAlignment="Center" />
+                </StackPanel>
 
-        <!-- Sidebar -->
-        <Border Grid.Column="0" Background="#0A000000" Padding="12">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Spacing="4">
-                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="6,4,6,18">
-                        <Border Width="34" Height="34" CornerRadius="8" Background="{DynamicResource PortalAccent}">
-                            <TextBlock Text="A" Foreground="White" FontWeight="Bold" FontSize="18"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="App Portal" FontWeight="SemiBold" FontSize="16" />
-                            <TextBlock Text="Self-service software" Classes="muted" FontSize="11" />
+                <Button Classes="nav" Classes.selected="{Binding ShowApps}" Command="{Binding SelectSectionCommand}" CommandParameter="0">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Classes="indicator" Grid.Column="0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                            <PathIcon Data="{StaticResource IconApps}" />
+                            <TextBlock Text="Apps" VerticalAlignment="Center" />
                         </StackPanel>
-                    </StackPanel>
+                    </Grid>
+                </Button>
+                <Button Classes="nav" Classes.selected="{Binding ShowInstalled}" Command="{Binding SelectSectionCommand}" CommandParameter="1">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Classes="indicator" Grid.Column="0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                            <PathIcon Data="{StaticResource IconInstalled}" />
+                            <TextBlock Text="Installed" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </Button>
+                <Button Classes="nav" Classes.selected="{Binding ShowActivity}" Command="{Binding SelectSectionCommand}" CommandParameter="2">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Border Classes="indicator" Grid.Column="0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                            <PathIcon Data="{StaticResource IconActivity}" />
+                            <TextBlock Text="Activity" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Border Grid.Column="2" Classes="infoBadge" Margin="0,0,12,0" IsVisible="{Binding ActiveInstallCount}">
+                            <TextBlock Text="{Binding ActiveInstallCount}" />
+                        </Border>
+                    </Grid>
+                </Button>
+            </StackPanel>
 
-                    <Button Classes="nav" Classes.selected="{Binding ShowApps}" Command="{Binding SelectSectionCommand}" CommandParameter="0" Content="Apps" />
-                    <Button Classes="nav" Classes.selected="{Binding ShowInstalled}" Command="{Binding SelectSectionCommand}" CommandParameter="1" Content="Installed" />
-                    <Button Classes="nav" Classes.selected="{Binding ShowActivity}" Command="{Binding SelectSectionCommand}" CommandParameter="2">
+            <!-- Pane footer: this device -->
+            <Border DockPanel.Dock="Bottom" Margin="16,0,16,16" Padding="12" Classes="card">
+                <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <PathIcon Grid.Column="0" Data="{StaticResource IconDevice}" Width="16" Height="16" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Top" Margin="0,2,10,0" />
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="{Binding DeviceTitle}" Classes="bodyStrong" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding DeviceSubtitle}" Classes="caption" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
+                    <Button Classes="standard" Command="{Binding RefreshCommand}" HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="Activity" />
-                            <Border CornerRadius="9" Background="{DynamicResource PortalAccent}" Padding="7,1"
-                                    IsVisible="{Binding ActiveInstallCount}">
-                                <TextBlock Text="{Binding ActiveInstallCount}" Foreground="White" FontSize="11" />
-                            </Border>
+                            <PathIcon Data="{StaticResource IconRefresh}" />
+                            <TextBlock Text="Refresh" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
+            </Border>
+            <Panel />
+        </DockPanel>
 
-                <StackPanel DockPanel.Dock="Bottom" Spacing="2" Margin="6,0,6,4">
-                    <TextBlock Text="{Binding DeviceTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{Binding DeviceSubtitle}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
-                    <Button Command="{Binding RefreshCommand}" Content="Refresh" Margin="0,10,0,0" HorizontalAlignment="Stretch" />
+        <!-- Content layer -->
+        <Border Grid.Column="1" Margin="0,8,0,0" CornerRadius="8,0,0,0"
+                Background="{DynamicResource LayerFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0">
+            <Grid RowDefinitions="Auto,*" Margin="36,28,36,0">
+
+                <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,8">
+                    <Border Classes="infoBar critical" IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <StackPanel Orientation="Horizontal">
+                            <PathIcon Data="{StaticResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                            <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" MaxWidth="700" />
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="infoBar caution" IsVisible="{Binding !IsConfigured}">
+                        <StackPanel Orientation="Horizontal">
+                            <PathIcon Data="{StaticResource IconWarning}" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                            <StackPanel Spacing="2" MaxWidth="700">
+                                <TextBlock Classes="bodyStrong" Text="This device is not set up for App Portal" />
+                                <TextBlock TextWrapping="Wrap">
+                                    <Run Text="An administrator needs to write the server address and this device's token to " />
+                                    <Run Text="{Binding ConfigPath}" FontFamily="Cascadia Mono, Consolas, monospace" />
+                                    <Run Text=". Nothing here will work until then." />
+                                </TextBlock>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
-                <Panel />
-            </DockPanel>
-        </Border>
 
-        <!-- Content -->
-        <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="28,22,16,16">
-
-            <StackPanel Grid.Row="0" Spacing="10" Margin="0,0,12,14">
-                <Border Background="#2AC42B1C" BorderBrush="{DynamicResource PortalError}" BorderThickness="1" CornerRadius="6" Padding="12,8"
-                        IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
-                    <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
-                </Border>
-
-                <Border Background="#2AB8860B" BorderBrush="{DynamicResource PortalWarn}" BorderThickness="1" CornerRadius="6" Padding="12,8"
-                        IsVisible="{Binding !IsConfigured}">
-                    <StackPanel Spacing="4">
-                        <TextBlock FontWeight="SemiBold" Text="This device is not set up for App Portal." />
-                        <TextBlock TextWrapping="Wrap">
-                            <Run Text="An administrator needs to write the server address and this device's token to " />
-                            <Run Text="{Binding ConfigPath}" FontFamily="Consolas, monospace" />
-                            <Run Text=". Nothing here will work until then." />
-                        </TextBlock>
+                <!-- Apps -->
+                <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*" IsVisible="{Binding ShowApps}">
+                    <StackPanel Grid.Row="0" Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock Classes="title" Text="Apps" />
+                            <ProgressBar IsIndeterminate="True" Classes="thin" Width="80" VerticalAlignment="Center" Margin="0,8,0,0" IsVisible="{Binding IsBusy}" />
+                        </StackPanel>
+                        <TextBlock Classes="secondary" Text="Choose an app and it installs in the background. Administrator rights are not needed." />
                     </StackPanel>
-                </Border>
-            </StackPanel>
 
-            <!-- Apps -->
-            <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*" IsVisible="{Binding ShowApps}">
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,6">
-                    <TextBlock Classes="h1" Text="Apps" VerticalAlignment="Center" />
-                    <ProgressBar IsIndeterminate="True" Width="90" Height="4" VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
-                </StackPanel>
-                <TextBlock Grid.Row="0" Classes="muted" Text="Pick an app and it installs in the background. You do not need administrator rights."
-                           Margin="0,34,0,0" />
+                    <Grid Grid.Row="1" ColumnDefinitions="320,12,200,*" Margin="0,20,0,20">
+                        <TextBox Grid.Column="0" Classes="search" PlaceholderText="Search apps" Text="{Binding SearchText}">
+                            <TextBox.InnerRightContent>
+                                <PathIcon Data="{StaticResource IconSearch}" Width="14" Height="14" Margin="0,0,10,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </TextBox.InnerRightContent>
+                        </TextBox>
+                        <ComboBox Grid.Column="2" Classes="filter" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}" HorizontalAlignment="Stretch" />
+                    </Grid>
 
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,16,0,14">
-                    <TextBox Width="300" PlaceholderText="Search apps" Text="{Binding SearchText}" />
-                    <ComboBox Width="200" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}" />
-                </StackPanel>
-
-                <ScrollViewer Grid.Row="2">
-                    <StackPanel>
-                        <TextBlock Classes="muted" Margin="0,24,0,0" Text="No apps match your search."
-                                   IsVisible="{Binding !FilteredApps.Count}" />
-                        <ItemsControl ItemsSource="{Binding FilteredApps}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:AppItemViewModel">
-                                    <Border Classes="card">
-                                        <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
-                                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12">
-                                                <Border Width="44" Height="44" CornerRadius="10" Background="{DynamicResource PortalAccent}">
-                                                    <TextBlock Text="{Binding Initial}" Foreground="White" FontSize="20" FontWeight="SemiBold"
-                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </Border>
-                                                <StackPanel VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Text="{Binding Publisher}" Classes="muted" FontSize="12" />
-                                                </StackPanel>
-                                            </StackPanel>
-                                            <TextBlock Grid.Row="1" Text="{Binding Category}" Classes="muted" FontSize="11" Margin="0,10,0,0" />
-                                            <TextBlock Grid.Row="2" Text="{Binding Description}" TextWrapping="Wrap" Margin="0,6,0,12" MaxLines="3" TextTrimming="CharacterEllipsis" />
-                                            <ProgressBar Grid.Row="3" Minimum="0" Maximum="100" Value="{Binding Percent}" Height="4" Margin="0,0,0,8"
-                                                         IsVisible="{Binding IsBusy}" />
-                                            <Grid Grid.Row="4" ColumnDefinitions="*,Auto">
-                                                <TextBlock Grid.Column="0" Text="{Binding StatusText}" Classes="muted" FontSize="12" VerticalAlignment="Center"
-                                                           TextWrapping="Wrap" Margin="0,0,8,0" />
-                                                <Button Grid.Column="1" Classes="primary" Content="Install" Command="{Binding InstallCommand}"
-                                                        IsVisible="{Binding CanInstall}" />
-                                                <TextBlock Grid.Column="1" Text="Installed" Foreground="{DynamicResource PortalOk}" FontWeight="SemiBold"
-                                                           VerticalAlignment="Center" IsVisible="{Binding IsInstalled}" />
+                    <ScrollViewer Grid.Row="2" Padding="0,0,12,0">
+                        <StackPanel Margin="0,0,0,24">
+                            <TextBlock Classes="secondary" Margin="0,16,0,0" Text="No apps match your search." IsVisible="{Binding !FilteredApps.Count}" />
+                            <ItemsControl ItemsSource="{Binding FilteredApps}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:AppItemViewModel">
+                                        <Border Classes="card" Width="312" Margin="0,0,12,12">
+                                            <Grid RowDefinitions="Auto,*,Auto,Auto">
+                                                <Grid Grid.Row="0" ColumnDefinitions="Auto,*">
+                                                    <Border Grid.Column="0" Classes="tile" Background="{Binding TileBrush}" ClipToBounds="True">
+                                                        <Panel>
+                                                            <TextBlock Text="{Binding Initial}" IsVisible="{Binding Icon, Converter={x:Static ObjectConverters.IsNull}}" />
+                                                            <Image Source="{Binding Icon}" Stretch="UniformToFill" IsVisible="{Binding Icon, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        </Panel>
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Margin="14,2,0,0" Spacing="2">
+                                                        <TextBlock Text="{Binding Name}" Classes="bodyStrong" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Publisher}" Classes="caption" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Category}" Classes="caption" />
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBlock Grid.Row="1" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" Margin="0,14,0,14" MaxLines="2" TextTrimming="CharacterEllipsis" MinHeight="40" />
+                                                <ProgressBar Grid.Row="2" Classes="thin" Minimum="0" Maximum="100" Value="{Binding Percent}" IsIndeterminate="{Binding IsIndeterminate}" Margin="0,0,0,10" IsVisible="{Binding IsBusy}" />
+                                                <Grid Grid.Row="3" ColumnDefinitions="*,Auto">
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                        <PathIcon Data="{StaticResource IconCheck}" Width="12" Height="12" Foreground="{DynamicResource SystemFillColorSuccessBrush}" IsVisible="{Binding IsInstalled}" />
+                                                        <PathIcon Data="{StaticResource IconError}" Width="12" Height="12" Foreground="{DynamicResource SystemFillColorCriticalBrush}" IsVisible="{Binding HasError}" />
+                                                        <TextBlock Text="{Binding StatusText}" Classes="caption" TextWrapping="Wrap" MaxWidth="180" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Classes="accent" Content="Install" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" />
+                                                </Grid>
                                             </Grid>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </ScrollViewer>
-            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
 
-            <!-- Installed -->
-            <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*" IsVisible="{Binding ShowInstalled}">
-                <TextBlock Grid.Row="0" Classes="h1" Text="Installed" />
-                <TextBlock Grid.Row="1" Classes="muted" Margin="0,4,0,14"
-                           Text="Software the management service last reported on this device. Removal requests go to your administrator." />
-                <DataGrid Grid.Row="2" ItemsSource="{Binding Installed}" IsReadOnly="True" GridLinesVisibility="Horizontal" CanUserResizeColumns="True">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*" x:DataType="shared:InstalledApp" />
-                        <DataGridTextColumn Header="Publisher" Binding="{Binding Vendor}" Width="*" x:DataType="shared:InstalledApp" />
-                        <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="*" x:DataType="shared:InstalledApp" />
-                    </DataGrid.Columns>
-                </DataGrid>
-            </Grid>
+                <!-- Installed -->
+                <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*" IsVisible="{Binding ShowInstalled}">
+                    <TextBlock Grid.Row="0" Classes="title" Text="Installed" />
+                    <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,20" Text="Software the management service last reported on this device. Ask your administrator to remove something." />
+                    <Border Grid.Row="2" Classes="card" Padding="4" VerticalAlignment="Top" Margin="0,0,0,24">
+                        <ScrollViewer>
+                            <StackPanel>
+                                <Grid ColumnDefinitions="*,220,160" Margin="12,8,12,8">
+                                    <TextBlock Grid.Column="0" Text="Name" Classes="caption" />
+                                    <TextBlock Grid.Column="1" Text="Publisher" Classes="caption" />
+                                    <TextBlock Grid.Column="2" Text="Version" Classes="caption" />
+                                </Grid>
+                                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="8,0" />
+                                <TextBlock Classes="secondary" Margin="12,12" Text="No inventory has been reported yet." IsVisible="{Binding !Installed.Count}" />
+                                <ItemsControl ItemsSource="{Binding Installed}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="shared:InstalledApp">
+                                            <Border Classes="row">
+                                                <Grid ColumnDefinitions="*,220,160">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Vendor}" Classes="secondary" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding Version}" Classes="secondary" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
 
-            <!-- Activity -->
-            <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*" IsVisible="{Binding ShowActivity}">
-                <TextBlock Grid.Row="0" Classes="h1" Text="Activity" />
-                <TextBlock Grid.Row="1" Classes="muted" Margin="0,4,0,14" Text="Every install requested from this device, newest first." />
-                <ScrollViewer Grid.Row="2">
-                    <StackPanel>
-                        <TextBlock Classes="muted" Text="Nothing has been requested from this device yet." IsVisible="{Binding !Installs.Count}" />
-                        <ItemsControl ItemsSource="{Binding Installs}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="shared:InstallRequest">
-                                    <Border BorderBrush="{DynamicResource PortalCardBorder}" BorderThickness="0,0,0,1" Padding="4,10">
-                                        <Grid ColumnDefinitions="*,140,180">
-                                            <StackPanel Grid.Column="0" Spacing="2">
-                                                <TextBlock Text="{Binding AppName}" FontWeight="SemiBold" />
-                                                <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="1" Text="{Binding State}" VerticalAlignment="Center" FontWeight="SemiBold" />
-                                            <TextBlock Grid.Column="2" Text="{Binding RequestedAt, Converter={x:Static svc:LocalTimeConverter.Instance}}" Classes="muted" VerticalAlignment="Center" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </ScrollViewer>
+                <!-- Activity -->
+                <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*" IsVisible="{Binding ShowActivity}">
+                    <TextBlock Grid.Row="0" Classes="title" Text="Activity" />
+                    <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,20" Text="Every install requested from this device, newest first." />
+                    <Border Grid.Row="2" Classes="card" Padding="4" VerticalAlignment="Top" Margin="0,0,0,24">
+                        <ScrollViewer>
+                            <StackPanel>
+                                <TextBlock Classes="secondary" Margin="12,12" Text="Nothing has been requested from this device yet." IsVisible="{Binding !Activity.Count}" />
+                                <ItemsControl ItemsSource="{Binding Activity}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ActivityItemViewModel">
+                                            <Border Classes="row">
+                                                <Grid ColumnDefinitions="Auto,*,150,170">
+                                                    <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" Background="{Binding StateBrush}" VerticalAlignment="Center" Margin="4,0,14,0" />
+                                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding AppName}" Classes="bodyStrong" />
+                                                        <TextBlock Text="{Binding Detail}" Classes="caption" TextWrapping="Wrap" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding StateText}" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding RequestedAt, Converter={x:Static svc:LocalTimeConverter.Instance}}" Classes="secondary" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
             </Grid>
-        </Grid>
+        </Border>
     </Grid>
 </Window>

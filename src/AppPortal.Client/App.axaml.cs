@@ -36,6 +36,14 @@ public partial class App : Application
 
             // `--screenshot <file.png> [section]` renders the window once and exits. Used for documentation and UI checks.
             var args = desktop.Args ?? [];
+            var theme = Array.IndexOf(args, "--theme");
+            if (theme >= 0 && theme + 1 < args.Length)
+            {
+                RequestedThemeVariant = args[theme + 1].Equals("dark", StringComparison.OrdinalIgnoreCase)
+                    ? Avalonia.Styling.ThemeVariant.Dark
+                    : Avalonia.Styling.ThemeVariant.Light;
+            }
+
             var index = Array.IndexOf(args, "--screenshot");
             if (index >= 0 && index + 1 < args.Length)
             {

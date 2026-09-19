@@ -2,7 +2,13 @@
 
 A self-service software catalog for Windows PCs managed with [Action1](https://www.action1.com/). The person at the keyboard opens App Portal, picks an approved app, and the Action1 agent installs it as SYSTEM. No administrator rights on the PC, no installer download, no API credential on the device.
 
-![Apps view](docs/images/apps.png)
+![Apps view in light theme](docs/images/apps-light.png)
+
+The client follows the Windows 11 design language: a two-layer NavigationView layout with Mica behind the pane, the Fluent 2 color tokens for light and dark, Segoe UI Variable on the Windows type ramp, 4px control and 8px container corner radii, and a 3x16 accent selection indicator. It picks up the system theme automatically.
+
+| Dark theme | Activity |
+|---|---|
+| ![Apps view in dark theme](docs/images/apps-dark.png) | ![Activity view](docs/images/activity.png) |
 
 ## How it works
 
@@ -90,7 +96,7 @@ cd src/AppPortal.Client
 APPPORTAL_SERVER_URL=http://127.0.0.1:5080 APPPORTAL_DEVICE_TOKEN=<token> dotnet run
 ```
 
-`dotnet run -- --screenshot out.png 2` renders a section (0 apps, 1 installed, 2 activity) to a PNG and exits, which is how the images in `docs/` were produced under Xvfb.
+`dotnet run -- --screenshot out.png 2 --theme dark` renders a section (0 apps, 1 installed, 2 activity) in the chosen theme to a PNG and exits, which is how the images in `docs/` were produced under Xvfb.
 
 ## API
 

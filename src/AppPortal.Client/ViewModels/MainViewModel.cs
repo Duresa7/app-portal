@@ -17,6 +17,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly IPortalApiClient? _api;
     private readonly DispatcherTimer _timer;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private readonly IconCache _icons = new();
     private IReadOnlyList<InstalledApp> _installedRaw = [];
 
     public MainViewModel() : this(null, new ClientSettings())
@@ -42,6 +43,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<AppItemViewModel> FilteredApps { get; } = [];
     public ObservableCollection<InstalledApp> Installed { get; } = [];
     public ObservableCollection<InstallRequest> Installs { get; } = [];
+    public ObservableCollection<ActivityItemViewModel> Activity { get; } = [];
     public ObservableCollection<string> Categories { get; } = ["All"];
 
     [ObservableProperty] private DeviceInfo? _device;
@@ -113,6 +115,7 @@ public sealed partial class MainViewModel : ViewModelBase
             Device = deviceTask.Result;
             MergeCatalog(catalogTask.Result);
             ReplaceAll(Installs, installsTask.Result.OrderByDescending(i => i.RequestedAt));
+            ReplaceAll(Activity, Installs.Select(i => new ActivityItemViewModel(i)));
 
             // Inventory is read after the install refresh so a just-finished install is already reflected in it.
             try
@@ -174,6 +177,7 @@ public sealed partial class MainViewModel : ViewModelBase
             var request = await _api.RequestInstallAsync(item.App.Id, CancellationToken.None);
             item.ActiveInstall = request;
             Installs.Insert(0, request);
+            Activity.Insert(0, new ActivityItemViewModel(request));
             OnPropertyChanged(nameof(ActiveInstallCount));
             SelectedSection = 0;
         }
@@ -194,7 +198,12 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             if (!known.ContainsKey(app.Id))
             {
-                Apps.Add(new AppItemViewModel(app, InstallAsync));
+                var item = new AppItemViewModel(app, InstallAsync);
+                Apps.Add(item);
+                if (app.IconUrl is not null)
+                {
+                    _ = LoadIconAsync(item);
+                }
             }
         }
 
@@ -250,6 +259,15 @@ public sealed partial class MainViewModel : ViewModelBase
             .ThenBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         ReplaceAll(FilteredApps, filtered);
+    }
+
+    private async Task LoadIconAsync(AppItemViewModel item)
+    {
+        var bitmap = await _icons.GetAsync(item.App.IconUrl);
+        if (bitmap is not null)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => item.Icon = bitmap);
+        }
     }
 
     private static void ReplaceAll<T>(ObservableCollection<T> target, IEnumerable<T> items)

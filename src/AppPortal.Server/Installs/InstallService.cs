@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AppPortal.Server.Action1;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
@@ -28,7 +29,28 @@ public sealed class InstallService(
     IOptions<PortalOptions> options,
     ILogger<InstallService> logger)
 {
+    /// <summary>
+    /// One gate per device. Without it two overlapping requests both read a snapshot that shows no
+    /// install in flight, both pass the duplicate and concurrency checks, and both start an Action1
+    /// deployment.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> DeviceGates = new(StringComparer.OrdinalIgnoreCase);
+
     public async Task<InstallRecord> CreateAsync(DeviceRecord device, string appId, CancellationToken ct)
+    {
+        var gate = DeviceGates.GetOrAdd(device.Name, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            return await CreateCoreAsync(device, appId, ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<InstallRecord> CreateCoreAsync(DeviceRecord device, string appId, CancellationToken ct)
     {
         var app = catalog.Find(appId)
                   ?? throw new InstallRejectedException(InstallRejection.UnknownApp, $"'{appId}' is not in the catalog.");

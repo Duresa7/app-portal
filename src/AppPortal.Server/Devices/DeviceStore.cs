@@ -29,18 +29,20 @@ public sealed class DeviceStore
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     private readonly string _path;
+    private readonly ILogger<DeviceStore>? _logger;
     private readonly object _gate = new();
     private DevicesFile _file = new();
     private DateTime _loadedStamp = DateTime.MinValue;
 
-    public DeviceStore(IOptions<PortalOptions> options, IHostEnvironment env)
-        : this(Path.IsPathRooted(options.Value.DevicesPath) ? options.Value.DevicesPath : Path.Combine(env.ContentRootPath, options.Value.DevicesPath))
+    public DeviceStore(IOptions<PortalOptions> options, IHostEnvironment env, ILogger<DeviceStore> logger)
+        : this(Path.IsPathRooted(options.Value.DevicesPath) ? options.Value.DevicesPath : Path.Combine(env.ContentRootPath, options.Value.DevicesPath), logger)
     {
     }
 
-    public DeviceStore(string path)
+    public DeviceStore(string path, ILogger<DeviceStore>? logger = null)
     {
         _path = path;
+        _logger = logger;
     }
 
     public string Path_ => _path;
@@ -145,7 +147,17 @@ public sealed class DeviceStore
             return;
         }
 
-        _file = JsonSerializer.Deserialize<DevicesFile>(File.ReadAllText(_path), Json) ?? new DevicesFile();
+        try
+        {
+            _file = JsonSerializer.Deserialize<DevicesFile>(File.ReadAllText(_path), Json) ?? new DevicesFile();
+        }
+        catch (Exception ex) when (ex is JsonException or IOException)
+        {
+            // A half-written or unreadable file must not throw out of Authenticate, which would make
+            // every API request fail with an unhandled exception. Keep serving the last good list.
+            _logger?.LogError(ex, "Device file {Path} could not be read; keeping the previously loaded devices", _path);
+        }
+
         _loadedStamp = stamp;
     }
 
@@ -157,7 +169,10 @@ public sealed class DeviceStore
             Directory.CreateDirectory(directory);
         }
 
-        File.WriteAllText(_path, JsonSerializer.Serialize(_file, Json));
+        // Write then rename, so a crash mid-write cannot leave a truncated device file behind.
+        var temp = _path + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(_file, Json));
+        File.Move(temp, _path, overwrite: true);
         _loadedStamp = File.GetLastWriteTimeUtc(_path);
     }
 }

@@ -142,6 +142,12 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             ErrorMessage = ex.Message;
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // This runs from a timer tick, so anything that escapes here would reach the dispatcher
+            // as an unhandled exception and end the process. Show it instead.
+            ErrorMessage = "Something went wrong talking to the App Portal server. " + ex.Message;
+        }
         finally
         {
             IsBusy = false;
@@ -160,6 +166,18 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     private async Task TickAsync()
+    {
+        try
+        {
+            await TickCoreAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    private async Task TickCoreAsync()
     {
         // Poll faster while something is installing; otherwise every few ticks is enough.
         if (IsDemo || ActiveInstallCount > 0 || LastRefreshed is null || DateTimeOffset.Now - LastRefreshed > TimeSpan.FromSeconds(60))
@@ -189,6 +207,10 @@ public sealed partial class MainViewModel : ViewModelBase
         catch (PortalApiException ex)
         {
             item.LastError = ex.Message;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            item.LastError = "The request could not be sent. " + ex.Message;
         }
         finally
         {

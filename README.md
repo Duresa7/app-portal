@@ -121,6 +121,15 @@ All routes except `/healthz` need `Authorization: Bearer <device token>`.
 | `GET /api/v1/installs/{id}` | One install request, refreshed |
 | `POST /api/v1/installs` | `{ "appId": "..." }`, answers 202 with the record; 404 unknown app, 409 already in progress, 422 no matching package version, 429 too many active, 502 Action1 refused |
 
+## Reliability notes
+
+A few behaviours are deliberate and were put in after a review found the failure they prevent:
+
+- **One install request per device at a time wins.** `InstallService.CreateAsync` takes a per-device gate, so two overlapping requests cannot both pass the duplicate and concurrency checks and start two Action1 deployments.
+- **A finished install stays finished.** The background poller and every client refresh update the same record from their own snapshots. `InstallStore.Upsert` drops a write that carries an older `LastCheckedAt` than what is stored, and never moves a terminal state back to active.
+- **A damaged device file does not take the API down.** `devices.json` is written to a temporary file and renamed, and a file that fails to parse is logged while the last good device list keeps serving.
+- **The client does not die on a bad response.** An empty body or an unexpected content type, which a reverse proxy can produce, surfaces as a message in the window rather than an unhandled exception from a timer callback. Anything that still escapes is appended to `%LocalAppData%\AppPortal\client.log`.
+
 ## Limits
 
 - One catalog for all devices. Per-device or per-group catalogs are not implemented.

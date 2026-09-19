@@ -81,22 +81,40 @@ public sealed class InstallStore
         }
     }
 
-    public void Upsert(InstallRecord record)
+    /// <summary>
+    /// Writes a record, unless the caller is working from an older snapshot than what is stored.
+    /// The background poller and any number of HTTP requests refresh the same install concurrently,
+    /// each from its own snapshot and its own round trip to Action1. Without this guard a slow
+    /// earlier call can land after a fast later one and push a finished install back to Running.
+    /// Returns false when the write was dropped as stale.
+    /// </summary>
+    public bool Upsert(InstallRecord record)
     {
         lock (_gate)
         {
             var records = Load();
             var index = records.FindIndex(r => r.Id == record.Id);
-            if (index >= 0)
-            {
-                records[index] = Clone(record);
-            }
-            else
+            if (index < 0)
             {
                 records.Add(Clone(record));
+                Save(records);
+                return true;
             }
 
+            var stored = records[index];
+            if (!stored.IsActive && record.IsActive)
+            {
+                return false;
+            }
+
+            if (stored.LastCheckedAt is { } storedChecked && record.LastCheckedAt is { } incoming && incoming < storedChecked)
+            {
+                return false;
+            }
+
+            records[index] = Clone(record);
             Save(records);
+            return true;
         }
     }
 

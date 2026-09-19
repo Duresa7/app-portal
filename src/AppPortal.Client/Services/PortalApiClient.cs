@@ -62,16 +62,40 @@ public sealed class PortalApiClient : IPortalApiClient
     {
         using var response = await SendAsync(() => _http.PostAsJsonAsync(ApiRoutes.Installs.TrimStart('/'), new CreateInstallRequest(appId), Json, ct), ct);
         await ThrowIfFailedAsync(response, ct);
-        return await response.Content.ReadFromJsonAsync<InstallRequest>(Json, ct)
-               ?? throw new PortalApiException("The server returned an empty install record.");
+        return await ReadAsync<InstallRequest>(response, ct);
     }
 
     private async Task<T> GetAsync<T>(string route, CancellationToken ct)
     {
         using var response = await SendAsync(() => _http.GetAsync(route.TrimStart('/'), ct), ct);
         await ThrowIfFailedAsync(response, ct);
-        return await response.Content.ReadFromJsonAsync<T>(Json, ct)
-               ?? throw new PortalApiException("The server returned an empty response.");
+        return await ReadAsync<T>(response, ct);
+    }
+
+    /// <summary>
+    /// An empty body throws JsonException rather than deserializing to null, and a proxy in front of
+    /// the server can answer with a content type System.Text.Json refuses. Both have to come back as
+    /// a PortalApiException, or they escape the caller and take the process with them.
+    /// </summary>
+    private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            return await response.Content.ReadFromJsonAsync<T>(Json, ct)
+                   ?? throw new PortalApiException("The server returned an empty response.");
+        }
+        catch (JsonException)
+        {
+            throw new PortalApiException("The server returned a response this app could not read.");
+        }
+        catch (NotSupportedException)
+        {
+            throw new PortalApiException("The server returned an unexpected content type. Check the server address.");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new PortalApiException("The connection dropped while reading the response. " + ex.Message);
+        }
     }
 
     private static async Task<HttpResponseMessage> SendAsync(Func<Task<HttpResponseMessage>> send, CancellationToken ct)

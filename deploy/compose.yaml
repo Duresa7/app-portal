@@ -13,7 +13,8 @@ services:
     env_file:
       - server.env
     ports:
-      - "8080:8080"
+      # APP_PORTAL_BIND pins the listener to one interface, for example 192.168.40.35:3004
+      - "${APP_PORTAL_BIND:-8080}:8080"
     volumes:
       - ./config:/app/config:ro
       - app-portal-data:/app/data

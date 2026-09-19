@@ -28,7 +28,7 @@ The client follows the Windows 11 design language: a two-layer NavigationView la
 3. The server polls the automation's endpoint result and records Queued, Running, Succeeded, Failed or Cancelled. The client shows progress on the card and the full history under Activity.
 4. Installed shows what Action1's software inventory reports for the device, matched back to catalog entries.
 
-The Action1 API credential lives only on the server, injected from 1Password at start. A device token can request installs of catalog apps on its own endpoint and nothing else.
+The Action1 API credential lives only on the server, supplied through its environment at start. A device token can request installs of catalog apps on its own endpoint and nothing else.
 
 ## Why this exists
 
@@ -59,36 +59,10 @@ Demo mode fills the whole interface with sample data held in memory. Installs ad
 
 ## Server setup
 
-Requirements: Docker, the 1Password CLI, and an Action1 API credential.
+Requirements: Docker and an Action1 API credential. A secrets manager whose CLI can render an environment file from references is the comfortable way to keep the credential, but any way of writing three lines into a mode-600 file works.
 
-1. **Create the API credential** in the Action1 console under Configuration, API Credentials. Copy the Client ID and Client Secret into a 1Password item together with your organization ID (the `org=` value in the console URL). The server needs `view_endpoints`, `view_software_repository`, `view_installed_software`, `view_automations` and `run_automations`.
-2. **Render the environment file** from the template. The op:// references in `deploy/server.env.example` point at that item; adjust the vault, item and field names, then:
-   ```bash
-   op inject -i deploy/server.env.example -o deploy/server.env
-   ```
-   `server.env` is gitignored. Set `Action1__BaseUrl` to your region, for example `https://app.na-2.action1.com/api/3.0`. Copy `deploy/env.example` to `deploy/.env` as well and set `APP_PORTAL_BIND` to the interface and port you want, for example `192.0.2.10:8080`. Compose only interpolates from `.env`, so that one variable cannot live in `server.env`.
-3. **Write the catalog** in `deploy/config/catalog.json`. See [deploy/config/README.md](deploy/config/README.md). Package IDs must exist in your Software Repository; the checked-in file is a starting point, not a verified list.
-4. **Start the server**:
-   ```bash
-   docker compose -f deploy/compose.yaml up -d --build
-   docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll catalog verify
-   ```
-   `catalog verify` resolves every package against Action1 and exits non-zero if one is missing.
-5. **Register a device.** Find the endpoint ID in the Action1 console (the endpoint's URL) and run:
-   ```bash
-   docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll device add --name OBIPC --endpoint-id <endpoint-id>
-   ```
-   The token prints once. Store it in 1Password; the server keeps only its SHA-256, in `devices.json` inside the data volume.
-
-Put the server behind TLS (a reverse proxy or your tunnel) before a device on another network uses it. The token is a bearer secret.
-
-## Client deployment
-
-The CI workflow publishes `AppPortal-client-win-x64.zip`: a self-contained build plus `Install-AppPortalClient.ps1`. Deploy it through Action1 as a custom package (or run it as SYSTEM any other way):
-
-```powershell
-.\Install-AppPortalClient.ps1 -ServerUrl https://portal.example.internal -DeviceToken <token>
-```
+1. **Create the API credential** in the Action1 console under Configuration, API Credentials. Store the Client ID and Client Secret in your secrets manager together with your organization ID (the `org=` value in the console URL). The server needs `view_endpoints`, `view_software_repository`, `view_installed_software`, `view_automations` and `run_automations`.
+2. **Write the environment file.** Copy `deploy/server.env.example` to `deploy/server.env`, which is gitignored, and fill in the three `Action1__` values, either by hand or by rendering the file from your secrets manager's references. Keep it mode 600; it is the only place the credential exists on the host.
 
 The script copies the client to `%ProgramFiles%\App Portal`, writes `%ProgramData%\AppPortal\client.json` readable by Users and writable only by Administrators, adds a Start menu shortcut for all users, registers an uninstall entry, and registers the updater task described next. Pass the token through the RMM's secret parameter rather than embedding it in the package.
 

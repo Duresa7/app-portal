@@ -34,6 +34,7 @@
             <Color x:Key="SystemFillColorCritical">#C42B1C</Color>
             <Color x:Key="SystemFillColorSuccessBackground">#DFF6DD</Color>
             <Color x:Key="SystemFillColorCautionBackground">#FFF4CE</Color>
+            <Color x:Key="SystemFillColorAttention">#005FB7</Color>
             <Color x:Key="SystemFillColorCriticalBackground">#FDE7E9</Color>
             <Color x:Key="SystemFillColorAttentionBackground">#F6F6F6</Color>
             <Color x:Key="ControlStrongFillColorDefault">#8A000000</Color>
@@ -70,6 +71,7 @@
             <Color x:Key="SystemFillColorCritical">#FF99A4</Color>
             <Color x:Key="SystemFillColorSuccessBackground">#393D1B</Color>
             <Color x:Key="SystemFillColorCautionBackground">#433519</Color>
+            <Color x:Key="SystemFillColorAttention">#60CDFF</Color>
             <Color x:Key="SystemFillColorCriticalBackground">#442726</Color>
             <Color x:Key="SystemFillColorAttentionBackground">#08FFFFFF</Color>
             <Color x:Key="ControlStrongFillColorDefault">#8BFFFFFF</Color>
@@ -107,6 +109,8 @@
     <SolidColorBrush x:Key="SystemFillColorCriticalBrush" Color="{DynamicResource SystemFillColorCritical}" />
     <SolidColorBrush x:Key="SystemFillColorSuccessBackgroundBrush" Color="{DynamicResource SystemFillColorSuccessBackground}" />
     <SolidColorBrush x:Key="SystemFillColorCautionBackgroundBrush" Color="{DynamicResource SystemFillColorCautionBackground}" />
+    <SolidColorBrush x:Key="SystemFillColorAttentionBrush" Color="{DynamicResource SystemFillColorAttention}" />
+    <SolidColorBrush x:Key="SystemFillColorAttentionBackgroundBrush" Color="{DynamicResource SystemFillColorAttentionBackground}" />
     <SolidColorBrush x:Key="SystemFillColorCriticalBackgroundBrush" Color="{DynamicResource SystemFillColorCriticalBackground}" />
 
     <!-- Geometry: 4px for in-page controls, 8px for containers (Windows 11 geometry guidance) -->
@@ -126,5 +130,6 @@
     <StreamGeometry x:Key="IconCheck">M20.61 5.2a.75.75 0 0 1 .19 1.04l-9.5 13.5a.75.75 0 0 1-1.15.1l-6-6a.75.75 0 1 1 1.06-1.06l5.36 5.36 8.99-12.76a.75.75 0 0 1 1.05-.18Z</StreamGeometry>
     <StreamGeometry x:Key="IconError">M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 1.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17Zm0 11.5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm0-8.25a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5A.75.75 0 0 1 12 6.75Z</StreamGeometry>
     <StreamGeometry x:Key="IconDevice">M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-6v2h3a.75.75 0 0 1 0 1.5h-10A.75.75 0 0 1 7 19h3v-2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 1.5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h16a.5.5 0 0 0 .5-.5V6a.5.5 0 0 0-.5-.5H4Z</StreamGeometry>
+    <StreamGeometry x:Key="IconUpdate">M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 1.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17Zm-.53 3.72a.75.75 0 0 1 1.06 0l3.5 3.5a.75.75 0 1 1-1.06 1.06l-2.22-2.22V16.5a.75.75 0 0 1-1.5 0V9.56l-2.22 2.22a.75.75 0 1 1-1.06-1.06l3.5-3.5Z</StreamGeometry>
     <StreamGeometry x:Key="IconWarning">M10.91 3.65a1.25 1.25 0 0 1 2.18 0l8.6 15.13A1.25 1.25 0 0 1 20.6 20.6H3.4a1.25 1.25 0 0 1-1.09-1.87l8.6-15.13ZM12 4.5 3.66 19.1h16.68L12 4.5Zm0 11.25a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm0-7.25a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-1.5 0v-4A.75.75 0 0 1 12 8.5Z</StreamGeometry>
 </ResourceDictionary>

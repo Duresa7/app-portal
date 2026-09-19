@@ -36,22 +36,42 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - name: Version from the tag
+        id: version
+        run: |
+          # A release build carries the tag's version so the updater can compare it with what is installed.
+          # Any other build keeps the version in Directory.Build.props.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "args=-p:Version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish self-contained win-x64
         run: |
-          dotnet publish src/AppPortal.Client -c Release -r win-x64 --self-contained -o out/client
+          dotnet publish src/AppPortal.Client  -c Release -r win-x64 --self-contained ${{ steps.version.outputs.args }} -o out/client
+          dotnet publish src/AppPortal.Updater -c Release -r win-x64 --self-contained ${{ steps.version.outputs.args }} -o out/updater
           mkdir -p out/package/client
           cp -r out/client/. out/package/client/
+          # The updater is one self-contained file that sits beside the client and replaces it.
+          cp out/updater/AppPortal.Updater.exe out/package/client/
+          # The scripts ride inside client/ too, so an update keeps the uninstall entry's target present.
           cp deploy/windows/Install-AppPortalClient.ps1 deploy/windows/Uninstall-AppPortalClient.ps1 out/package/
+          cp deploy/windows/Uninstall-AppPortalClient.ps1 out/package/client/
           cd out/package && zip -qr ../AppPortal-client-win-x64.zip .
+          cd .. && sha256sum AppPortal-client-win-x64.zip > SHA256SUMS && cat SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: AppPortal-client-win-x64
-          path: out/AppPortal-client-win-x64.zip
+          path: |
+            out/AppPortal-client-win-x64.zip
+            out/SHA256SUMS
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: out/AppPortal-client-win-x64.zip
+          files: |
+            out/AppPortal-client-win-x64.zip
+            out/SHA256SUMS
           generate_release_notes: true
 
   server-image:

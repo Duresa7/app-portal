@@ -6,6 +6,8 @@
     Meant to run as SYSTEM from an Action1 (or any RMM) deployment, with the published client folder beside this script.
     The client goes to %ProgramFiles%\App Portal so that an AppLocker allow rule on Program Files covers it.
     The device token is written to %ProgramData%\AppPortal\client.json, readable by Users, writable only by administrators.
+    A scheduled task, "App Portal Updater", runs AppPortal.Updater.exe as SYSTEM at boot, at logon and daily; it replaces the
+    client with the newest GitHub release after verifying the archive's SHA-256. Signed-in users may start the task, not change it.
 
 .PARAMETER ServerUrl
     Base URL of the App Portal server, for example http://portal.ad.example.com:8080
@@ -69,5 +71,27 @@ Set-ItemProperty -Path $reg -Name NoModify -Value 1 -Type DWord
 Set-ItemProperty -Path $reg -Name NoRepair -Value 1 -Type DWord
 
 Copy-Item -Path (Join-Path $PSScriptRoot 'Uninstall-AppPortalClient.ps1') -Destination $installDir -Force -ErrorAction SilentlyContinue
+
+# Automatic updates: a SYSTEM task, because only SYSTEM or an administrator can write to Program Files,
+# and the person at the keyboard is neither. Users may run the task (the client's "Update now" button)
+# through the GRGX grant on its security descriptor; they cannot edit or delete it.
+$updater = Join-Path $installDir 'AppPortal.Updater.exe'
+if (Test-Path $updater) {
+    $taskName = 'App Portal Updater'
+    $action   = New-ScheduledTaskAction -Execute $updater -WorkingDirectory $installDir
+    $atBoot   = New-ScheduledTaskTrigger -AtStartup
+    $atBoot.Delay = 'PT5M'
+    $atLogon  = New-ScheduledTaskTrigger -AtLogOn
+    $atLogon.Delay = 'PT1M'
+    $daily    = New-ScheduledTaskTrigger -Daily -At 12:00 -RandomDelay (New-TimeSpan -Hours 1)
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($atBoot, $atLogon, $daily) -Settings $settings -Principal $principal `
+        -Description 'Keeps App Portal current from its GitHub releases. Safe to run by hand.' -Force | Out-Null
+    $scheduler = New-Object -ComObject Schedule.Service
+    $scheduler.Connect()
+    $scheduler.GetFolder('\').GetTask($taskName).SetSecurityDescriptor('D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;AU)', 0)
+    Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+}
 
 Write-Output "App Portal $version installed to '$installDir'; configuration at '$configPath'."

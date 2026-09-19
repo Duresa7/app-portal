@@ -81,6 +81,7 @@
                             <TextBlock Text="Refresh" />
                         </StackPanel>
                     </Button>
+                    <TextBlock Text="{Binding AppVersionText}" Classes="caption" HorizontalAlignment="Center" />
                 </StackPanel>
             </Border>
             <Panel />
@@ -98,6 +99,20 @@
                             <PathIcon Data="{StaticResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
                             <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" MaxWidth="700" />
                         </StackPanel>
+                    </Border>
+                    <Border Classes="infoBar informational" IsVisible="{Binding UpdateReady}">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <PathIcon Grid.Column="0" Data="{StaticResource IconUpdate}" Foreground="{DynamicResource SystemFillColorAttentionBrush}" />
+                            <TextBlock Grid.Column="1" Text="{Binding UpdateText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            <Button Grid.Column="2" Classes="accent" Content="Restart to update" Command="{Binding RestartToUpdateCommand}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <Border Classes="infoBar informational" IsVisible="{Binding UpdateAvailable}">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <PathIcon Grid.Column="0" Data="{StaticResource IconUpdate}" Foreground="{DynamicResource SystemFillColorAttentionBrush}" />
+                            <TextBlock Grid.Column="1" Text="{Binding UpdateText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            <Button Grid.Column="2" Classes="standard" Content="Update now" Command="{Binding UpdateNowCommand}" IsEnabled="{Binding !UpdateRequested}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                        </Grid>
                     </Border>
                     <Border Classes="infoBar caution" IsVisible="{Binding IsDemo}">
                         <StackPanel Orientation="Horizontal">

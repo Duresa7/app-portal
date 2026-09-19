@@ -9,9 +9,6 @@
     <RootNamespace>AppPortal.Client</RootNamespace>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationIcon>Assets/app-portal.ico</ApplicationIcon>
-    <Version>0.1.0</Version>
-    <Product>App Portal</Product>
-    <Company>Duresa Kadi</Company>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
   </PropertyGroup>

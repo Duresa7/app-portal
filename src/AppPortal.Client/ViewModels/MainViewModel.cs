@@ -6,6 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using AppPortal.Client.Services;
 using AppPortal.Shared;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -35,6 +37,8 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             _timer.Start();
         }
+
+        ReadUpdateStatus();
     }
 
     public bool IsConfigured { get; }
@@ -43,6 +47,48 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool IsDemo { get; }
 
     public string ConfigPath { get; }
+
+    public string AppVersion { get; } = UpdateStatusReader.RunningVersion;
+
+    public string AppVersionText => $"App Portal {AppVersion}";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateReady), nameof(UpdateAvailable), nameof(UpdateText))]
+    private UpdateStatus? _updateStatus;
+
+    /// <summary>Set after the user asks for an update, so the banner can show progress until the updater reports back.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateAvailable), nameof(UpdateText))]
+    private bool _updateRequested;
+
+    /// <summary>A newer build is downloaded and verified; one restart finishes it.</summary>
+    public bool UpdateReady => !IsDemo && VersionText.IsNewer(UpdateStatus?.StagedVersion, AppVersion);
+
+    /// <summary>A newer build is published but not yet on this machine.</summary>
+    public bool UpdateAvailable => !IsDemo && !UpdateReady && VersionText.IsNewer(UpdateStatus?.LatestVersion, AppVersion);
+
+    public string UpdateText
+    {
+        get
+        {
+            if (UpdateReady)
+            {
+                return $"App Portal {UpdateStatus!.StagedVersion} is ready. Restart the app to finish updating.";
+            }
+
+            if (UpdateRequested && UpdateStatus?.Result == UpdateResult.Failed)
+            {
+                return $"The update did not complete. {UpdateStatus.Message}";
+            }
+
+            if (UpdateRequested)
+            {
+                return $"Downloading App Portal {UpdateStatus?.LatestVersion}. This takes a moment.";
+            }
+
+            return $"App Portal {UpdateStatus?.LatestVersion} is available. It installs on its own within a day, or now if you like.";
+        }
+    }
 
     public ObservableCollection<AppItemViewModel> Apps { get; } = [];
     public ObservableCollection<AppItemViewModel> FilteredApps { get; } = [];
@@ -165,6 +211,39 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private void UpdateNow()
+    {
+        UpdateRequested = UpdateStatusReader.RequestUpdate();
+        if (!UpdateRequested)
+        {
+            ErrorMessage = "The updater could not be started. An administrator can run the \"App Portal Updater\" task in Task Scheduler.";
+        }
+    }
+
+    /// <summary>Asks the updater to run and then exits, since the swap waits for this process to be gone.</summary>
+    [RelayCommand]
+    private async Task RestartToUpdateAsync()
+    {
+        if (!UpdateStatusReader.RequestUpdate())
+        {
+            ErrorMessage = "The updater could not be started. An administrator can run the \"App Portal Updater\" task in Task Scheduler.";
+            return;
+        }
+
+        await Task.Delay(300);
+        (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+    }
+
+    private void ReadUpdateStatus()
+    {
+        var status = UpdateStatusReader.Read();
+        if (status != UpdateStatus)
+        {
+            UpdateStatus = status;
+        }
+    }
+
     private async Task TickAsync()
     {
         try
@@ -179,6 +258,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task TickCoreAsync()
     {
+        ReadUpdateStatus();
         // Poll faster while something is installing; otherwise every few ticks is enough.
         if (IsDemo || ActiveInstallCount > 0 || LastRefreshed is null || DateTimeOffset.Now - LastRefreshed > TimeSpan.FromSeconds(60))
         {

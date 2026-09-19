@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- One version for every project. CI overrides it from the release tag: -p:Version=1.2.3 -->
+    <Version>0.2.0</Version>
+    <Company>Duresa Kadi</Company>
+    <Product>App Portal</Product>
+  </PropertyGroup>
+</Project>

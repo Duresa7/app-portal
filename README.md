@@ -51,7 +51,9 @@ Demo mode fills the whole interface with sample data held in memory. Installs ad
 | `src/AppPortal.Shared` | API contracts shared by client and server |
 | `src/AppPortal.Server` | ASP.NET Core minimal API, Action1 client, catalog and device stores, CLI |
 | `src/AppPortal.Client` | Avalonia desktop client (Windows target; runs on Linux for development) |
+| `src/AppPortal.Updater` | Self-contained updater run by a SYSTEM scheduled task; replaces the client from GitHub releases |
 | `tests/AppPortal.Server.Tests` | xUnit tests against an in-memory Action1 stand-in |
+| `tests/AppPortal.Updater.Tests` | xUnit tests for version parsing, checksum parsing and the file swap |
 | `deploy/` | Dockerfile, compose file, environment template, Windows install script |
 | `docs/` | Screenshots and design notes |
 
@@ -88,7 +90,23 @@ The CI workflow publishes `AppPortal-client-win-x64.zip`: a self-contained build
 .\Install-AppPortalClient.ps1 -ServerUrl https://portal.example.internal -DeviceToken <token>
 ```
 
-The script copies the client to `%ProgramFiles%\App Portal`, writes `%ProgramData%\AppPortal\client.json` readable by Users and writable only by Administrators, adds a Start menu shortcut for all users, and registers an uninstall entry. Pass the token through the RMM's secret parameter rather than embedding it in the package.
+The script copies the client to `%ProgramFiles%\App Portal`, writes `%ProgramData%\AppPortal\client.json` readable by Users and writable only by Administrators, adds a Start menu shortcut for all users, registers an uninstall entry, and registers the updater task described next. Pass the token through the RMM's secret parameter rather than embedding it in the package.
+
+## Updates
+
+Deploy the client once. After that it keeps itself current from this repository's releases.
+
+`AppPortal.Updater.exe` sits beside the client and runs from a scheduled task, **App Portal Updater**, as SYSTEM: five minutes after boot, a minute after any logon, once a day at a random time between noon and one, and whenever a user presses the update button in the client. Each run:
+
+1. Asks `api.github.com` for the latest release and compares its tag with the installed `AppPortal.exe` version.
+2. Downloads `AppPortal-client-win-x64.zip` while hashing it, fetches `SHA256SUMS` from the same release, and discards the archive on any mismatch. A release without checksums is refused.
+3. Unpacks the archive's `client` folder into `%ProgramFiles%\App Portal\.staged`.
+4. If no client from that folder is running, moves the current files into `.previous`, moves the staged files into place, and updates the uninstall entry's version. Windows lets a running executable be renamed but not overwritten, which is why the swap is two moves and why the updater can replace itself. If anything fails half-way, the old files move back.
+5. Writes `%ProgramData%\AppPortal\update.json` and appends to `updater.log` in the same folder.
+
+The client never touches the release feed. It reads `update.json` and shows one of two banners: *available*, with an **Update now** button that starts the task; or *ready*, once a build is staged, with **Restart to update**, which starts the task and exits so the swap can proceed. The task's security descriptor grants Authenticated Users read and execute, so a standard user can start it and nothing else; only SYSTEM and Administrators can write to Program Files, so nothing a user controls can put a build on the machine. A client that is left open is never killed: the swap waits for the next run.
+
+What the checksum does and does not prove: it catches a truncated or corrupted download and a mismatch between the archive and what CI published. It does not defend against a compromised GitHub account, because the checksums come from the same release. The releases are unsigned; that is the next thing to add. To point installations at a fork, add `"updateRepository": "owner/name"` to `client.json`. Run `AppPortal.Updater.exe --check` from an elevated prompt to look without changing anything.
 
 ## Development
 
@@ -105,6 +123,8 @@ The Development environment uses `Action1:Mode=Fake`: an in-memory Action1 whose
 cd src/AppPortal.Client
 APPPORTAL_SERVER_URL=http://127.0.0.1:5080 APPPORTAL_DEVICE_TOKEN=<token> dotnet run
 ```
+
+The version every project carries is in `Directory.Build.props`; a release build gets the tag's version from CI through `-p:Version=`, and the updater compares that with the installed file version, so tag `v0.3.0` must ship binaries that report 0.3.0.
 
 `dotnet run -- --screenshot out.png 2 --theme dark` renders a section (0 apps, 1 installed, 2 activity) in the chosen theme to a PNG and exits, which is how the images in `docs/` were produced under Xvfb.
 
@@ -135,6 +155,7 @@ A few behaviours are deliberate and were put in after a review found the failure
 - One catalog for all devices. Per-device or per-group catalogs are not implemented.
 - Uninstall is not offered to the user; Action1 supports it and the server could expose it later.
 - Device tokens do not expire. Rotate one by running `device add` again for the same name.
+- Updates come only from GitHub releases over HTTPS, verified by SHA-256 but not signed. A machine without internet access keeps the build it has.
 - Action1's API is rate limited (HTTP 429). The server polls active installs every 30 seconds by default; keep the catalog small and the device count modest.
 
 ## License

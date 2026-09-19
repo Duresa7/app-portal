@@ -494,3 +494,11 @@ deploy/config/catalog.local.json
 client.json
 *.pfx
 .scratch/
+
+# Local agent instructions and per-machine configuration overrides
+AGENTS.md
+CLAUDE.md
+.claude/settings.local.json
+src/**/appsettings.Local.json
+src/**/appsettings.Production.json
+secrets.json

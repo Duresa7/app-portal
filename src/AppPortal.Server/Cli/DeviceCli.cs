@@ -18,20 +18,20 @@ public static class DeviceCli
         switch (args[1])
         {
             case "add":
-            {
-                var name = Option(args, "--name");
-                var endpointId = Option(args, "--endpoint-id");
-                if (name is null || endpointId is null)
                 {
-                    return Usage(output);
-                }
+                    var name = Option(args, "--name");
+                    var endpointId = Option(args, "--endpoint-id");
+                    if (name is null || endpointId is null)
+                    {
+                        return Usage(output);
+                    }
 
-                var token = store.Add(name, endpointId);
-                output.WriteLine($"Device '{name}' registered for endpoint {endpointId}.");
-                output.WriteLine("Device token (shown once):");
-                output.WriteLine(token);
-                return 0;
-            }
+                    var token = store.Add(name, endpointId);
+                    output.WriteLine($"Device '{name}' registered for endpoint {endpointId}.");
+                    output.WriteLine("Device token (shown once):");
+                    output.WriteLine(token);
+                    return 0;
+                }
 
             case "list":
                 foreach (var device in store.All())
@@ -42,16 +42,16 @@ public static class DeviceCli
                 return 0;
 
             case "remove":
-            {
-                var name = Option(args, "--name");
-                if (name is null)
                 {
-                    return Usage(output);
-                }
+                    var name = Option(args, "--name");
+                    if (name is null)
+                    {
+                        return Usage(output);
+                    }
 
-                output.WriteLine(store.Remove(name) ? $"Removed '{name}'." : $"No device named '{name}'.");
-                return 0;
-            }
+                    output.WriteLine(store.Remove(name) ? $"Removed '{name}'." : $"No device named '{name}'.");
+                    return 0;
+                }
 
             default:
                 return Usage(output);

@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 using AppPortal.Server.Options;
 using AppPortal.Shared;
+
 using Microsoft.Extensions.Options;
 
 namespace AppPortal.Server.Catalog;

@@ -1,15 +1,17 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+
+using AppPortal.Client.Services;
+using AppPortal.Client.ViewModels;
+using AppPortal.Client.Views;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
-using AppPortal.Client.Services;
-using AppPortal.Client.ViewModels;
-using AppPortal.Client.Views;
 
 namespace AppPortal.Client;
 

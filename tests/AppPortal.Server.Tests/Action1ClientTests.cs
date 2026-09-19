@@ -1,7 +1,9 @@
 using System.Net;
 using System.Text;
+
 using AppPortal.Server.Action1;
 using AppPortal.Server.Options;
+
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 

@@ -1,4 +1,5 @@
 using AppPortal.Server.Options;
+
 using Microsoft.Extensions.Options;
 
 namespace AppPortal.Server.Installs;

@@ -1,8 +1,11 @@
 using System;
 using System.Threading.Tasks;
+
 using AppPortal.Shared;
+
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 

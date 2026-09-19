@@ -6,6 +6,7 @@ using AppPortal.Server.Devices;
 using AppPortal.Server.Installs;
 using AppPortal.Server.Options;
 using AppPortal.Shared;
+
 using Microsoft.Extensions.Options;
 
 if (args.Length > 0 && args[0] == "healthcheck")

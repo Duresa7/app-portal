@@ -488,6 +488,8 @@ data/
 *.env
 !*.env.example
 deploy/config/devices.json
+deploy/.env
+deploy/server.env
 deploy/config/catalog.local.json
 client.json
 *.pfx

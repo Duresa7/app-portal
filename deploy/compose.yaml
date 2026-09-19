@@ -1,7 +1,12 @@
 # App Portal server. Build from the repository root:
 #   docker compose -f deploy/compose.yaml up -d --build
-# Secrets come from the environment file, which is generated from 1Password references and never committed:
-#   op inject -i deploy/server.env.example -o deploy/server.env
+#
+# Two files sit beside this one, both gitignored:
+#   server.env  container environment, including the Action1 API credential. Render it from
+#               1Password references: op inject -i deploy/server.env.example -o deploy/server.env
+#   .env        compose variable interpolation, read only by compose itself. It sets
+#               APP_PORTAL_BIND, for example APP_PORTAL_BIND=192.168.40.35:3004. Compose does not
+#               interpolate from env_file, so the bind address cannot live in server.env.
 services:
   app-portal:
     build:

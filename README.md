@@ -54,7 +54,7 @@ Requirements: Docker, the 1Password CLI, and an Action1 API credential.
    ```bash
    op inject -i deploy/server.env.example -o deploy/server.env
    ```
-   `server.env` is gitignored. Set `Action1__BaseUrl` to your region, for example `https://app.na-2.action1.com/api/3.0`.
+   `server.env` is gitignored. Set `Action1__BaseUrl` to your region, for example `https://app.na-2.action1.com/api/3.0`. Copy `deploy/env.example` to `deploy/.env` as well and set `APP_PORTAL_BIND` to the interface and port you want, for example `192.168.40.35:3004`. Compose only interpolates from `.env`, so that one variable cannot live in `server.env`.
 3. **Write the catalog** in `deploy/config/catalog.json`. See [deploy/config/README.md](deploy/config/README.md). Package IDs must exist in your Software Repository; the checked-in file is a starting point, not a verified list.
 4. **Start the server**:
    ```bash

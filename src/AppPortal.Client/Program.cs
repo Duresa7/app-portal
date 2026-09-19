@@ -1,7 +1,8 @@
-﻿using Avalonia;
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
+
+using Avalonia;
 
 namespace AppPortal.Client;
 

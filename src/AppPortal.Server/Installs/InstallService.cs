@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
+
 using AppPortal.Server.Action1;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Options;
 using AppPortal.Shared;
+
 using Microsoft.Extensions.Options;
 
 namespace AppPortal.Server.Installs;

@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+
 using AppPortal.Server.Options;
+
 using Microsoft.Extensions.Options;
 
 namespace AppPortal.Server.Devices;

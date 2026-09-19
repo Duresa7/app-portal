@@ -1,0 +1,6 @@
+# Every text file is stored and checked out with LF. Windows tooling reads LF fine, the Docker build
+# needs LF, and dotnet format enforces the editorconfig's end_of_line on both platforms.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary

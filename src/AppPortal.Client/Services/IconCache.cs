@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
+
 using Avalonia.Media.Imaging;
 
 namespace AppPortal.Client.Services;

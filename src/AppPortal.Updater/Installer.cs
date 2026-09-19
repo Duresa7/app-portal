@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
+
 using AppPortal.Shared;
 
 namespace AppPortal.Updater;

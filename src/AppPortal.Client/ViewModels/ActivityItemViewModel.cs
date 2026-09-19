@@ -1,6 +1,8 @@
 using System;
-using Avalonia.Media;
+
 using AppPortal.Shared;
+
+using Avalonia.Media;
 
 namespace AppPortal.Client.ViewModels;
 

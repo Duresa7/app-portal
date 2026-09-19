@@ -17,7 +17,7 @@ USER app
 ENV ASPNETCORE_URLS=http://+:8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     Portal__CatalogPath=/app/config/catalog.json \
-    Portal__DevicesPath=/app/config/devices.json \
+    Portal__DevicesPath=/app/data/devices.json \
     Portal__DataDirectory=/app/data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["dotnet", "AppPortal.Server.dll", "healthcheck"]

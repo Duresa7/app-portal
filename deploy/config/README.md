@@ -19,4 +19,6 @@
 - `action1.version` is `latest` or an exact published version.
 - `match` tells the portal which installed-software row means "this app is present". It defaults to a case-insensitive `nameContains` on the app name.
 
-`devices.json` is written by `AppPortal.Server device add` and holds device names, endpoint IDs, and SHA-256 hashes of device tokens. It is gitignored. The plaintext token is printed once when the device is added; keep it in the password manager.
+This folder is mounted read-only into the container, because the catalog is configuration rather than state.
+
+The device registry is not here. `AppPortal.Server device add` writes `devices.json` into the data directory, `/app/data` in the container, which is a named volume. It holds device names, endpoint IDs and SHA-256 hashes of device tokens, never a plaintext token. The token is printed once when the device is added; keep it in the password manager.

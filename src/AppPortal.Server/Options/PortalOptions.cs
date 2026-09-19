@@ -6,7 +6,8 @@ public sealed class PortalOptions
 
     public string CatalogPath { get; set; } = "config/catalog.json";
 
-    public string DevicesPath { get; set; } = "config/devices.json";
+    /// <summary>Device registry. This is mutable state, so it belongs with the data, not with the read-only catalog.</summary>
+    public string DevicesPath { get; set; } = "data/devices.json";
 
     public string DataDirectory { get; set; } = "data";
 

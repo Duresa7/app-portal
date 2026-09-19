@@ -66,7 +66,7 @@ Requirements: Docker, the 1Password CLI, and an Action1 API credential.
    ```bash
    docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll device add --name OBIPC --endpoint-id <endpoint-id>
    ```
-   The token prints once. Store it in 1Password; the server keeps only its SHA-256.
+   The token prints once. Store it in 1Password; the server keeps only its SHA-256, in `devices.json` inside the data volume.
 
 Put the server behind TLS (a reverse proxy or your tunnel) before a device on another network uses it. The token is a bearer secret.
 

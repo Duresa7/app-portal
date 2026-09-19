@@ -2,6 +2,7 @@ using AppPortal.Server.Action1;
 using AppPortal.Server.Api;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Cli;
+using AppPortal.Server.Data;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Installs;
 using AppPortal.Server.Options;
@@ -31,6 +32,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOptions<Action1Options>().Bind(builder.Configuration.GetSection(Action1Options.Section));
 builder.Services.AddOptions<PortalOptions>().Bind(builder.Configuration.GetSection(PortalOptions.Section));
 
+builder.Services.AddSingleton<Database>();
+builder.Services.AddSingleton<LegacyImport>();
 builder.Services.AddSingleton<CatalogStore>();
 builder.Services.AddSingleton<DeviceStore>();
 builder.Services.AddSingleton<InstallStore>();
@@ -54,6 +57,21 @@ else
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 var app = builder.Build();
+
+// Before anything reads a store, and before the CLI branches below: the database is the only place
+// catalog, devices and history live, so a file that cannot be opened or migrated is fatal rather than
+// something to serve around with empty data.
+var database = app.Services.GetRequiredService<Database>();
+try
+{
+    database.Migrate();
+    app.Services.GetRequiredService<LegacyImport>().Run();
+}
+catch (Exception ex)
+{
+    app.Logger.LogCritical(ex, "The database at {Path} could not be opened or migrated", database.Path);
+    return 1;
+}
 
 if (args.Length > 0 && args[0] == "device")
 {

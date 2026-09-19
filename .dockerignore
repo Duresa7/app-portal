@@ -1,0 +1,15 @@
+# The build context is the repository root. Without this the host's bin/ and obj/ ride along and
+# overwrite what the image restored, and a build inside the image then looks for packages in the
+# host's NuGet folder. Everything here is either rebuilt in the image or irrelevant to the server.
+**/bin/
+**/obj/
+.git/
+.github/
+.scratch/
+docs/
+tests/
+src/AppPortal.Client/
+src/AppPortal.Updater/
+deploy/server.env
+deploy/.env
+*.md

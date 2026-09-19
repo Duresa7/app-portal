@@ -1,0 +1,99 @@
+using AppPortal.Server.Action1;
+using AppPortal.Server.Catalog;
+using AppPortal.Server.Devices;
+using AppPortal.Server.Installs;
+using AppPortal.Shared;
+
+namespace AppPortal.Server.Api;
+
+public static class PortalEndpoints
+{
+    public static IEndpointRouteBuilder MapPortalApi(this IEndpointRouteBuilder app)
+    {
+        var api = app.MapGroup(ApiRoutes.Prefix);
+
+        api.MapGet("/catalog", (CatalogStore catalog) =>
+            Results.Ok(catalog.Entries.Select(e => e.ToPublic()).ToList()));
+
+        api.MapGet("/device", async (HttpContext context, IAction1Client action1, CancellationToken ct) =>
+        {
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            Action1Endpoint? endpoint = null;
+            try
+            {
+                endpoint = await action1.GetEndpointAsync(device.EndpointId, ct);
+            }
+            catch (Action1Exception)
+            {
+                // The device page still renders without live agent data.
+            }
+
+            return Results.Ok(new DeviceInfo(device.Name, device.EndpointId, endpoint?.Status ?? "Unknown", endpoint?.LastSeen));
+        });
+
+        api.MapGet("/device/installed", async (HttpContext context, InstallService installs, CancellationToken ct) =>
+        {
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            try
+            {
+                return Results.Ok(await installs.InstalledAppsAsync(device, ct));
+            }
+            catch (Action1Exception ex)
+            {
+                return Results.Json(new ErrorMessage(ex.Message), statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        api.MapGet("/installs", async (HttpContext context, InstallService installs, bool? refresh, CancellationToken ct) =>
+        {
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            var records = await installs.ListForDeviceAsync(device, refresh ?? true, ct);
+            return Results.Ok(records.Select(r => r.ToPublic()).ToList());
+        });
+
+        api.MapGet("/installs/{id}", async (HttpContext context, string id, InstallStore store, InstallService installs, CancellationToken ct) =>
+        {
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            var record = store.Find(id);
+            if (record is null || !string.Equals(record.DeviceName, device.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.NotFound(new ErrorMessage("No such install request."));
+            }
+
+            record = await installs.RefreshAsync(record, ct);
+            return Results.Ok(record.ToPublic());
+        });
+
+        api.MapPost("/installs", async (HttpContext context, CreateInstallRequest body, InstallService installs, CancellationToken ct) =>
+        {
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            if (string.IsNullOrWhiteSpace(body.AppId))
+            {
+                return Results.BadRequest(new ErrorMessage("appId is required."));
+            }
+
+            try
+            {
+                var record = await installs.CreateAsync(device, body.AppId, ct);
+                return Results.Accepted($"{ApiRoutes.Installs}/{record.Id}", record.ToPublic());
+            }
+            catch (InstallRejectedException ex)
+            {
+                var status = ex.Reason switch
+                {
+                    InstallRejection.UnknownApp => StatusCodes.Status404NotFound,
+                    InstallRejection.AlreadyInProgress => StatusCodes.Status409Conflict,
+                    InstallRejection.TooManyActive => StatusCodes.Status429TooManyRequests,
+                    _ => StatusCodes.Status422UnprocessableEntity,
+                };
+                return Results.Json(new ErrorMessage(ex.Message), statusCode: status);
+            }
+            catch (Action1Exception ex)
+            {
+                return Results.Json(new ErrorMessage("The management service refused the request: " + ex.Message), statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        return app;
+    }
+}

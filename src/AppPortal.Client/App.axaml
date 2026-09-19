@@ -1,0 +1,20 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AppPortal.Client.App"
+             RequestedThemeVariant="Default">
+
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+    </Application.Styles>
+
+    <Application.Resources>
+        <SolidColorBrush x:Key="PortalAccent" Color="#0F6CBD" />
+        <SolidColorBrush x:Key="PortalCard" Color="#14FFFFFF" />
+        <SolidColorBrush x:Key="PortalCardBorder" Color="#22808080" />
+        <SolidColorBrush x:Key="PortalMuted" Color="#8A8A8A" />
+        <SolidColorBrush x:Key="PortalOk" Color="#2E8B57" />
+        <SolidColorBrush x:Key="PortalWarn" Color="#B8860B" />
+        <SolidColorBrush x:Key="PortalError" Color="#C42B1C" />
+    </Application.Resources>
+</Application>

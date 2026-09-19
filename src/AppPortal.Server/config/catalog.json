@@ -1,0 +1,51 @@
+{
+  "apps": [
+    {
+      "id": "google-chrome",
+      "name": "Google Chrome",
+      "publisher": "Google LLC",
+      "description": "Web browser. Installs the current stable release from the Software Repository.",
+      "category": "Browsers",
+      "featured": true,
+      "action1": { "packageId": "Google_Google_Chrome_1570243626751_builtin", "version": "latest" },
+      "match": { "nameContains": "Google Chrome" }
+    },
+    {
+      "id": "mozilla-firefox",
+      "name": "Mozilla Firefox",
+      "publisher": "Mozilla",
+      "description": "Web browser, 64-bit English (US) build.",
+      "category": "Browsers",
+      "action1": { "packageId": "Mozilla_Mozilla_Firefox__x64_en_US__1570578162075_builtin", "version": "latest" },
+      "match": { "nameContains": "Mozilla Firefox" }
+    },
+    {
+      "id": "7-zip",
+      "name": "7-Zip",
+      "publisher": "Igor Pavlov",
+      "description": "File archiver for zip, 7z, tar and other formats.",
+      "category": "Utilities",
+      "action1": { "packageId": "Igor_Pavlov_7_Zip_1570578162075_builtin", "version": "latest" },
+      "match": { "nameContains": "7-Zip" }
+    },
+    {
+      "id": "vlc",
+      "name": "VLC media player",
+      "publisher": "VideoLAN",
+      "description": "Plays most audio and video formats without extra codecs.",
+      "category": "Media",
+      "action1": { "packageId": "VideoLAN_VLC_media_player_1570578162075_builtin", "version": "latest" },
+      "match": { "nameContains": "VLC" }
+    },
+    {
+      "id": "vscode",
+      "name": "Visual Studio Code",
+      "publisher": "Microsoft Corporation",
+      "description": "Source code editor. System-wide (all users) install.",
+      "category": "Developer tools",
+      "featured": true,
+      "action1": { "packageId": "Microsoft_Visual_Studio_Code_1570578162075_builtin", "version": "latest" },
+      "match": { "nameContains": "Visual Studio Code" }
+    }
+  ]
+}

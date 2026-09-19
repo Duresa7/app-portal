@@ -1,0 +1,22 @@
+# App Portal server. Build from the repository root:
+#   docker compose -f deploy/compose.yaml up -d --build
+# Secrets come from the environment file, which is generated from 1Password references and never committed:
+#   op inject -i deploy/server.env.example -o deploy/server.env
+services:
+  app-portal:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: app-portal-server:local
+    container_name: app-portal
+    restart: unless-stopped
+    env_file:
+      - server.env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config:ro
+      - app-portal-data:/app/data
+
+volumes:
+  app-portal-data:

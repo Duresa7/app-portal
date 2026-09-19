@@ -1,5 +1,10 @@
 name: CI
 
+# Every push and pull request: format check, build, tests on Linux and Windows, the client zip verified
+# on Windows, the server image started and exercised. A v* tag additionally runs the release job, which
+# is the only place a GitHub release or a registry image is created, and it runs only after all of that
+# passed. Nothing a device or a server host can pull exists before the gate.
+
 on:
   push:
     branches: [main]
@@ -7,49 +12,83 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  DOTNET_VERSION: 10.0.x
+  IMAGE: ghcr.io/duresa7/app-portal-server
 
 jobs:
-  test:
-    name: Build and test
+  version:
+    name: Version
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read the version and check the tag against it
+        id: read
+        run: |
+          # Directory.Build.props is the one source of the version. A release tag must name the same
+          # version, and must point at a commit that is on main, so a release is always a build of main.
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)
+          if [[ -z "$version" ]]; then
+            echo "::error::No <Version> in Directory.Build.props"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version in Directory.Build.props: $version"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/v}"
+            if [[ "$tag" != "$version" ]]; then
+              echo "::error::Tag v$tag does not match Directory.Build.props version $version. Bump the props file, commit, then tag that commit."; exit 1
+            fi
+            git fetch --quiet origin main
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::Tag v$tag points at $GITHUB_SHA, which is not on main."; exit 1
+            fi
+            echo "Tag v$tag matches and is on main."
+          fi
+
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: ${{ env.DOTNET_VERSION }}
       - run: dotnet restore
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --no-restore -c Release
       - run: dotnet test --no-build -c Release --logger "trx;LogFileName=results.trx"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results
+          name: test-results-${{ matrix.os }}
           path: '**/TestResults/*.trx'
 
   client:
     name: Publish Windows client
     runs-on: ubuntu-latest
-    needs: test
+    needs: version
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
-      - name: Version from the tag
-        id: version
-        run: |
-          # A release build carries the tag's version so the updater can compare it with what is installed.
-          # Any other build keeps the version in Directory.Build.props.
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "args=-p:Version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "args=" >> "$GITHUB_OUTPUT"
-          fi
+          dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Publish self-contained win-x64
         run: |
-          dotnet publish src/AppPortal.Client  -c Release -r win-x64 --self-contained ${{ steps.version.outputs.args }} -o out/client
-          dotnet publish src/AppPortal.Updater -c Release -r win-x64 --self-contained ${{ steps.version.outputs.args }} -o out/updater
+          # The version comes from Directory.Build.props; the version job has already checked a tag against it.
+          dotnet publish src/AppPortal.Client  -c Release -r win-x64 --self-contained -o out/client
+          dotnet publish src/AppPortal.Updater -c Release -r win-x64 --self-contained -o out/updater
           mkdir -p out/package/client
           cp -r out/client/. out/package/client/
           # The updater is one self-contained file that sits beside the client and replaces it.
@@ -65,20 +104,131 @@ jobs:
           path: |
             out/AppPortal-client-win-x64.zip
             out/SHA256SUMS
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+          if-no-files-found: error
+
+  client-verify:
+    name: Verify client on Windows
+    runs-on: windows-latest
+    needs: [version, client]
+    env:
+      EXPECTED_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: AppPortal-client-win-x64
+          path: package
+      - name: Checksum matches the archive
+        shell: pwsh
+        run: |
+          $expected = ((Get-Content package/SHA256SUMS -Raw).Trim() -split '\s+')[0]
+          $actual = (Get-FileHash package/AppPortal-client-win-x64.zip -Algorithm SHA256).Hash
+          if ($expected -ne $actual) { throw "SHA256SUMS says $expected, archive hashes to $actual" }
+          "Checksum ok: $actual"
+      - name: Archive has every file the installer and updater need
+        shell: pwsh
+        run: |
+          Expand-Archive package/AppPortal-client-win-x64.zip -DestinationPath unpacked
+          $required = @(
+            'Install-AppPortalClient.ps1',
+            'Uninstall-AppPortalClient.ps1',
+            'client/AppPortal.exe',
+            'client/AppPortal.dll',
+            'client/AppPortal.Updater.exe',
+            'client/Uninstall-AppPortalClient.ps1'
+          )
+          $missing = $required | Where-Object { -not (Test-Path (Join-Path unpacked $_)) }
+          if ($missing) { throw "Missing from the archive: $($missing -join ', ')" }
+          "All $($required.Count) required files present."
+      - name: Binaries report the release version
+        shell: pwsh
+        run: |
+          # The updater compares the installed AppPortal.exe's version with the release tag. A binary that
+          # reports a different version makes every device either update forever or never update.
+          foreach ($exe in 'client/AppPortal.exe', 'client/AppPortal.Updater.exe') {
+            $info = (Get-Item (Join-Path unpacked $exe)).VersionInfo
+            $product = ($info.ProductVersion -split '[+\- ]')[0]
+            "$exe ProductVersion=$($info.ProductVersion) FileVersion=$($info.FileVersion)"
+            if ($product -ne $env:EXPECTED_VERSION) {
+              throw "$exe reports $product, expected $env:EXPECTED_VERSION"
+            }
+          }
+      - name: Published client starts, renders, and exits
+        shell: pwsh
+        run: |
+          # Demo mode needs no server. --screenshot renders the window once and exits, which proves the
+          # self-contained build loads, Avalonia initialises, and the main window composes on Windows.
+          $out = Join-Path $PWD 'screenshot.png'
+          $p = Start-Process -FilePath (Join-Path $PWD 'unpacked/client/AppPortal.exe') `
+                 -ArgumentList '--demo', '--screenshot', "`"$out`"", '0' -PassThru
+          if (-not $p.WaitForExit(90000)) {
+            $p.Kill()
+            $log = Join-Path $env:LOCALAPPDATA 'AppPortal/client.log'
+            if (Test-Path $log) { Get-Content $log }
+            throw 'AppPortal.exe did not exit within 90 seconds.'
+          }
+          if ($p.ExitCode -ne 0) { throw "AppPortal.exe exited with $($p.ExitCode)" }
+          if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 1024) { throw 'No screenshot was written.' }
+          "Client rendered $((Get-Item $out).Length) bytes in $out"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: client-smoke-screenshot
+          path: screenshot.png
+          if-no-files-found: ignore
+
+  server:
+    name: Build and smoke test server image
+    runs-on: ubuntu-latest
+    needs: version
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -f deploy/Dockerfile -t "$IMAGE:ci" .
+      - name: Start in fake Action1 mode and exercise it
+        run: deploy/smoke-test.sh "$IMAGE:ci"
+      - name: Save the tested image for the release job
+        run: docker save "$IMAGE:ci" | gzip > server-image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-image
+          path: server-image.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [version, test, client-verify, server]
+    permissions:
+      contents: write
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: AppPortal-client-win-x64
+          path: out
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-image
+          path: image
+      - name: Push the tested server image
+        run: |
+          docker load < image/server-image.tar.gz
+          docker tag "$IMAGE:ci" "$IMAGE:$VERSION"
+          docker tag "$IMAGE:ci" "$IMAGE:latest"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:latest"
+      - name: Create the GitHub release
+        # Last on purpose: every installed client polls the latest release, so this is the moment
+        # the build reaches devices.
         uses: softprops/action-gh-release@v2
         with:
           files: |
             out/AppPortal-client-win-x64.zip
             out/SHA256SUMS
+          fail_on_unmatched_files: true
           generate_release_notes: true
-
-  server-image:
-    name: Build server image
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build (not pushed)
-        run: docker build -f deploy/Dockerfile -t app-portal-server:ci .

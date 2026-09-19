@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One pull request for the lot; each still has to pass the full gate.
+      nuget:
+        patterns: ['*']
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly

@@ -54,7 +54,7 @@ Demo mode fills the whole interface with sample data held in memory. Installs ad
 | `src/AppPortal.Updater` | Self-contained updater run by a SYSTEM scheduled task; replaces the client from GitHub releases |
 | `tests/AppPortal.Server.Tests` | xUnit tests against an in-memory Action1 stand-in |
 | `tests/AppPortal.Updater.Tests` | xUnit tests for version parsing, checksum parsing and the file swap |
-| `deploy/` | Dockerfile, compose file, environment template, Windows install script |
+| `deploy/` | Dockerfile, compose file, environment template, server smoke test, Windows install script |
 | `docs/` | Screenshots and design notes |
 
 ## Server setup
@@ -66,10 +66,10 @@ Requirements: Docker and an Action1 API credential. A secrets manager whose CLI 
 3. **Write the catalog** in `deploy/config/catalog.json`. See [deploy/config/README.md](deploy/config/README.md). Package IDs must exist in your Software Repository; the checked-in file is a starting point, not a verified list.
 4. **Start the server**:
    ```bash
-   docker compose -f deploy/compose.yaml up -d --build
+   docker compose -f deploy/compose.yaml up -d
    docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll catalog verify
    ```
-   `catalog verify` resolves every package against Action1 and exits non-zero if one is missing.
+   This pulls `ghcr.io/duresa7/app-portal-server`, the image CI tested and pushed for the latest release. Put `APP_PORTAL_VERSION=0.2.1` in `deploy/.env` to pin a release, or add `--build` to build from the checkout instead. `catalog verify` resolves every package against Action1 and exits non-zero if one is missing.
 5. **Register a device.** Find the endpoint ID in the Action1 console (the endpoint's URL) and run:
    ```bash
    docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll device add --name OBIPC --endpoint-id <endpoint-id>
@@ -123,6 +123,24 @@ APPPORTAL_SERVER_URL=http://127.0.0.1:5080 APPPORTAL_DEVICE_TOKEN=<token> dotnet
 The version every project carries is in `Directory.Build.props`; a release build gets the tag's version from CI through `-p:Version=`, and the updater compares that with the installed file version, so tag `v0.3.0` must ship binaries that report 0.3.0.
 
 `dotnet run -- --screenshot out.png 2 --theme dark` renders a section (0 apps, 1 installed, 2 activity) in the chosen theme to a PNG and exits, which is how the images in `docs/` were produced under Xvfb.
+
+Before pushing, `dotnet format` puts the code in the shape CI checks for, and `deploy/smoke-test.sh <image>` runs the same server smoke test CI runs against a locally built image.
+
+## Releasing
+
+Every push runs the format check, build and tests on Linux and Windows, publishes the client zip and verifies it on Windows (checksum, file list, binaries report the props version, the client starts in demo mode and renders), and builds the server image and exercises it in fake mode. A release is cut by tagging:
+
+```bash
+# Directory.Build.props already says 0.3.0 and that commit is on main
+git tag v0.3.0 && git push origin v0.3.0
+```
+
+The tag run repeats all of the above, then a final job pushes `ghcr.io/duresa7/app-portal-server:0.3.0` and `:latest` and creates the GitHub release with the zip and `SHA256SUMS`. Nothing a device or a server host can pull exists before that job, so a failure anywhere leaves no release. The run refuses a tag whose version differs from `Directory.Build.props` or whose commit is not on main. A repository ruleset lets only administrators create, move or delete `v*` tags.
+
+Two things CI cannot do:
+
+- **Package visibility.** The first push creates the GHCR package private. Open the package's settings once, under Package settings, Danger Zone, and change visibility to public so a server host can pull without a token.
+- **Yanking a bad release.** Clients only move forward and discard the previous build, so a release that reaches devices cannot be recalled. Delete the release and its tag so no further device picks it up, fix, bump the version and tag again. Devices that already updated get the fix on their next check.
 
 ## API
 

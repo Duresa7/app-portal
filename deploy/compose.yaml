@@ -1,5 +1,7 @@
-# App Portal server. Build from the repository root:
-#   docker compose -f deploy/compose.yaml up -d --build
+# App Portal server. From the repository root:
+#   docker compose -f deploy/compose.yaml up -d            pulls the released image from GHCR
+#   docker compose -f deploy/compose.yaml up -d --build    builds from this checkout instead
+# APP_PORTAL_VERSION in .env pins a release, for example APP_PORTAL_VERSION=0.2.1; unset it pulls latest.
 #
 # Two files sit beside this one, both gitignored:
 #   server.env  container environment, including the Action1 API credential. Copy it from
@@ -12,7 +14,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: app-portal-server:local
+    image: ghcr.io/duresa7/app-portal-server:${APP_PORTAL_VERSION:-latest}
     container_name: app-portal
     restart: unless-stopped
     env_file:

@@ -118,6 +118,26 @@ public sealed class EnrollmentKeyStore(Database database)
         return Read(command).FirstOrDefault();
     }
 
+    /// <summary>
+    /// The key behind a plaintext, whatever state it is in, without spending a use. Two callers need
+    /// this: the check the setup wizard makes before it runs the installer, which must not consume the
+    /// one use it is about to need, and the audit trail, which wants to name the key somebody presented
+    /// even when it was refused. Null means no key has that hash at all.
+    /// </summary>
+    public EnrollmentKeyRecord? FindByPlaintext(string? plaintext)
+    {
+        if (string.IsNullOrWhiteSpace(plaintext))
+        {
+            return null;
+        }
+
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE key_hash = @hash;";
+        command.Parameters.AddWithValue("@hash", Hash(plaintext.Trim()));
+        return Read(command).FirstOrDefault();
+    }
+
     public EnrollmentKeyCreated Create(
         string name,
         EnrollmentEngine defaultEngine,

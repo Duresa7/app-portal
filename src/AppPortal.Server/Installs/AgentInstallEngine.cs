@@ -9,9 +9,14 @@ public sealed class AgentInstallEngine(AgentJobStore jobs, InstallStore installs
 {
     public string Name => EngineLabel.Agent;
 
-    public Task<string> StartAsync(DeviceRecord device, CatalogEntry app, PackageDefinition definition, InstallRecord install, CancellationToken ct)
+    public Task<string> StartAsync(DeviceRecord device, CatalogEntry app, PackageDefinition? definition, InstallRecord install, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        if (definition is null)
+        {
+            throw new InstallRejectedException(InstallRejection.PackageVersionNotFound, $"{app.Name} has no agent package.");
+        }
+
         return Task.FromResult(jobs.Create(install, definition));
     }
 

@@ -1,0 +1,13 @@
+# MSI authoring
+
+Build on Windows with the .NET SDK and PowerShell 7. Publish the client and agent for `win-x64` to `out/client` and `out/agent`, then build `AppPortal.Installer.wixproj`. `ClientPublishDir` and `AgentPublishDir` can override those locations. The MSI version comes from `Directory.Build.props`; the UpgradeCode must not change between releases. The project stays outside `AppPortal.sln` because WiX does not support Linux.
+
+WiX `Files` harvests the client publish directory. The client executable has its own component for the advertised all-users shortcut, and the single-file agent has its own component for service lifetime. Keep those component identities stable: `afterInstallExecute` upgrades rely on Windows Installer component reference counts.
+
+The plan's literal “free of custom actions” requirement conflicts with writing property-expanded JSON and recursively removing runtime data. This package uses WiX 5's standard `FormatFile` and `RemoveFolderEx` extensions, which insert WiX utility actions. It contains no application-authored install-time executable or script action, and makes no enrollment HTTP call during installation.
+
+`FormatFile` substitutes MSI properties without JSON escaping. Launch conditions reject quotes, backslashes, tabs and line breaks in enrollment properties. The two enrollment components are mutually exclusive so the optional endpoint is a JSON null when omitted. Their registry key paths keep the advertised shortcut from repairing an intentionally consumed enrollment file. ICE30 may warn about their shared target filename; their conditions cannot both be true.
+
+WiX 5.0.2 omits `HideTarget` on its deferred formatter actions. `Protect-EnrollmentLogging.ps1` runs at build time to set that flag in the finished MSI; the action properties and enrollment key are also hidden in the authoring. Keep this step before signing or publishing. The Windows smoke check uses a dummy key and rejects logs containing it. Do not remove the masking step when changing WiX versions without checking the resulting CustomAction table and logs.
+
+`Verify-Msi.ps1` runs only on a disposable Windows CI runner. It installs and uninstalls the package, checks the service, private enrollment file, shortcut and ARP version, and exercises both data retention and explicit removal. Enrollment itself is covered by Linux-compatible xUnit tests with a fake HTTP handler. A Windows VM upgrade between distinct MSI versions remains a manual acceptance check.

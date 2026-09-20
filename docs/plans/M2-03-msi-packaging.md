@@ -28,7 +28,7 @@ One MSI installs the client and the agent to Program Files, registers the servic
 
 ## Interface
 
-- MSI file name `AppPortal-<version>-x64.msi`; `UpgradeCode` recorded in the wixproj and in this file once chosen.
+- MSI file name `AppPortal-<version>-x64.msi`; fixed `UpgradeCode` **`5AAB338F-4FEA-48AA-9931-826DC33F536A`**, also recorded in the wixproj.
 - Properties above. `enroll.json` shape: `{"serverUrl":"...","enrollmentKey":"...","action1EndpointId":null}`.
 - Install directory `%ProgramFiles%\App Portal`, unchanged, so AppLocker rules keep matching.
 

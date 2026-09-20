@@ -1,3 +1,4 @@
+using AppPortal.Agent.Enrollment;
 using AppPortal.Shared;
 
 namespace AppPortal.Agent;
@@ -41,11 +42,12 @@ public static class AgentRun
         builder.Logging.AddProvider(new AgentLog(Path.Combine(stateDirectory, "agent.log")));
         builder.Services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(30) });
         builder.Services.AddSingleton<HeartbeatClient>();
+        builder.Services.AddSingleton(provider => new EnrollmentService(provider.GetRequiredService<HttpClient>(), stateDirectory));
         builder.Services.AddSingleton(provider => new HeartbeatWorker(
             provider.GetRequiredService<HeartbeatClient>(),
             provider.GetRequiredService<ILogger<HeartbeatWorker>>(),
             provider.GetRequiredService<IHostApplicationLifetime>(),
-            Path.Combine(stateDirectory, "agent.json"), once));
+            Path.Combine(stateDirectory, "agent.json"), once, provider.GetRequiredService<EnrollmentService>()));
         builder.Services.AddHostedService(provider => provider.GetRequiredService<HeartbeatWorker>());
         using var host = builder.Build();
         // Take the worker before the run. RunAsync disposes the host on shutdown, so asking the provider

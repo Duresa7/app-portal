@@ -1,6 +1,7 @@
 using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Data;
+using AppPortal.Shared;
 
 namespace AppPortal.Server.Tests;
 
@@ -185,6 +186,84 @@ public sealed class CatalogStoreTests
         Assert.Equal("7-zip", Assert.Single(Listed(store, "pavlov")).Id);
         Assert.Equal(2, Listed(store, "").Count);
         Assert.Empty(Listed(store, "nothing here"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Agent_only_apps_round_trip_without_an_action1_row(bool winget)
+    {
+        using var test = new TestDatabase();
+        var store = new CatalogStore(test.Database, "");
+        PackageDefinition definition = winget ? new WingetPackageDefinition("Valve.Steam", "machine") : PackageDefinitionTests.Direct;
+        store.Upsert(new CatalogEntry { Id = "agent", Name = "Agent app", Agent = definition });
+        var entry = store.Find("agent")!;
+        Assert.Equal(definition, entry.Agent);
+        Assert.Equal(["agent"], entry.ToPublic().Engines);
+        Assert.Equal(winget ? null : (long?)5_000_000_000L, entry.ToPublic().DownloadSizeBytes);
+        using var connection = test.Database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT engine FROM catalog_packages WHERE app_id = 'agent';";
+        Assert.Equal("agent", command.ExecuteScalar());
+        command.CommandText = "SELECT COUNT(*) FROM catalog_packages WHERE app_id = 'agent';";
+        Assert.Equal(1L, command.ExecuteScalar());
+
+        var fresh = new Database(Path.Combine(test.Root, "second.db"));
+        fresh.Migrate();
+        var second = new CatalogStore(fresh, "");
+        second.Import(CatalogStore.Parse(store.ExportJson()));
+        Assert.Equal(store.ExportJson(), second.ExportJson());
+        Assert.Equal(definition, second.Find("agent")!.Agent);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Replacing_packages_removes_stale_engine_rows(bool import)
+    {
+        using var test = new TestDatabase();
+        var store = new CatalogStore(test.Database, "");
+        var entry = new CatalogEntry
+        {
+            Id = "both",
+            Name = "Both",
+            Agent = PackageDefinitionTests.Direct,
+            Action1 = new Action1PackageRef { PackageId = "action1" },
+        };
+        store.Upsert(entry);
+        Assert.Equal(["action1", "agent"], store.Find("both")!.ToPublic().Engines);
+        entry.Agent = null;
+        Save();
+        Assert.Equal(["action1"], store.Find("both")!.ToPublic().Engines);
+        Assert.Null(store.Find("both")!.ToPublic().DownloadSizeBytes);
+        entry.Agent = PackageDefinitionTests.Direct;
+        entry.Action1 = new Action1PackageRef();
+        Save();
+        Assert.Equal(["agent"], store.Find("both")!.ToPublic().Engines);
+
+        void Save()
+        {
+            if (import)
+            {
+                store.Import([entry]);
+            }
+            else
+            {
+                store.Upsert(entry);
+            }
+        }
+    }
+
+    [Fact]
+    public void Import_and_upsert_validate_agent_definitions_before_writing()
+    {
+        using var test = new TestDatabase();
+        var store = new CatalogStore(test.Database, "");
+        var bad = new CatalogEntry { Id = "bad", Name = "Bad", Agent = PackageDefinitionTests.Direct with { Sha256 = "" } };
+        Assert.Throws<InvalidDataException>(() => store.Upsert(bad));
+        Assert.Throws<InvalidDataException>(() => store.Import([
+            new CatalogEntry { Id = "good", Name = "Good", Agent = PackageDefinitionTests.Direct }, bad]));
+        Assert.Empty(store.Entries);
     }
 
     private static string CheckedInCatalog

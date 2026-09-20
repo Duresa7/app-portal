@@ -15,7 +15,7 @@ public sealed class JobRunnerTests
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     [Fact]
-    public async Task Unknown_kind_completes_with_no_executor_and_the_device_token()
+    public async Task A_kind_this_build_cannot_read_is_finished_rather_than_retried()
     {
         AgentJobCompletion? completion = null;
         using var http = new HttpClient(new Handler(async (request, ct) =>
@@ -38,6 +38,36 @@ public sealed class JobRunnerTests
         }));
         using var runner = Runner(http);
         await runner.RunOnceAsync(Settings, CancellationToken.None);
+        Assert.NotNull(completion);
+        Assert.False(completion.Ok);
+        // Finished, not left to time out. A definition this agent has no type for will never parse, so
+        // three more leases would each fail the same way and the person would wait for all of them.
+        Assert.Equal("This agent cannot read the package. It is likely older than the server.", completion.Detail);
+    }
+
+    [Fact]
+    public async Task A_kind_with_no_executor_registered_completes_with_no_executor()
+    {
+        AgentJobCompletion? completion = null;
+        using var http = new HttpClient(new Handler(async (request, ct) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return Job("winget");
+            }
+
+            if (request.RequestUri!.AbsolutePath.EndsWith("/complete"))
+            {
+                completion = await request.Content!.ReadFromJsonAsync<AgentJobCompletion>(ct);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        }));
+
+        // The definition reads perfectly well; this build simply carries no executor for it yet.
+        using var runner = Runner(http);
+        await runner.RunOnceAsync(Settings, CancellationToken.None);
+
         Assert.NotNull(completion);
         Assert.False(completion.Ok);
         Assert.Equal("no executor", completion.Detail);
@@ -183,9 +213,24 @@ public sealed class JobRunnerTests
         Assert.Equal("Executor failed (IOException).", completion.Detail);
     }
 
+    // Raw JSON rather than a typed AgentJob, so that a kind this build has no type for can be sent at
+    // all. That is the case the runner has to survive: a server newer than the agent.
     private static HttpResponseMessage Job(string kind) => new(HttpStatusCode.OK)
     {
-        Content = JsonContent.Create(new AgentJob("job-1", "install-1", new PackageDefinition(kind), 1), options: Json),
+        Content = new StringContent(
+            "{\"id\":\"job-1\",\"installId\":\"install-1\",\"attempt\":1,\"definition\":" + Definition(kind) + "}",
+            System.Text.Encoding.UTF8,
+            "application/json"),
+    };
+
+    private static string Definition(string kind) => kind switch
+    {
+        "direct" => "{\"kind\":\"direct\",\"url\":\"https://vendor.example/app.exe\",\"sha256\":\""
+                    + new string('a', 64)
+                    + "\",\"installerType\":\"exe\",\"silentArgs\":\"/S\",\"sizeBytes\":1000,"
+                    + "\"uninstallKey\":null,\"scope\":\"machine\",\"requiresReboot\":false}",
+        "winget" => "{\"kind\":\"winget\",\"id\":\"Vendor.App\",\"scope\":\"machine\"}",
+        _ => "{\"kind\":\"" + kind + "\"}",
     };
 
     private static JobRunner Runner(HttpClient http, params IPackageExecutor[] executors)

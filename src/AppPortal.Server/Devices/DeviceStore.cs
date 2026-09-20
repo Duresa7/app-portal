@@ -29,6 +29,12 @@ public sealed class DeviceRecord
 
     public string? EnrolledWithKeyId { get; set; }
 
+    /// <summary>
+    /// The stable hardware id the PC enrolled with, or null for a device added by hand. Enrollment
+    /// matches on this first, so a reimaged PC updates its own row rather than creating a second.
+    /// </summary>
+    public string? MachineId { get; set; }
+
     public DateTimeOffset? LastSeenAt { get; set; }
 
     /// <summary>True when the device has an Action1 endpoint to deploy through.</summary>
@@ -39,6 +45,12 @@ public sealed class DevicesFile
 {
     public List<DeviceRecord> Devices { get; set; } = [];
 }
+
+/// <summary>
+/// What an enrollment did: the device as it now stands, the token it must authenticate with from here
+/// on, and whether the row was already there. The token is plaintext and is never stored.
+/// </summary>
+public sealed record EnrollmentResult(DeviceRecord Device, string Token, bool Existing);
 
 /// <summary>
 /// Devices that may call the API, each with the SHA-256 of its bearer token. The plaintext token is shown once,
@@ -120,12 +132,146 @@ public sealed class DeviceStore(Database database)
         return token;
     }
 
+    /// <summary>
+    /// Turns a spent enrollment key into a device and its token. The key has already been validated and
+    /// counted by the caller; this is the half that decides which row the PC owns.
+    ///
+    /// A PC is recognised by <paramref name="machineId"/> first, so a reinstall updates the row it
+    /// already has. Failing that it is recognised by name, which is what a reimage looks like: a fresh
+    /// hardware id under the name the fleet already knows. Only when neither matches is a row created,
+    /// and names stay unique because taking one over is the same move <see cref="Add"/> makes.
+    ///
+    /// What the key does not speak for is left alone. An agent-only key does not clear an Action1
+    /// endpoint, and no key ever clears <c>has_agent</c>: the agent is either installed on that PC or it
+    /// is not, and a key is not evidence that it was removed.
+    /// </summary>
+    public EnrollmentResult Enroll(
+        string machineId,
+        string name,
+        string? endpointId,
+        bool grantAgent,
+        string? agentVersion,
+        string keyId)
+    {
+        var trimmedMachine = (machineId ?? "").Trim();
+        var trimmedName = (name ?? "").Trim();
+        if (trimmedMachine.Length == 0)
+        {
+            throw new DeviceRejectedException("A machine id is required to enroll.");
+        }
+
+        if (trimmedName.Length == 0)
+        {
+            throw new DeviceRejectedException("A device needs a name.");
+        }
+
+        var endpoint = string.IsNullOrWhiteSpace(endpointId) ? null : endpointId.Trim();
+        var token = GenerateToken();
+        var now = SqlTime.Now();
+
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+
+        var existing = FindIdBy(connection, transaction, "machine_id = @value", trimmedMachine)
+                       ?? FindIdBy(connection, transaction, "name = @value COLLATE NOCASE", trimmedName);
+
+        if (existing is not null && endpoint is not null)
+        {
+            EnsureEndpointCanChange(connection, transaction, existing, endpoint);
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = existing is null
+                ? """
+                  INSERT INTO devices (id, name, token_hash, enabled, action1_endpoint_id, has_agent,
+                                       agent_version, enrolled_with_key_id, machine_id, last_seen_at, created_at)
+                  VALUES (@id, @name, @hash, 1, @endpoint, @agent, @agentVersion, @key, @machine, @now, @now);
+                  """
+                // COALESCE rather than assignment: a key that says nothing about an endpoint or an agent
+                // version must not erase what the device already reported. Nor is an enrollment allowed to
+                // re-enable a device an administrator disabled; the endpoint refuses that case outright.
+                : """
+                  UPDATE devices
+                  SET name = @name,
+                      token_hash = @hash,
+                      action1_endpoint_id = COALESCE(@endpoint, action1_endpoint_id),
+                      has_agent = CASE WHEN @agent = 1 THEN 1 ELSE has_agent END,
+                      agent_version = COALESCE(@agentVersion, agent_version),
+                      enrolled_with_key_id = @key,
+                      machine_id = @machine,
+                      last_seen_at = @now
+                  WHERE id = @id;
+                  """;
+            command.Parameters.AddWithValue("@id", existing ?? NewId());
+            command.Parameters.AddWithValue("@name", trimmedName);
+            command.Parameters.AddWithValue("@hash", Hash(token));
+            command.Parameters.AddWithValue("@endpoint", (object?)endpoint ?? DBNull.Value);
+            command.Parameters.AddWithValue("@agent", grantAgent ? 1 : 0);
+            command.Parameters.AddWithValue("@agentVersion", string.IsNullOrWhiteSpace(agentVersion) ? DBNull.Value : agentVersion.Trim());
+            command.Parameters.AddWithValue("@key", keyId);
+            command.Parameters.AddWithValue("@machine", trimmedMachine);
+            command.Parameters.AddWithValue("@now", now);
+            command.ExecuteNonQuery();
+        }
+
+        var id = existing ?? FindIdBy(connection, transaction, "machine_id = @value", trimmedMachine)!;
+
+        // A renamed device should read as it is called now everywhere it appears, the same as an
+        // administrator renaming it on the device page does.
+        using (var history = connection.CreateCommand())
+        {
+            history.Transaction = transaction;
+            history.CommandText = "UPDATE installs SET device_name = @name WHERE device_id = @id;";
+            history.Parameters.AddWithValue("@name", trimmedName);
+            history.Parameters.AddWithValue("@id", id);
+            history.ExecuteNonQuery();
+        }
+
+        DeviceRecord device;
+        using (var read = connection.CreateCommand())
+        {
+            read.Transaction = transaction;
+            read.CommandText = Select + " WHERE id = @id;";
+            read.Parameters.AddWithValue("@id", id);
+            device = Read(read).Single();
+        }
+
+        transaction.Commit();
+        return new EnrollmentResult(device, token, existing is not null);
+    }
+
+    private static string? FindIdBy(SqliteConnection connection, SqliteTransaction transaction, string where, string value)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"SELECT id FROM devices WHERE {where};";
+        command.Parameters.AddWithValue("@value", value);
+        return command.ExecuteScalar() as string;
+    }
+
     public DeviceRecord? Find(string id)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = Select + " WHERE id = @id;";
         command.Parameters.AddWithValue("@id", id);
+        return Read(command).FirstOrDefault();
+    }
+
+    /// <summary>The device that enrolled from this hardware, or null when none has. Never matches on null.</summary>
+    public DeviceRecord? FindByMachineId(string? machineId)
+    {
+        if (string.IsNullOrWhiteSpace(machineId))
+        {
+            return null;
+        }
+
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE machine_id = @machine;";
+        command.Parameters.AddWithValue("@machine", machineId.Trim());
         return Read(command).FirstOrDefault();
     }
 
@@ -392,7 +538,7 @@ public sealed class DeviceStore(Database database)
 
     private const string Select = """
         SELECT id, name, token_hash, enabled, action1_endpoint_id, created_at,
-               has_agent, engine_preference, agent_version, enrolled_with_key_id, last_seen_at
+               has_agent, engine_preference, agent_version, enrolled_with_key_id, last_seen_at, machine_id
         FROM devices
         """;
 
@@ -415,6 +561,7 @@ public sealed class DeviceStore(Database database)
                 AgentVersion = reader.IsDBNull(8) ? null : reader.GetString(8),
                 EnrolledWithKeyId = reader.IsDBNull(9) ? null : reader.GetString(9),
                 LastSeenAt = SqlTime.ParseOptional(reader.IsDBNull(10) ? null : reader.GetString(10)),
+                MachineId = reader.IsDBNull(11) ? null : reader.GetString(11),
             });
         }
 

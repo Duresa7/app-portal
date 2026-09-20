@@ -9,7 +9,7 @@ public sealed class Action1InstallEngine(IAction1Client action1, InstallStore st
 {
     public string Name => EngineLabel.Action1;
 
-    public async Task<string> StartAsync(DeviceRecord device, CatalogEntry app, PackageDefinition definition, InstallRecord record, CancellationToken ct)
+    public async Task<string> StartAsync(DeviceRecord device, CatalogEntry app, PackageDefinition? definition, InstallRecord record, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(app.Action1.PackageId))
         {

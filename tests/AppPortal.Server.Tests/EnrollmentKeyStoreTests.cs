@@ -178,9 +178,5 @@ public sealed class EnrollmentKeyStoreTests : IDisposable
         Assert.Equal(1, command.ExecuteNonQuery());
     }
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        _test.Dispose();
-    }
+    public void Dispose() => _test.Dispose();
 }

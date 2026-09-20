@@ -65,7 +65,7 @@ public sealed class AgentJobsTests : IDisposable
         Assert.Equal(60, (await heartbeat.Content.ReadFromJsonAsync<AgentHeartbeatResponse>())!.HeartbeatSeconds);
         var job = (await client.GetFromJsonAsync<AgentJob>("/api/v1/agent/jobs?wait=0"))!;
         Assert.Equal(install.Id, job.InstallId);
-        Assert.Equal(3000000000, job.Definition.Properties["sizeBytes"].GetInt64());
+        Assert.Equal(3000000000, Assert.IsType<DirectPackageDefinition>(job.Definition).SizeBytes);
         Assert.Equal(job.Id, _installs.Find(install.Id)!.AutomationId);
         Assert.Equal(HttpStatusCode.NoContent, (await client.GetAsync("/api/v1/agent/jobs")).StatusCode);
         var progress = await client.PostAsJsonAsync($"/api/v1/agent/jobs/{job.Id}/progress", new AgentJobProgress("downloading", 43, "Downloading 43%"));
@@ -243,7 +243,7 @@ public sealed class AgentJobsTests : IDisposable
         AppName = "Agent App",
         RequestedAt = _clock.GetUtcNow(),
         State = InstallState.Queued,
-    }, new PackageDefinition("direct"));
+    }, new DirectPackageDefinition("https://vendor.example/app.exe", new string('a', 64), "exe", "/S", 3_000_000_000L));
 
     private HttpClient Client(string? token = null)
     {

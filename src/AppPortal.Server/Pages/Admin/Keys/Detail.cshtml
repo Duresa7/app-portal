@@ -1,0 +1,98 @@
+@page "/admin/keys/{id}"
+@using AppPortal.Server.Enrollment
+@model AppPortal.Server.Pages.Admin.Keys.DetailModel
+@{
+    ViewData["Title"] = Model.Key.Name;
+    ViewData["Nav"] = "keys";
+}
+@if (Model.Notice is not null)
+{
+    <div class="message ok">@Model.Notice</div>
+}
+
+<div class="card">
+    <h2>Key</h2>
+    <dl class="detail">
+        <dt>Name</dt>
+        <dd>@Model.Key.Name</dd>
+
+        <dt>Key</dt>
+        <dd class="muted"><code>@Model.Key.DisplayPrefix</code>&hellip; <span class="muted">only the first characters are stored</span></dd>
+
+        <dt>Default engine</dt>
+        <dd>@EnrollmentKeyStore.Name(Model.Key.DefaultEngine)</dd>
+
+        <dt>Uses</dt>
+        <dd>@Model.Key.UsesText</dd>
+
+        <dt>Expires</dt>
+        <dd>@(Model.Key.ExpiresAt is { } at ? at.ToLocalTime().ToString("u") : "never")</dd>
+
+        <dt>Status</dt>
+        <dd>
+            @if (Model.Key.Status == EnrollmentKeyStatus.Active)
+            {
+                <span class="pill">Active</span>
+            }
+            else
+            {
+                <span class="pill off">@Model.Key.Status</span>
+            }
+        </dd>
+
+        <dt>Created</dt>
+        <dd class="muted">@Model.Key.CreatedAt.ToLocalTime().ToString("u") by @Model.Key.CreatedBy</dd>
+    </dl>
+    <div class="actions">
+        <a class="button secondary" href="/admin/keys">Back to keys</a>
+        @if (Model.Key.RevokedAt is null)
+        {
+            <form method="post" hx-boost="true" hx-history="false" asp-page-handler="Revoke">
+                <button type="submit" class="secondary"
+                        onclick="return confirm('Revoke this key? Machines that have not enrolled with it yet no longer can.');">Revoke</button>
+            </form>
+        }
+    </div>
+</div>
+
+<div class="card">
+    <h2>Enrollment attempts</h2>
+    @if (Model.Events.Count == 0)
+    {
+        <p class="muted">Nothing has been enrolled with this key yet.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+            <tr>
+                <th>When</th>
+                <th>Device</th>
+                <th>From</th>
+                <th>Outcome</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var attempt in Model.Events)
+            {
+                <tr>
+                    <td class="muted">@attempt.CreatedAt.ToLocalTime().ToString("u")</td>
+                    <td>
+                        @if (attempt.DeviceId is { } device && attempt.DeviceName is { } name)
+                        {
+                            <a href="/admin/devices/@device">@name</a>
+                        }
+                        else
+                        {
+                            <span class="muted">@(attempt.DeviceId is null ? "—" : "removed")</span>
+                        }
+                    </td>
+                    <td class="muted">@attempt.Source</td>
+                    <td><span class="pill @(attempt.Succeeded ? "" : "off")">@attempt.Describe</span></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        <p class="muted">The most recent @EnrollmentEventStore.PageSize attempts.</p>
+    }
+</div>

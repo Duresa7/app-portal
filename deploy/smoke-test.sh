@@ -60,6 +60,48 @@ out=$(docker exec "$name" dotnet AppPortal.Server.dll device add --name SMOKE --
 token=$(echo "$out" | tail -n 1 | tr -d '[:space:]')
 [[ ${#token} -ge 32 ]] || { echo "No token in device add output"; exit 1; }
 
+step "key create prints an enrollment key"
+out=$(docker exec "$name" dotnet AppPortal.Server.dll key create --name smoke-rollout --engine agent)
+enroll_key=$(echo "$out" | tail -n 1 | tr -d '[:space:]')
+[[ "$enroll_key" == ape_* ]] || { echo "No enrollment key in key create output"; exit 1; }
+
+step "The enrollment check accepts the key without spending a use"
+code=$(curl -s -o /dev/null -w '%{http_code}' \
+    -H "X-Enrollment-Key: $enroll_key" "http://127.0.0.1:$port/api/v1/enroll/check")
+[[ "$code" == 204 ]] || { echo "Expected 204 from the enrollment check, got $code"; exit 1; }
+echo "204 as expected"
+
+step "A PC trades the key for a device token"
+# No bearer token on this call: the key is what authenticates it, which is the whole point of the route.
+code=$(curl -s -o "$scratch/enroll.json" -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/json' \
+    -d "{\"key\":\"$enroll_key\",\"deviceName\":\"SMOKE-ENROLLED\",\"machineId\":\"smoke-machine-0001\",\"agentVersion\":\"0.4.0\"}" \
+    "http://127.0.0.1:$port/api/v1/enroll")
+[[ "$code" == 201 ]] || { cat "$scratch/enroll.json"; echo "Expected 201 from enroll, got $code"; exit 1; }
+enrolled_token=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["engines"]==["agent"], r["engines"]; print(r["deviceToken"])' "$scratch/enroll.json")
+
+step "The enrolled device reads the catalog with the token it was handed"
+curl -fsS -H "Authorization: Bearer $enrolled_token" "http://127.0.0.1:$port/api/v1/catalog" | grep -q '"id"'
+echo "enrolled device authenticated"
+
+step "Re-enrolling the same machine rotates the token and stops the old one"
+code=$(curl -s -o "$scratch/enroll2.json" -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/json' \
+    -d "{\"key\":\"$enroll_key\",\"deviceName\":\"SMOKE-ENROLLED\",\"machineId\":\"smoke-machine-0001\"}" \
+    "http://127.0.0.1:$port/api/v1/enroll")
+[[ "$code" == 201 ]] || { cat "$scratch/enroll2.json"; echo "Expected 201 from re-enrolment, got $code"; exit 1; }
+second_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["deviceToken"])' "$scratch/enroll2.json")
+[[ "$second_token" != "$enrolled_token" ]] || { echo "Re-enrolment handed back the same token"; exit 1; }
+code=$(curl -s -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer $enrolled_token" "http://127.0.0.1:$port/api/v1/catalog")
+[[ "$code" == 401 ]] || { echo "The token from before the re-enrolment still works, got $code"; exit 1; }
+echo "the old token is dead and the new one is live"
+
+step "Neither the enrollment key nor a device token is in the server log"
+docker logs "$name" 2>&1 | grep -q "$enroll_key" && { echo "The enrollment key leaked into the log"; exit 1; }
+docker logs "$name" 2>&1 | grep -q "$second_token" && { echo "A device token leaked into the log"; exit 1; }
+echo "no secrets in the log"
+
 step "A request without a token is refused"
 code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/api/v1/catalog")
 [[ "$code" == 401 ]] || { echo "Expected 401, got $code"; exit 1; }

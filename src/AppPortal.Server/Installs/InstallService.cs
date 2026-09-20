@@ -88,7 +88,7 @@ public sealed class InstallService(
             Engine = definition is null ? EngineLabel.Action1 : EngineLabel.Agent,
         };
 
-        record.AutomationId = await engine.StartAsync(device, app, definition ?? new PackageDefinition("action1"), record, ct);
+        record.AutomationId = await engine.StartAsync(device, app, definition, record, ct);
         logger.LogInformation("Device {Device} requested {App} for {User}; engine {Engine}, reference {Reference}",
             device.Name, app.Name, requestedBy ?? "an unnamed account", record.Engine, record.AutomationId);
         return record;

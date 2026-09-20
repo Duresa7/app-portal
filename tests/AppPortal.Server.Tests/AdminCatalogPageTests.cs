@@ -11,6 +11,7 @@ using AppPortal.Shared;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AppPortal.Server.Tests;
 
@@ -35,6 +36,8 @@ public sealed class AdminCatalogPageTests : IDisposable
             builder.UseSetting("Portal:CatalogPath", catalogPath);
             builder.UseSetting("Portal:DataDirectory", _test.DataDirectory);
             builder.UseSetting("Portal:StatusPollSeconds", "3600");
+            builder.UseSetting("Catalog:MaxDownloadBytes", "32");
+            builder.ConfigureServices(services => services.AddSingleton(new PackageHelpers(new HttpClient(new PackageHandler()))));
         });
 
         _test.AddAdmin();
@@ -295,6 +298,133 @@ public sealed class AdminCatalogPageTests : IDisposable
         var parsed = CatalogStore.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("chrome", Assert.Single(parsed).Id);
     }
+
+    [Theory]
+    [InlineData("direct")]
+    [InlineData("winget")]
+    public async Task Agent_only_apps_can_be_created_edited_and_served_to_action1_devices(string kind)
+    {
+        var admin = await SignedIn();
+        var form = AgentForm(kind);
+        form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");
+        var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(form));
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var app = Assert.Single(await DeviceCatalog());
+        Assert.Equal(["agent"], app.Engines);
+        Assert.Equal(kind == "direct" ? (long?)5_000_000_000L : null, app.DownloadSizeBytes);
+        var html = await admin.GetStringAsync("/admin/catalog/vendor");
+        Assert.Contains(kind == "direct" ? "5000000000" : "Valve.Steam", html);
+        form["Name"] = "Renamed";
+        response = await admin.PostAsync("/admin/catalog/vendor", new FormUrlEncodedContent(form));
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("Renamed", Assert.Single(await DeviceCatalog()).Name);
+    }
+
+    [Theory]
+    [InlineData("DirectSha256", "", "sha256")]
+    [InlineData("AgentKind", "unknown", "kind")]
+    [InlineData("DirectSizeBytes", "not a number", "whole number")]
+    [InlineData("DirectSizeBytes", "9223372036854775808", "whole number")]
+    public async Task Invalid_agent_definitions_show_a_message_without_saving(string field, string value, string message)
+    {
+        var admin = await SignedIn();
+        var form = AgentForm("direct");
+        form[field] = value;
+        form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");
+        var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(form));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(message, await response.Content.ReadAsStringAsync());
+        Assert.Empty(new CatalogStore(_test.Database, "").Entries);
+    }
+
+    [Fact]
+    public async Task Fetch_failure_keeps_unsaved_form_fields_and_does_not_write_the_catalog()
+    {
+        var admin = await SignedIn();
+        var form = AgentForm("direct");
+        form["DirectUrl"] = "file:///tmp/installer.exe";
+        form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");
+        var response = await admin.PostAsync("/admin/catalog/new?handler=FetchAndHash", new FormUrlEncodedContent(form));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Could not fetch", html);
+        Assert.Contains("5000000000", html);
+        Assert.Contains("name=\"Id\" type=\"text\" value=\"vendor\"", html);
+        Assert.Empty(new CatalogStore(_test.Database, "").Entries);
+    }
+
+    [Fact]
+    public async Task Fetch_fills_the_hash_and_size_without_saving_the_form()
+    {
+        var admin = await SignedIn();
+        var form = AgentForm("direct");
+        form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");
+        var response = await admin.PostAsync("/admin/catalog/new?handler=FetchAndHash", new FormUrlEncodedContent(form));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Hash and size filled", html);
+        Assert.Contains(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData("installer"u8)), html);
+        Assert.Matches("name=\"DirectSizeBytes\"[^>]*value=\"9\"", html);
+        Assert.Empty(new CatalogStore(_test.Database, "").Entries);
+    }
+
+    [Fact]
+    public async Task Fetch_respects_the_configured_download_limit()
+    {
+        var admin = await SignedIn();
+        var form = AgentForm("direct");
+        form["DirectUrl"] = "https://vendor.example/large.exe";
+        form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");
+        var response = await admin.PostAsync("/admin/catalog/new?handler=FetchAndHash", new FormUrlEncodedContent(form));
+        Assert.Contains("32 byte limit", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Winget_lookup_keeps_the_form_usable_offline()
+    {
+        var admin = await SignedIn();
+        var form = AgentForm("winget");
+        form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");
+        var response = await admin.PostAsync("/admin/catalog/new?handler=LookupWinget", new FormUrlEncodedContent(form));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("lookup is unavailable", html);
+        Assert.Contains("Valve.Steam", html);
+        Assert.Empty(new CatalogStore(_test.Database, "").Entries);
+    }
+
+    private sealed class PackageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.Host == "api.github.com")
+            {
+                throw new HttpRequestException("Offline");
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = request.RequestUri.AbsolutePath == "/large.exe"
+                    ? new ByteArrayContent(new byte[33])
+                    : new ByteArrayContent("installer"u8.ToArray()),
+            });
+        }
+    }
+
+    private static Dictionary<string, string> AgentForm(string kind) => new()
+    {
+        ["Id"] = "vendor",
+        ["Name"] = "Vendor app",
+        ["AgentKind"] = kind,
+        ["WingetId"] = "Valve.Steam",
+        ["WingetScope"] = "machine",
+        ["DirectUrl"] = PackageDefinitionTests.Direct.Url,
+        ["DirectSha256"] = PackageDefinitionTests.Direct.Sha256,
+        ["DirectInstallerType"] = "exe",
+        ["DirectSilentArgs"] = "/S",
+        ["DirectSizeBytes"] = "5000000000",
+        ["DirectUninstallKey"] = "Vendor Application",
+    };
 
     public void Dispose()
     {

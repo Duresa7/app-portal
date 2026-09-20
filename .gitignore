@@ -197,6 +197,10 @@ publish/
 # job publishes through it, so it has to be in the repository despite the blanket rule above.
 !src/AppPortal.Agent/Properties/PublishProfiles/*.pubxml
 
+# Where the CI jobs publish the client and agent and build the MSI. Running those steps by hand leaves
+# a few hundred megabytes of payload here, which must not be committable by accident.
+/out/
+
 # Microsoft Azure Web App publish settings. Comment the next line if you want to
 # checkin your Azure Web App publish settings, but sensitive information contained
 # in these scripts will be unencrypted

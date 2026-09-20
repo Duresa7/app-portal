@@ -89,10 +89,12 @@ jobs:
           # The version comes from Directory.Build.props; the version job has already checked a tag against it.
           dotnet publish src/AppPortal.Client  -c Release -r win-x64 --self-contained -o out/client
           dotnet publish src/AppPortal.Updater -c Release -r win-x64 --self-contained -o out/updater
+          dotnet publish src/AppPortal.Agent -p:PublishProfile=win-x64 -o out/agent
           mkdir -p out/package/client
           cp -r out/client/. out/package/client/
           # The updater is one self-contained file that sits beside the client and replaces it.
           cp out/updater/AppPortal.Updater.exe out/package/client/
+          cp out/agent/AppPortal.Agent.exe out/package/client/
           # The scripts ride inside client/ too, so an update keeps the uninstall entry's target present.
           cp deploy/windows/Install-AppPortalClient.ps1 deploy/windows/Uninstall-AppPortalClient.ps1 out/package/
           cp deploy/windows/Uninstall-AppPortalClient.ps1 out/package/client/
@@ -113,6 +115,10 @@ jobs:
     env:
       EXPECTED_VERSION: ${{ needs.version.outputs.version }}
     steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
       - uses: actions/download-artifact@v8
         with:
           name: AppPortal-client-win-x64
@@ -134,6 +140,7 @@ jobs:
             'client/AppPortal.exe',
             'client/AppPortal.dll',
             'client/AppPortal.Updater.exe',
+            'client/AppPortal.Agent.exe',
             'client/Uninstall-AppPortalClient.ps1'
           )
           $missing = $required | Where-Object { -not (Test-Path (Join-Path unpacked $_)) }
@@ -144,7 +151,7 @@ jobs:
         run: |
           # The updater compares the installed AppPortal.exe's version with the release tag. A binary that
           # reports a different version makes every device either update forever or never update.
-          foreach ($exe in 'client/AppPortal.exe', 'client/AppPortal.Updater.exe') {
+          foreach ($exe in 'client/AppPortal.exe', 'client/AppPortal.Updater.exe', 'client/AppPortal.Agent.exe') {
             $info = (Get-Item (Join-Path unpacked $exe)).VersionInfo
             $product = ($info.ProductVersion -split '[+\- ]')[0]
             "$exe ProductVersion=$($info.ProductVersion) FileVersion=$($info.FileVersion)"
@@ -169,6 +176,46 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "AppPortal.exe exited with $($p.ExitCode)" }
           if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 1024) { throw 'No screenshot was written.' }
           "Client rendered $((Get-Item $out).Length) bytes in $out"
+      - name: Published agent records a heartbeat and exits
+        shell: pwsh
+        run: |
+          dotnet build src/AppPortal.Server -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Server build failed.' }
+          $serverDll = Join-Path $PWD 'src/AppPortal.Server/bin/Release/net10.0/AppPortal.Server.dll'
+          $env:Action1__Mode = 'Fake'
+          $env:Portal__DataDirectory = Join-Path $env:RUNNER_TEMP 'agent-server-data'
+          $env:ASPNETCORE_URLS = 'http://127.0.0.1:5189'
+          $registration = dotnet $serverDll device add --name AGENT-CI --endpoint-id endpoint-1234
+          if ($LASTEXITCODE -ne 0) { throw 'Device registration failed.' }
+          $token = ($registration | Where-Object { $_ -match '^apd_' } | Select-Object -Last 1)
+          if (-not $token) { throw 'No device token was issued.' }
+          $env:APPPORTAL_SERVER_URL = $env:ASPNETCORE_URLS
+          $env:APPPORTAL_DEVICE_TOKEN = $token
+          $server = Start-Process dotnet -ArgumentList "`"$serverDll`"" -PassThru `
+            -RedirectStandardOutput server.log -RedirectStandardError server-error.log
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                Invoke-RestMethod "$env:ASPNETCORE_URLS/healthz" | Out-Null
+                $ready = $true
+                break
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ready) { throw 'Fake-mode server did not start.' }
+            $agent = Start-Process -FilePath (Join-Path $PWD 'unpacked/client/AppPortal.Agent.exe') `
+              -ArgumentList '--console', '--once' -PassThru
+            if (-not $agent.WaitForExit(60000)) {
+              $agent.Kill()
+              throw 'Agent did not exit within 60 seconds.'
+            }
+            if ($agent.ExitCode -ne 0) { throw "Agent exited with $($agent.ExitCode)" }
+            $statusPath = Join-Path $env:ProgramData 'AppPortal/agent.json'
+            $status = Get-Content $statusPath -Raw | ConvertFrom-Json
+            if ($status.outcome -ne 'Succeeded') { throw 'Heartbeat was not recorded as successful.' }
+          } finally {
+            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+          }
       - uses: actions/upload-artifact@v7
         if: always()
         with:

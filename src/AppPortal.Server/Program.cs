@@ -1,5 +1,6 @@
 using AppPortal.Server.Action1;
 using AppPortal.Server.Admin;
+using AppPortal.Server.Agent;
 using AppPortal.Server.Api;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Cli;
@@ -168,6 +169,7 @@ app.UseRateLimiter();
 
 app.MapPortalApi();
 app.MapEnrollmentApi();
+app.MapAgentApi();
 app.MapAdminSessionApi();
 app.MapRazorPages();
 

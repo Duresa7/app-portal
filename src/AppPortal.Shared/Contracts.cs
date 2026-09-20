@@ -1,6 +1,7 @@
 namespace AppPortal.Shared;
 
 /// <summary>One application the administrator has approved for self-service installation.</summary>
+[method: System.Text.Json.Serialization.JsonConstructor]
 public sealed record CatalogApp(
     string Id,
     string Name,
@@ -8,7 +9,15 @@ public sealed record CatalogApp(
     string Description,
     string Category,
     string? IconUrl,
-    bool Featured);
+    bool Featured,
+    string[] Engines,
+    long? DownloadSizeBytes)
+{
+    public CatalogApp(string id, string name, string publisher, string description, string category, string? iconUrl, bool featured)
+        : this(id, name, publisher, description, category, iconUrl, featured, ["action1"], null)
+    {
+    }
+}
 
 /// <summary>The device the caller authenticated as, plus what the management plane knows about it.</summary>
 public sealed record DeviceInfo(
@@ -129,3 +138,12 @@ public static class ApiRoutes
     public const string Enroll = Prefix + "/enroll";
     public const string EnrollCheck = Enroll + "/check";
 }
+
+/// <summary>What the agent reports on each heartbeat. The client version is null when none is installed.</summary>
+public sealed record AgentHeartbeatRequest(string AgentVersion, string? ClientVersion, string OsVersion);
+
+/// <summary>
+/// The answer to a heartbeat. <see cref="HeartbeatSeconds"/> is how long the agent should wait before
+/// the next one, so a fleet that is calling in too often can be slowed down without shipping a build.
+/// </summary>
+public sealed record AgentHeartbeatResponse(DateTimeOffset ServerTime, int HeartbeatSeconds);

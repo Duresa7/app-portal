@@ -389,6 +389,24 @@ public sealed class DeviceStore(Database database)
     }
 
     /// <summary>
+    /// What the agent's heartbeat writes. It sets <c>has_agent</c> rather than testing it first: a
+    /// heartbeat arriving at all is the proof that an agent is installed, whatever the row said before.
+    /// </summary>
+    public void RecordHeartbeat(string id, string agentVersion)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE devices SET agent_version = @version, last_seen_at = @now, has_agent = 1
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("@version", agentVersion);
+        command.Parameters.AddWithValue("@now", SqlTime.Now());
+        command.Parameters.AddWithValue("@id", id);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
     /// Records that the device called just now. The caller decides how often this is worth doing; every
     /// API request would be a write per request for a number nobody reads to the second.
     /// </summary>

@@ -22,6 +22,18 @@ _Avoid_: deployment, job, installation, run
 A staff member asking, in free text, for software that is not in the catalog. An administrator approves or denies it with a reason, and the asker sees both. A request never becomes a link to a catalog app.
 _Avoid_: ticket, suggestion, ask, proposal
 
+**Scope**:
+Who an install is for. A machine-wide install serves everyone on the device and runs as SYSTEM. A per-user install serves one requester, lands in their profile, and runs in their session.
+_Avoid_: context, target, per-machine, all-users, level
+
+**Prerequisite**:
+A catalog app that must be installed before another one. The portal installs the chain in order as one install.
+_Avoid_: dependency, requirement, bundle, parent
+
+**Requirement**:
+Something a catalog app needs that the portal cannot arrange, written in plain words for the person to read and confirm before installing, such as Secure Boot or a vendor account. The portal never checks one and never refuses an install over one.
+_Avoid_: prerequisite, capability, constraint, spec, check
+
 ### People and machines
 
 **Device**:

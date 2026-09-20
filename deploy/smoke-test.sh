@@ -65,11 +65,14 @@ out=$(docker exec "$name" dotnet AppPortal.Server.dll key create --name smoke-ro
 enroll_key=$(echo "$out" | tail -n 1 | tr -d '[:space:]')
 [[ "$enroll_key" == ape_* ]] || { echo "No enrollment key in key create output"; exit 1; }
 
-step "The enrollment check accepts the key without spending a use"
-code=$(curl -s -o /dev/null -w '%{http_code}' \
+step "The enrollment check accepts the key and names its engine"
+# The setup wizard reads the engine to decide whether it has to ask for an Action1 endpoint id before
+# it installs anything, so the name in this body is a contract and not a label.
+code=$(curl -s -o "$scratch/check.json" -w '%{http_code}' \
     -H "X-Enrollment-Key: $enroll_key" "http://127.0.0.1:$port/api/v1/enroll/check")
-[[ "$code" == 204 ]] || { echo "Expected 204 from the enrollment check, got $code"; exit 1; }
-echo "204 as expected"
+[[ "$code" == 200 ]] || { echo "Expected 200 from the enrollment check, got $code"; exit 1; }
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["engine"]=="agent", r' "$scratch/check.json"
+echo "200 naming the agent engine, as expected"
 
 step "A PC trades the key for a device token"
 # No bearer token on this call: the key is what authenticates it, which is the whole point of the route.

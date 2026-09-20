@@ -104,6 +104,78 @@ public sealed class AdminCatalogPageTests : IDisposable
     }
 
     [Fact]
+    public async Task Creating_an_existing_id_does_not_overwrite_the_app()
+    {
+        var store = new CatalogStore(_test.Database, "");
+        store.Import(CatalogStore.Parse("""
+            { "apps": [ { "id": "chrome", "name": "Google Chrome", "action1": { "packageId": "original" } } ] }
+            """));
+        var admin = await SignedIn();
+
+        var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["Id"] = " chrome ",
+            ["Name"] = "Replacement",
+            ["PackageId"] = "replacement",
+            ["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new"),
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("already exists", await response.Content.ReadAsStringAsync());
+        var entry = Assert.Single(store.Entries);
+        Assert.Equal("Google Chrome", entry.Name);
+        Assert.Equal("original", entry.Action1.PackageId);
+    }
+
+    [Fact]
+    public async Task An_invalid_new_app_keeps_its_id_editable_for_correction()
+    {
+        var admin = await SignedIn();
+
+        var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["Id"] = "chrome",
+            ["Name"] = "",
+            ["PackageId"] = "package",
+            ["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new"),
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("An app needs a name.", html);
+        Assert.Contains("name=\"Id\" type=\"text\" value=\"chrome\"", html);
+        Assert.Empty(new CatalogStore(_test.Database, "").Entries);
+    }
+
+    [Fact]
+    public async Task Editing_an_app_preserves_its_exact_inventory_match()
+    {
+        var store = new CatalogStore(_test.Database, "");
+        store.Import(CatalogStore.Parse("""
+            { "apps": [ { "id": "code", "name": "Visual Studio Code", "action1": { "packageId": "package" },
+              "match": { "nameEquals": "Microsoft Visual Studio Code (User)" } } ] }
+            """));
+        var admin = await SignedIn();
+        var html = await admin.GetStringAsync("/admin/catalog/code");
+        var exactField = Regex.Match(html, "name=\"MatchNameEquals\"[^>]*value=\"([^\"]*)\"");
+        Assert.True(exactField.Success);
+
+        var response = await admin.PostAsync("/admin/catalog/code", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["Name"] = "Code editor",
+            ["PackageId"] = "package",
+            ["MatchNameEquals"] = WebUtility.HtmlDecode(exactField.Groups[1].Value),
+            ["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/code"),
+        }));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var entry = Assert.Single(store.Entries);
+        Assert.Equal("Code editor", entry.Name);
+        Assert.True(entry.MatchesInstalled("Microsoft Visual Studio Code (User)"));
+        Assert.False(entry.MatchesInstalled("Code editor extension"));
+    }
+
+    [Fact]
     public async Task A_hidden_app_disappears_from_the_device_catalog_but_stays_in_the_admin_list()
     {
         var store = new CatalogStore(_test.Database, "");

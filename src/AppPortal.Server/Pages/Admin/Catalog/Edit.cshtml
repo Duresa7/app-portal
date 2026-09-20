@@ -60,6 +60,9 @@
         </p>
         <label for="match">Installed name contains</label>
         <input id="match" name="MatchNameContains" type="text" value="@Model.MatchNameContains" autocomplete="off" />
+        <label for="match-exact">Installed name equals</label>
+        <input id="match-exact" name="MatchNameEquals" type="text" value="@Model.MatchNameEquals" autocomplete="off" />
+        <p class="muted">An exact name takes precedence over the contains rule.</p>
     </div>
 
     <div class="card">

@@ -30,6 +30,10 @@
         {
             <tr>
                 <td>
+                    @if (!string.IsNullOrWhiteSpace(app.IconUrl))
+                    {
+                        <img src="@app.IconUrl" alt="" width="24" height="24" />
+                    }
                     <a href="/admin/catalog/@app.Id">@app.Name</a>
                     @if (app.Featured)
                     {

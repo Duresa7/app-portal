@@ -53,6 +53,9 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : Pa
     public string MatchNameContains { get; set; } = "";
 
     [BindProperty]
+    public string MatchNameEquals { get; set; } = "";
+
+    [BindProperty]
     public string PackageId { get; set; } = "";
 
     [BindProperty]
@@ -77,10 +80,10 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : Pa
         return Page();
     }
 
-    public IActionResult OnPost(string id)
+    public IActionResult OnPost([FromRoute] string id)
     {
         IsNew = string.Equals(id, NewId, StringComparison.OrdinalIgnoreCase);
-        var target = (IsNew ? Id : id) ?? "";
+        var target = ((IsNew ? Id : id) ?? "").Trim();
 
         if (IsNew && string.Equals(target.Trim(), NewId, StringComparison.OrdinalIgnoreCase))
         {
@@ -104,7 +107,13 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : Pa
             IconUrl = string.IsNullOrWhiteSpace(IconUrl) ? null : IconUrl.Trim(),
             Featured = Featured,
             Hidden = Hidden,
-            Match = string.IsNullOrWhiteSpace(MatchNameContains) ? null : new MatchRule { NameContains = MatchNameContains.Trim() },
+            Match = string.IsNullOrWhiteSpace(MatchNameContains) && string.IsNullOrWhiteSpace(MatchNameEquals)
+                ? null
+                : new MatchRule
+                {
+                    NameContains = string.IsNullOrWhiteSpace(MatchNameContains) ? null : MatchNameContains.Trim(),
+                    NameEquals = string.IsNullOrWhiteSpace(MatchNameEquals) ? null : MatchNameEquals.Trim(),
+                },
             Action1 = new Action1PackageRef
             {
                 PackageId = (PackageId ?? "").Trim(),
@@ -174,6 +183,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : Pa
         Featured = entry.Featured;
         Hidden = entry.Hidden;
         MatchNameContains = entry.Match?.NameContains ?? "";
+        MatchNameEquals = entry.Match?.NameEquals ?? "";
         PackageId = entry.Action1.PackageId;
         Version = entry.Action1.Version;
     }

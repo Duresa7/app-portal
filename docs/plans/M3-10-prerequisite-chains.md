@@ -32,6 +32,14 @@ A catalog app can name catalog apps that must be installed before it. Asking for
 
 The two tables above. `PrerequisiteResolver.Expand`. `InstallRequest` gains `StepName: string?`, `StepNumber: int` and `StepCount: int`. Export field `requires`.
 
+Three things differ from this plan as written:
+
+- The migration is **017**; 014 through 016 were taken while this package was open.
+- **A step is advanced by the refresh, not by the completion.** A step finishes inside the job store's own transaction, and starting the next one from in there would mean an install engine reaching back into a write that has not been committed. The poll the client already makes, and the background poller for Action1 steps, are what move the chain on.
+- Because of that, two things the job store must decide for itself: a succeeded step of a chain holds the install at running rather than letting the card flash "Installed" between steps, and a failed one is labelled with which step it was before the install goes inactive and nothing refreshes it again.
+
+`Requires` lives on the catalog entry rather than in a store of its own, so an export carries a chain and an import rebuilds it without a second format to keep in step.
+
 ## Steps
 
 1. Tables, resolver and cycle detection, with a table-driven test over diamonds, repeats, already-installed steps and the length limit.

@@ -97,6 +97,11 @@
     </div>
 
     <div class="card">
+        <h2>Needs first</h2>
+        <label for="requires">Catalog app ids to install before this one, one per line (optional)</label>
+        <textarea id="requires" name="Requires" rows="3">@Model.Requires</textarea>
+        <p class="muted">Installed in the order written, as one install. Anything already on the PC is skipped.</p>
+
         <h2>Requirements</h2>
         <label for="requirements">What this app needs, in your own words (optional)</label>
         <textarea id="requirements" name="Requirements" rows="3" maxlength="500"

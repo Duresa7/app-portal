@@ -60,7 +60,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M3-03](plans/M3-03-winget-executor.md) | winget executor | M3-02 | Done |
 | [M3-04](plans/M3-04-direct-installer-executor.md) | Direct installer executor | M3-02 | Done |
 | [M3-05](plans/M3-05-engine-selection.md) | Engine selection and labels | M3-01, M3-02, M1-07 | Done |
-| [M3-06](plans/M3-06-release-0.5.0.md) | Release 0.5.0 | M3-03, M3-04, M3-05, M3-07, M3-08, M3-09, M3-10, M3-11 | In review |
+| [M3-06](plans/M3-06-release-0.5.0.md) | Release 0.5.0 | M3-03, M3-04, M3-05, M3-07, M3-08, M3-09, M3-10, M3-11 | Done |
 | [M3-07](plans/M3-07-user-session-installs.md) | Installs that run as the signed-in person | M3-03, M3-04 | Done |
 | [M3-08](plans/M3-08-app-requirements.md) | Requirements the person reads before installing | M3-01 | Done |
 | [M3-09](plans/M3-09-reboot-orchestration.md) | Restarts as part of the install | M3-02, M3-04 | Done |
@@ -72,6 +72,10 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M4-04](plans/M4-04-client-catalog.md) | Client admin: catalog | M4-02 | Open |
 | [M4-05](plans/M4-05-client-devices-keys-admins.md) | Client admin: devices, keys, admins | M4-02 | Open |
 | [M4-06](plans/M4-06-release-0.6.0.md) | Release 0.6.0 | M4-03, M4-04, M4-05 | Open |
+
+Milestone 3 shipped as [v0.5.0](https://github.com/Duresa7/app-portal/releases/tag/v0.5.0). The full gate, Windows jobs included, was run on the release commit before the tag and passed. **None of the VM verification in the milestone 3 plans was done.** The Win32 code behind per-user installs has only ever run against a test double, and no installer has been run by the agent outside a fake process runner, so prove a per-user install and a restart on one real PC before trusting this to a fleet.
+
+Milestone 2 is not finished: M2-04, M2-05 and M2-06 are open, so 0.4.0 never shipped and 0.5.0 carries an MSI with no Setup.exe bootstrapper and no agent self-update.
 
 Milestone 1 shipped as [v0.3.0](https://github.com/Duresa7/app-portal/releases/tag/v0.3.0). The [release gate](https://github.com/Duresa7/app-portal/actions/runs/35485822532) passed, the downloaded client archive matched `SHA256SUMS`, and `ghcr.io/duresa7/app-portal-server:0.3.0` was pulled without registry credentials. The upgrade check used a copied 0.2.1 fake-mode data volume; validate a copy of production data before upgrading a live deployment.
 

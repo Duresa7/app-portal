@@ -1,0 +1,63 @@
+@using AppPortal.Shared
+@using AppPortal.Server.Pages.Admin.Requests
+@model RequestRowView
+@{
+    var request = Model.Request;
+    var pending = request.Status == AppRequestStatus.Pending;
+}
+<tr id="request-@request.Id">
+    <td class="muted">@request.CreatedAt.ToLocalTime().ToString("u")</td>
+    <td>@request.DeviceName</td>
+    <td class="muted">@(string.IsNullOrWhiteSpace(request.RequestedBy) ? "unknown" : request.RequestedBy)</td>
+    <td>@request.Text</td>
+    <td>
+        @if (pending)
+        {
+            <span class="pill">Pending</span>
+        }
+        else
+        {
+            <span class="pill off">@request.Status</span>
+            <div class="muted">@(string.IsNullOrWhiteSpace(request.Reason) ? "No reason given." : request.Reason)</div>
+            <div class="muted">
+                by @request.DecidedBy@(request.DecidedAt is { } at ? " on " + at.ToLocalTime().ToString("u") : "")
+            </div>
+        }
+    </td>
+    <td class="right">
+        @if (pending)
+        {
+            @* One form per row, inside the cell, because every row carries a field called "reason".
+               A single form around the table would submit all of them and the first would win.
+               <details> does the revealing, so the reason field is still there with scripting off. *@
+            @* The form tag helper puts the antiforgery token in for us; an explicit one would be a duplicate. *@
+            <form method="post">
+                <input type="hidden" name="id" value="@request.Id" />
+                <input type="hidden" name="tab" value="@Model.Tab" />
+                <input type="hidden" name="p" value="@Model.PageNumber" />
+                <details>
+                    <summary>Decide</summary>
+                    <label for="reason-@request.Id">Reason (optional)</label>
+                    <input id="reason-@request.Id" name="reason" type="text"
+                           maxlength="@AppRequestLimits.MaxTextLength" placeholder="Shown to whoever asked" />
+                    <div class="actions">
+                        @* The same two buttons serve both paths: htmx takes the click when it is loaded,
+                           and formaction carries the plain submit when it is not. *@
+                        <button type="submit"
+                                formaction="/admin/requests?handler=Approve"
+                                hx-post="/admin/requests?handler=Approve"
+                                hx-include="closest form"
+                                hx-target="#request-table"
+                                hx-swap="outerHTML">Approve</button>
+                        <button class="secondary" type="submit"
+                                formaction="/admin/requests?handler=Deny"
+                                hx-post="/admin/requests?handler=Deny"
+                                hx-include="closest form"
+                                hx-target="#request-table"
+                                hx-swap="outerHTML">Deny</button>
+                    </div>
+                </details>
+            </form>
+        }
+    </td>
+</tr>

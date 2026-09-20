@@ -1,0 +1,37 @@
+@model RequestTableView
+<table id="request-table">
+    <thead>
+    <tr>
+        <th>Submitted</th>
+        <th>Device</th>
+        <th>Requested by</th>
+        <th>What was asked for</th>
+        <th>Decision</th>
+        <th class="right">Actions</th>
+    </tr>
+    </thead>
+    <tbody>
+    @if (Model.Requests.Count == 0)
+    {
+        <tr>
+            <td colspan="6" class="muted">Nothing here.</td>
+        </tr>
+    }
+    @foreach (var request in Model.Requests)
+    {
+        <partial name="Shared/_RequestRow" model="new RequestRowView(request, Model.Tab, Model.PageNumber)" />
+    }
+    </tbody>
+</table>
+@if (Model.OutOfBand)
+{
+    @* Swapped by id wherever they sit, so one decision updates the badge in the navigation pane and
+       the message above the table without either of them being the target of the request. *@
+    <span id="pending-badge" class="pill" hx-swap-oob="true">@Model.PendingCount</span>
+    <div id="decide-message" hx-swap-oob="true">
+        @if (Model.Message is not null)
+        {
+            <div class="message @(Model.MessageIsError ? "error" : "ok")">@Model.Message</div>
+        }
+    </div>
+}

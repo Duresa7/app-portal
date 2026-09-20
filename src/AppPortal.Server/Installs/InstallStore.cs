@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 
 using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Data;
@@ -38,7 +39,7 @@ public sealed class InstallRecord
     /// </summary>
     public string? RequestedBy { get; set; }
 
-    /// <summary>Which install engine carried this out. Always action1 until M3 adds the agent.</summary>
+    /// <summary>Which install engine carried this out.</summary>
     public string Engine { get; set; } = EngineLabel.Action1;
 
     public string EngineText => EngineLabel.For(Engine);
@@ -93,6 +94,21 @@ public sealed record InstallFilter(
 
 public sealed class InstallStore(Database database)
 {
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public PackageDefinition? FindAgentOnlyPackage(string appId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT definition_json FROM catalog_packages
+            WHERE app_id = @app AND engine = 'agent'
+              AND NOT EXISTS (SELECT 1 FROM catalog_packages WHERE app_id = @app AND engine = 'action1');
+            """;
+        command.Parameters.AddWithValue("@app", appId);
+        return command.ExecuteScalar() is string json ? JsonSerializer.Deserialize<PackageDefinition>(json, Json) : null;
+    }
+
     public IReadOnlyList<InstallRecord> All()
     {
         using var connection = database.Open();
@@ -265,6 +281,13 @@ public sealed class InstallStore(Database database)
         // stored row and deciding whether to overwrite it cannot interleave.
         using var transaction = connection.BeginTransaction(deferred: false);
 
+        var written = Upsert(record, connection, transaction);
+        transaction.Commit();
+        return written;
+    }
+
+    internal static bool Upsert(InstallRecord record, SqliteConnection connection, SqliteTransaction transaction)
+    {
         string? storedState = null;
         string? storedChecked = null;
         string? storedDeviceId = null;
@@ -302,7 +325,7 @@ public sealed class InstallStore(Database database)
             write.CommandText = """
                 INSERT INTO installs (id, device_id, device_name, app_id, app_name, requested_by, engine, external_ref,
                                       state, percent, detail, requested_at, completed_at, last_checked_at)
-                VALUES (@id, @device, @deviceName, @appId, @appName, @requestedBy, 'action1', @external,
+                VALUES (@id, @device, @deviceName, @appId, @appName, @requestedBy, @engine, @external,
                         @state, @percent, @detail, @requested, @completed, @checked)
                 ON CONFLICT(id) DO UPDATE SET
                     app_name = excluded.app_name, external_ref = excluded.external_ref, state = excluded.state,
@@ -322,6 +345,7 @@ public sealed class InstallStore(Database database)
             // Left out of the ON CONFLICT update on purpose: who asked is settled when the install is made,
             // and the poller refreshes from records that never carried it.
             write.Parameters.AddWithValue("@requestedBy", (object?)record.RequestedBy ?? DBNull.Value);
+            write.Parameters.AddWithValue("@engine", record.Engine);
             write.Parameters.AddWithValue("@external", (object?)record.AutomationId ?? DBNull.Value);
             write.Parameters.AddWithValue("@state", record.State.ToString());
             write.Parameters.AddWithValue("@percent", record.PercentComplete);
@@ -333,7 +357,6 @@ public sealed class InstallStore(Database database)
             write.ExecuteNonQuery();
         }
 
-        transaction.Commit();
         return true;
     }
 

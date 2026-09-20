@@ -13,7 +13,7 @@ public static class AgentEndpoints
     public static void MapAgentApi(this WebApplication app)
     {
         var group = app.MapGroup(ApiRoutes.Prefix + "/agent");
-        group.MapPost("/heartbeat", (AgentHeartbeatRequest request, HttpContext context, DeviceStore devices, IConfiguration configuration) =>
+        group.MapPost("/heartbeat", (AgentHeartbeatRequest request, HttpContext context, DeviceStore devices, IConfiguration configuration, AgentJobStore jobs) =>
         {
             if (string.IsNullOrWhiteSpace(request.AgentVersion) || string.IsNullOrWhiteSpace(request.OsVersion))
             {
@@ -22,8 +22,52 @@ public static class AgentEndpoints
 
             var device = DeviceAuthenticationMiddleware.Current(context);
             devices.RecordHeartbeat(device.Id, request.AgentVersion);
-            var seconds = configuration.GetValue("Agent:HeartbeatSeconds", 900);
+            var seconds = jobs.HasQueued(device.Id) ? 60 : configuration.GetValue("Agent:HeartbeatSeconds", 900);
             return Results.Ok(new AgentHeartbeatResponse(DateTimeOffset.UtcNow, seconds > 0 ? seconds : 900));
+        });
+
+        group.MapGet("/jobs", async (int? wait, HttpContext context, AgentJobStore jobs, IHostApplicationLifetime lifetime, CancellationToken ct) =>
+        {
+            using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.ApplicationStopping);
+            var token = stopping.Token;
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            var deadline = System.Diagnostics.Stopwatch.StartNew();
+            var duration = TimeSpan.FromSeconds(Math.Clamp(wait ?? 0, 0, 25));
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                var job = jobs.Lease(device.Id);
+                if (job is not null)
+                {
+                    return Results.Ok(job);
+                }
+
+                var remaining = duration - deadline.Elapsed;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    return Results.NoContent();
+                }
+
+                // Lease has closed its connection: a waiting device must not block another writer.
+                await Task.Delay(remaining < TimeSpan.FromMilliseconds(250) ? remaining : TimeSpan.FromMilliseconds(250), token);
+            }
+        });
+
+        group.MapPost("/jobs/{id}/progress", (string id, int? attempt, AgentJobProgress request, HttpContext context, AgentJobStore jobs) =>
+        {
+            if (request.State is not ("queued" or "downloading" or "installing" or "cancelled") || request.Percent is < 0 or > 100)
+            {
+                return Results.BadRequest(new ErrorMessage("A valid progress state and percent from 0 to 100 are required."));
+            }
+
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            return jobs.Progress(device.Id, id, request, attempt) ? Results.NoContent() : Results.Conflict(new ErrorMessage("The job has no current lease for this device."));
+        });
+
+        group.MapPost("/jobs/{id}/complete", (string id, int? attempt, AgentJobCompletion request, HttpContext context, AgentJobStore jobs) =>
+        {
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            return jobs.Complete(device.Id, id, request, attempt) ? Results.NoContent() : Results.Conflict(new ErrorMessage("The job has no current lease for this device."));
         });
     }
 }

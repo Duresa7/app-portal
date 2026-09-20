@@ -46,6 +46,13 @@ builder.Services.AddSingleton<DeviceStore>();
 builder.Services.AddSingleton<EnrollmentKeyStore>();
 builder.Services.AddSingleton<InstallStore>();
 builder.Services.AddSingleton<AppRequestStore>();
+builder.Services.AddSingleton<AgentJobStore>();
+
+// Both engines are registered and InstallService picks between them per install. Adding an engine is
+// adding a registration here, which is the seam AGENTS.md asks for: nothing wires an install engine
+// into a service directly.
+builder.Services.AddSingleton<IInstallEngine, Action1InstallEngine>();
+builder.Services.AddSingleton<IInstallEngine, AgentInstallEngine>();
 builder.Services.AddSingleton<InstallService>();
 builder.Services.AddHostedService<InstallStatusPoller>();
 

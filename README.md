@@ -74,11 +74,10 @@ Demo mode fills the whole interface with sample data held in memory. Installs ad
 | `src/AppPortal.Shared` | API contracts shared by client and server |
 | `src/AppPortal.Server` | ASP.NET Core minimal API, Action1 client, SQLite storage and migrations, CLI |
 | `src/AppPortal.Client` | Avalonia desktop client (Windows target; runs on Linux for development) |
-| `src/AppPortal.Updater` | Self-contained updater run by a SYSTEM scheduled task; replaces the client from GitHub releases |
 | `tests/AppPortal.Server.Tests` | xUnit tests against an in-memory Action1 stand-in |
 | `tests/AppPortal.Client.Tests` | Client catalog refresh regression tests |
-| `tests/AppPortal.Updater.Tests` | xUnit tests for version parsing, checksum parsing and the file swap |
-| `src/AppPortal.Agent` | SYSTEM service for enrollment and heartbeats |
+| `tests/AppPortal.Agent.Tests` | xUnit tests for enrollment, heartbeats, the install engines and self-update |
+| `src/AppPortal.Agent` | SYSTEM service for enrollment, heartbeats, installs and self-update from GitHub releases |
 | `src/AppPortal.Installer` | WiX v5 MSI, built and verified on Windows |
 | `deploy/` | Dockerfile, compose file, environment template and server smoke test |
 | `docs/` | Screenshots and design notes |
@@ -191,9 +190,15 @@ The client's **Requests** section accepts up to 500 characters describing the so
 
 ## Updates
 
-MSI installations upgrade through the MSI as described above. Automatic MSI updates are added in M2-04.
+The agent keeps the whole installation current, itself included. It asks GitHub for the newest release when the service starts, once a day at a random second in the noon hour, and within ten seconds of a client asking. The random second keeps a site's worth of machines from arriving together. A release newer than what is installed is downloaded as `AppPortal-<version>-x64.msi`, checked against that release's `SHA256SUMS`, and kept under `%ProgramData%\AppPortal\updates`. Anything that does not match its published hash is discarded.
 
-Legacy zip installations still use `AppPortal.Updater.exe` and the **App Portal Updater** SYSTEM task. That updater downloads the release zip, verifies `SHA256SUMS`, and replaces the client when it is closed. The zip remains available for one transition release. Do not run that updater against an MSI installation.
+Applying it needs the client closed, because Windows Installer cannot replace files a running process holds open. With nothing open the agent runs `msiexec /i <msi> /qn /norestart /l*v update-<version>.log` as SYSTEM straight away. With a client open it waits, and that client shows **Restart to update**. Older MSIs are deleted after a successful install; a failure keeps the log beside the MSI and is reported rather than retried differently.
+
+`%ProgramData%\AppPortal\update.json` is what the client's banners read: the installed version, the newest published one, the one waiting to be applied, and a result of `UpToDate`, `Available`, `Installed`, `Offline` or `Failed`. The client never reaches the release feed itself. All it can do is leave `update.request` in the same folder, which the agent takes and deletes within ten seconds; the download and the install are the agent's, as SYSTEM. So that a signed-in user can leave that file, the agent grants the Users group the right to add a file to that one folder and nothing else, which leaves `client.json` and `enroll.json` as they were.
+
+An `"updateRepository": "owner/name"` in `client.json` points a test fleet at a fork. `AppPortal.Agent.exe --check` prints what that repository publishes and downloads nothing.
+
+A PC upgraded from a zip installation still carries the **App Portal Updater** scheduled task. The agent deletes it on its first start, so the retired updater cannot replace files Windows Installer now owns.
 
 ## Development
 

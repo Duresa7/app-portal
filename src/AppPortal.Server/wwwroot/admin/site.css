@@ -166,6 +166,45 @@ td.right, th.right { text-align: right; }
 .pill.off { color: var(--danger); }
 .muted { color: var(--text-secondary); }
 
+/* A link that has to sit beside a button and look like one. */
+a.button {
+    display: inline-flex;
+    align-items: center;
+    background: var(--accent);
+    color: #fff;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    padding: 6px 16px;
+    font: inherit;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+a.button:hover { filter: brightness(1.08); }
+a.button.secondary { background: var(--layer); color: var(--text); border-color: var(--stroke); }
+
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+.toolbar .spacer { flex: 1; }
+.toolbar form.inline { display: flex; gap: 8px; align-items: center; margin: 0; }
+
+input[type=search] {
+    background: transparent;
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-control);
+    color: var(--text);
+    font: inherit;
+    padding: 6px 12px;
+    min-width: 240px;
+}
+
+input[type=search]:focus { outline: none; border-color: var(--accent); }
+
+/* A checkbox reads as one line with its wording, not as a label above a field. */
+label.check { display: flex; align-items: center; gap: 8px; font-weight: 400; margin: 12px 0 0; }
+label.check input { margin: 0; }
+
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.92em; }
+
 /* The filter row: each control keeps its label, and the row wraps rather than scrolling. */
 .filters { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
 .filters .field { display: flex; flex-direction: column; gap: 4px; }

@@ -165,3 +165,72 @@ td.right, th.right { text-align: right; }
 .pill { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(127, 127, 127, 0.16); }
 .pill.off { color: var(--danger); }
 .muted { color: var(--text-secondary); }
+
+/* A link that has to sit beside a button and look like one. */
+a.button {
+    display: inline-flex;
+    align-items: center;
+    background: var(--accent);
+    color: #fff;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    padding: 6px 16px;
+    font: inherit;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+a.button:hover { filter: brightness(1.08); }
+a.button.secondary { background: var(--layer); color: var(--text); border-color: var(--stroke); }
+
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+.toolbar .spacer { flex: 1; }
+.toolbar form.inline { display: flex; gap: 8px; align-items: center; margin: 0; }
+
+input[type=search] {
+    background: transparent;
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-control);
+    color: var(--text);
+    font: inherit;
+    padding: 6px 12px;
+    min-width: 240px;
+}
+
+input[type=search]:focus { outline: none; border-color: var(--accent); }
+
+/* A checkbox reads as one line with its wording, not as a label above a field. */
+label.check { display: flex; align-items: center; gap: 8px; font-weight: 400; margin: 12px 0 0; }
+label.check input { margin: 0; }
+
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.92em; }
+
+/* The filter row: each control keeps its label, and the row wraps rather than scrolling. */
+.filters { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
+.filters .field { display: flex; flex-direction: column; gap: 4px; }
+.filters label { margin: 0; font-size: 12px; color: var(--text-secondary); }
+.filters .field:last-child { flex-direction: row; gap: 8px; align-items: center; }
+
+select, input[type=date] {
+    background: transparent;
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-control);
+    color: var(--text);
+    font: inherit;
+    padding: 6px 10px;
+    min-width: 150px;
+}
+
+select:focus, input[type=date]:focus { outline: none; border-color: var(--accent); }
+
+.pager { margin-top: 16px; margin-bottom: 0; }
+
+/* A tile that is also a link should not look like body text. */
+a.card.tile { text-decoration: none; color: inherit; display: block; }
+a.card.tile:hover { border-color: var(--accent); }
+.tile .value.bad { color: var(--danger); }
+
+/* Label and value pairs on a detail page. */
+dl.detail { display: grid; grid-template-columns: 200px 1fr; gap: 8px 16px; margin: 0; }
+dl.detail dt { color: var(--text-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; padding-top: 2px; }
+dl.detail dd { margin: 0; overflow-wrap: anywhere; }

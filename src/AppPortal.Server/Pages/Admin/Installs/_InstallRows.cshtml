@@ -1,0 +1,70 @@
+@using AppPortal.Shared
+@model AppPortal.Server.Pages.Admin.Installs.IndexModel
+@{
+    // Keep checking a quiet fleet too, so installs started after this page opened appear automatically.
+    var pollUrl = "/admin/installs?handler=Rows" + Model.QueryFor(Model.Skip).Replace('?', '&');
+}
+<div id="install-rows" hx-get="@pollUrl" hx-trigger="every 30s" hx-swap="outerHTML">
+    <table>
+        <thead>
+        <tr>
+            <th>Requested</th>
+            <th>Device</th>
+            <th>Requested by</th>
+            <th>App</th>
+            <th>Engine</th>
+            <th>State</th>
+            <th>Completed</th>
+        </tr>
+        </thead>
+        <tbody>
+        @if (Model.Installs.Count == 0)
+        {
+            <tr>
+                <td colspan="7" class="muted">No installs match.</td>
+            </tr>
+        }
+        @foreach (var install in Model.Installs)
+        {
+            <tr>
+                <td><a href="/admin/installs/@install.Id">@install.RequestedAt.ToLocalTime().ToString("u")</a></td>
+                <td>@install.DeviceName</td>
+                <td>@(string.IsNullOrWhiteSpace(install.RequestedBy) ? "—" : install.RequestedBy)</td>
+                <td>
+                    @install.AppName
+                    <div class="muted">@install.AppId</div>
+                </td>
+                <td class="muted">@install.EngineText</td>
+                <td>
+                    <span class="pill @(install.State == InstallState.Failed ? "off" : "")">@install.State</span>
+                    @if (install.IsActive)
+                    {
+                        <span class="muted">@install.PercentComplete%</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(install.Detail))
+                    {
+                        <div class="muted">@install.Detail</div>
+                    }
+                </td>
+                <td class="muted">@(install.CompletedAt is { } done ? done.ToLocalTime().ToString("u") : "—")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+
+    @if (Model.Total > 0)
+    {
+        <div class="toolbar pager">
+            <span class="muted">Showing @Model.FirstShown to @Model.LastShown of @Model.Total</span>
+            <div class="spacer"></div>
+            @if (Model.HasPrevious)
+            {
+                <a class="button secondary" href="/admin/installs@(Model.QueryFor(Math.Max(0, Model.Skip - AppPortal.Server.Pages.Admin.Installs.IndexModel.PageSize)))">Newer</a>
+            }
+            @if (Model.HasNext)
+            {
+                <a class="button secondary" href="/admin/installs@(Model.QueryFor(Model.Skip + AppPortal.Server.Pages.Admin.Installs.IndexModel.PageSize))">Older</a>
+            }
+        </div>
+    }
+</div>

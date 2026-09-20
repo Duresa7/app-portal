@@ -353,7 +353,17 @@ public sealed partial class MainViewModel : ViewModelBase
         var known = Apps.ToDictionary(a => a.App.Id, StringComparer.OrdinalIgnoreCase);
         foreach (var app in catalog)
         {
-            if (!known.ContainsKey(app.Id))
+            if (known.TryGetValue(app.Id, out var existing))
+            {
+                var iconChanged = existing.App.IconUrl != app.IconUrl;
+                existing.App = app;
+                if (iconChanged)
+                {
+                    existing.Icon = null;
+                    _ = LoadIconAsync(existing);
+                }
+            }
+            else
             {
                 var item = new AppItemViewModel(app, InstallAsync);
                 Apps.Add(item);
@@ -420,10 +430,18 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task LoadIconAsync(AppItemViewModel item)
     {
-        var bitmap = await _icons.GetAsync(item.App.IconUrl);
+        var url = item.App.IconUrl;
+        var bitmap = await _icons.GetAsync(url);
         if (bitmap is not null)
         {
-            await Dispatcher.UIThread.InvokeAsync(() => item.Icon = bitmap);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                // A slower download for the previous URL must not undo a newer catalog edit.
+                if (item.App.IconUrl == url)
+                {
+                    item.Icon = bitmap;
+                }
+            });
         }
     }
 

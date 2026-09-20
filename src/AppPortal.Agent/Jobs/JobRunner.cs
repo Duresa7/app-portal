@@ -118,8 +118,12 @@ public sealed class JobRunner(
                 return;
             }
 
+            // Some installers need a restart and do not say so in their exit code, which is why the
+            // catalog can say it for them.
+            var needsRestart = result.NeedsRestart || (result.Ok && definition.RequiresReboot);
             using var completed = await SendAsync(settings, HttpMethod.Post, route + "/complete" + attempt,
-                new AgentJobCompletion(result.Ok, result.Detail, result.ExitCode), ct);
+                new AgentJobCompletion(result.Ok, needsRestart ? RestartDetail(result) : result.Detail,
+                    result.ExitCode, needsRestart), ct);
             if (result.Ok && software is not null)
             {
                 // After the completion, not before it. The install is finished either way, and the
@@ -217,6 +221,9 @@ public sealed class JobRunner(
             }
         }
     }
+
+    private static string RestartDetail(ExecutionResult result)
+        => result.NeedsRestart ? result.Detail ?? "Installed." : "Installed. This PC has to restart to finish.";
 
     /// <summary>
     /// Who is at the PC now. Sent on every poll rather than only when it changes, so a sign-in the

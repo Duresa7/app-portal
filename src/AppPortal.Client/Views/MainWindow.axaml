@@ -192,6 +192,10 @@
                                                         <TextBlock Text="{Binding EngineText}" IsVisible="{Binding HasEngine}" Classes="caption" />
                                                         <TextBlock Text="{Binding RequirementsText}" IsVisible="{Binding HasRequirements}"
                                                                    TextWrapping="Wrap" Classes="caption" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding NeedsRestart}">
+                                                            <TextBlock Text="{Binding RestartText}" TextWrapping="Wrap" Classes="caption" VerticalAlignment="Center" />
+                                                            <Button Content="Restart now" Command="{Binding RestartCommand}" />
+                                                        </StackPanel>
                                                         <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsConfirming}">
                                                             <Button Content="Install anyway" Command="{Binding ConfirmInstallCommand}" />
                                                             <Button Content="Not now" Command="{Binding CancelInstallCommand}" />

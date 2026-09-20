@@ -29,7 +29,15 @@ An install that is not finished until the PC restarts says so, asks for the rest
 
 ## Interface
 
-`installs.reboot_state`. Route `POST /api/v1/agent/jobs/{id}/confirm`, body `{ok, detail}`, device bearer auth. `InstallRequest.RebootState: string?` in the contract. Detail strings "Restart to finish" and "Checking after restart".
+`installs.reboot_state`. `InstallRequest.RebootState: string?` in the contract. Detail string "Restart to finish".
+
+Three things differ from this plan as written:
+
+- The migration is **016**, not 013, which the software account took while this package was open.
+- **There is no confirm route.** The agent already sends a heartbeat, and the heartbeat now carries when the device last started. Anything that was waiting from before that moment has had its restart, whoever pressed the button and whether or not the agent was running at the time. A route of its own would only have been a second way to say the same thing, and one the agent could miss by restarting at the wrong moment.
+- The boot time is derived from the uptime rather than read from the event log, so it needs no privilege and nothing to parse.
+
+A device that reports no software at all is treated as confirmed rather than failed. Reporting nothing is not the same as reporting the software is gone, and a history rewritten on the strength of a failed inventory sweep is worse than one that is merely optimistic.
 
 ## Steps
 

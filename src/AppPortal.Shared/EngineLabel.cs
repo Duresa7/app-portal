@@ -1,6 +1,18 @@
 namespace AppPortal.Shared;
 
 /// <summary>
+/// Whether an install is waiting for a restart. Said the same way in the database, the JSON and on
+/// screen, where it is always "restart" and never "reboot": one of those is a word people use.
+/// </summary>
+public static class RebootState
+{
+    public const string Pending = "pending";
+    public const string Confirmed = "confirmed";
+
+    public const string WaitingDetail = "Restart to finish";
+}
+
+/// <summary>
 /// How an install was carried out, said the same way everywhere. The server's history pages use it
 /// now; the client shows it beside an app from M3-05, once there is more than one engine to tell apart.
 /// </summary>

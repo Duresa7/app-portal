@@ -53,7 +53,8 @@ public sealed record InstallRequest(
     int PercentComplete,
     string? Detail,
     string? RequestedBy,
-    string? Engine = null);
+    string? Engine = null,
+    string? RebootState = null);
 
 /// <summary>Software the management plane reports as present on the device.</summary>
 public sealed record InstalledApp(
@@ -163,7 +164,8 @@ public static class ApiRoutes
 }
 
 /// <summary>What the agent reports on each heartbeat. The client version is null when none is installed.</summary>
-public sealed record AgentHeartbeatRequest(string AgentVersion, string? ClientVersion, string OsVersion);
+public sealed record AgentHeartbeatRequest(string AgentVersion, string? ClientVersion, string OsVersion,
+    DateTimeOffset? BootTime = null);
 
 /// <summary>
 /// The answer to a heartbeat. <see cref="HeartbeatSeconds"/> is how long the agent should wait before
@@ -180,13 +182,17 @@ public sealed record AgentJob(string Id, string InstallId, PackageDefinition Def
 
 public sealed record AgentJobProgress(string State, int Percent, string? Detail);
 
-public sealed record AgentJobCompletion(bool Ok, string? Detail, int? ExitCode);
+/// <summary>
+/// How a job ended. <see cref="NeedsRestart"/> means the software is on the device but will not work
+/// until it restarts, so the install is not finished even though the job is.
+/// </summary>
+public sealed record AgentJobCompletion(bool Ok, string? Detail, int? ExitCode, bool NeedsRestart = false);
 
 /// <summary>
 /// How an install ended. <see cref="WaitingForUser"/> is neither success nor failure: the package
 /// installs for one person, that person is not signed in, and the job is parked until they are.
 /// </summary>
-public sealed record ExecutionResult(bool Ok, string? Detail, int? ExitCode = null, bool WaitingForUser = false);
+public sealed record ExecutionResult(bool Ok, string? Detail, int? ExitCode = null, bool WaitingForUser = false, bool NeedsRestart = false);
 
 /// <summary>
 /// One piece of software the agent found on its device. The vendor is absent on purpose: the sources

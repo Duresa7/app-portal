@@ -57,8 +57,8 @@ public sealed class DirectInstallerExecutorTests : IDisposable
 
     [Theory]
     [InlineData(0, true, "Installed.")]
-    [InlineData(3010, true, "Installed. Restart required.")]
-    [InlineData(1641, true, "Installed. Restart required.")]
+    [InlineData(3010, true, "Installed. This PC has to restart to finish.")]
+    [InlineData(1641, true, "Installed. This PC has to restart to finish.")]
     public async Task Exit_codes_that_mean_it_worked_are_successes(int exitCode, bool ok, string detail)
     {
         var result = await Executor(new FakeProcesses((_, _) => new ProcessResult(exitCode, "")))

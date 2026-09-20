@@ -42,12 +42,20 @@ public sealed class InstallRecord
     /// <summary>Which install engine carried this out.</summary>
     public string Engine { get; set; } = EngineLabel.Action1;
 
+    /// <summary>
+    /// Null when no restart is involved, <c>pending</c> while one is owed, <c>confirmed</c> once the
+    /// device has restarted and the software was still there.
+    /// </summary>
+    public string? RebootState { get; set; }
+
+    public bool IsWaitingForRestart => RebootState == AppPortal.Shared.RebootState.Pending;
+
     public string EngineText => EngineLabel.For(Engine);
 
     public bool IsActive => State is InstallState.Queued or InstallState.Running;
 
     public InstallRequest ToPublic()
-        => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail, RequestedBy, Engine);
+        => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail, RequestedBy, Engine, RebootState);
 }
 
 /// <summary>Install history, one row per request, in the database under the data directory.</summary>
@@ -63,7 +71,8 @@ public sealed record InstallFilter(
     InstallState? State = null,
     string? Requester = null,
     DateOnly? From = null,
-    DateOnly? To = null) : IListFilter<InstallFilter>
+    DateOnly? To = null,
+    bool AwaitingRestart = false) : IListFilter<InstallFilter>
 {
     public static readonly InstallFilter None = new();
 
@@ -75,6 +84,7 @@ public sealed record InstallFilter(
         query.Put("Requester", Requester);
         query.Put("From", Day(From));
         query.Put("To", Day(To));
+        query.Put("Restart", AwaitingRestart ? "1" : null);
     }
 
     public static InstallFilter Read(IReadOnlyDictionary<string, string?> query) => new(
@@ -83,7 +93,8 @@ public sealed record InstallFilter(
         Enum.TryParse<InstallState>(query.Get("State"), ignoreCase: true, out var state) ? state : null,
         query.Get("Requester"),
         ParseDay(query.Get("From")),
-        ParseDay(query.Get("To")));
+        ParseDay(query.Get("To")),
+        query.Get("Restart") == "1");
 
     /// <summary>The form a date input speaks, and nothing else: a day is not a moment.</summary>
     public static string? Day(DateOnly? day) => day?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -206,6 +217,14 @@ public sealed class InstallStore(Database database)
         {
             clauses.Add("i.app_id = @app COLLATE NOCASE");
             command.Parameters.AddWithValue("@app", filter.AppId.Trim());
+        }
+
+        if (filter.AwaitingRestart)
+        {
+            // Not a state of its own: these are running installs the device has to restart to finish,
+            // and an administrator wants to find them without learning a new word for running.
+            clauses.Add("i.reboot_state = @pending");
+            command.Parameters.AddWithValue("@pending", RebootState.Pending);
         }
 
         if (filter.State is not null)
@@ -334,13 +353,13 @@ public sealed class InstallStore(Database database)
             write.Transaction = transaction;
             write.CommandText = """
                 INSERT INTO installs (id, device_id, device_name, app_id, app_name, requested_by, engine, external_ref,
-                                      state, percent, detail, requested_at, completed_at, last_checked_at)
+                                      state, percent, detail, reboot_state, requested_at, completed_at, last_checked_at)
                 VALUES (@id, @device, @deviceName, @appId, @appName, @requestedBy, @engine, @external,
-                        @state, @percent, @detail, @requested, @completed, @checked)
+                        @state, @percent, @detail, @reboot, @requested, @completed, @checked)
                 ON CONFLICT(id) DO UPDATE SET
                     app_name = excluded.app_name, external_ref = excluded.external_ref, state = excluded.state,
-                    percent = excluded.percent, detail = excluded.detail, completed_at = excluded.completed_at,
-                    last_checked_at = excluded.last_checked_at;
+                    percent = excluded.percent, detail = excluded.detail, reboot_state = excluded.reboot_state,
+                    completed_at = excluded.completed_at, last_checked_at = excluded.last_checked_at;
                 """;
             write.Parameters.AddWithValue("@id", record.Id);
             // Updates retain their original owner even if the device was renamed or removed.
@@ -360,6 +379,7 @@ public sealed class InstallStore(Database database)
             write.Parameters.AddWithValue("@state", record.State.ToString());
             write.Parameters.AddWithValue("@percent", record.PercentComplete);
             write.Parameters.AddWithValue("@detail", (object?)record.Detail ?? DBNull.Value);
+            write.Parameters.AddWithValue("@reboot", (object?)record.RebootState ?? DBNull.Value);
             write.Parameters.AddWithValue("@requested", SqlTime.From(record.RequestedAt));
             write.Parameters.AddWithValue("@completed", (object?)SqlTime.FromOptional(record.CompletedAt) ?? DBNull.Value);
             // The column is not null: an install that has never been refreshed was last seen when it was made.
@@ -376,7 +396,7 @@ public sealed class InstallStore(Database database)
         SELECT i.id, COALESCE(NULLIF(i.device_name, ''), d.name, '') AS device_name, d.action1_endpoint_id,
                i.app_id, i.app_name, i.external_ref,
                i.state, i.percent, i.detail, i.requested_at, i.completed_at, i.last_checked_at,
-               i.requested_by, i.engine, i.device_id
+               i.requested_by, i.engine, i.device_id, i.reboot_state
         FROM installs i
         LEFT JOIN devices d ON d.id = i.device_id
         """;
@@ -404,6 +424,7 @@ public sealed class InstallStore(Database database)
                 RequestedBy = reader.IsDBNull(12) ? null : reader.GetString(12),
                 Engine = reader.IsDBNull(13) ? EngineLabel.Action1 : reader.GetString(13),
                 DeviceId = reader.IsDBNull(14) ? null : reader.GetString(14),
+                RebootState = reader.IsDBNull(15) ? null : reader.GetString(15),
             });
         }
 

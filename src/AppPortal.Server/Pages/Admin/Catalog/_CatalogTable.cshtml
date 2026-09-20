@@ -1,0 +1,74 @@
+@model AppPortal.Server.Pages.Admin.Catalog.CatalogTableView
+<div id="catalog-table">
+    @if (Model.Error is not null)
+    {
+        <div class="message error">@Model.Error</div>
+    }
+    @if (Model.Notice is not null)
+    {
+        <div class="message ok">@Model.Notice</div>
+    }
+    <table>
+        <thead>
+        <tr>
+            <th>App</th>
+            <th>Publisher</th>
+            <th>Category</th>
+            <th>Engines</th>
+            <th>Status</th>
+            <th class="right">Actions</th>
+        </tr>
+        </thead>
+        <tbody>
+        @if (Model.Apps.Count == 0)
+        {
+            <tr>
+                <td colspan="6" class="muted">No apps match.</td>
+            </tr>
+        }
+        @foreach (var app in Model.Apps)
+        {
+            <tr>
+                <td>
+                    @if (!string.IsNullOrWhiteSpace(app.IconUrl))
+                    {
+                        <img src="@app.IconUrl" alt="" width="24" height="24" />
+                    }
+                    <a href="/admin/catalog/@app.Id">@app.Name</a>
+                    @if (app.Featured)
+                    {
+                        <span class="pill">Featured</span>
+                    }
+                    <div class="muted">@app.Id</div>
+                </td>
+                <td>@app.Publisher</td>
+                <td>@app.Category</td>
+                <td class="muted">@(string.IsNullOrWhiteSpace(app.Action1.PackageId) ? "none" : "Action1")</td>
+                <td>
+                    @if (app.Hidden)
+                    {
+                        <span class="pill off">Hidden</span>
+                    }
+                    else
+                    {
+                        <span class="pill">Visible</span>
+                    }
+                </td>
+                <td class="right">
+                    <button class="secondary"
+                            hx-post="/admin/catalog?handler=Hide"
+                            hx-vals='@($"{{\"id\":\"{app.Id}\",\"hidden\":{(app.Hidden ? "false" : "true")}}}")'
+                            hx-target="#catalog-table"
+                            hx-swap="outerHTML">@(app.Hidden ? "Show" : "Hide")</button>
+                    <button class="secondary"
+                            hx-post="/admin/catalog?handler=Delete"
+                            hx-vals='@($"{{\"id\":\"{app.Id}\"}}")'
+                            hx-target="#catalog-table"
+                            hx-swap="outerHTML"
+                            hx-confirm="Delete @app.Name from the catalog? Hiding keeps its install history.">Delete</button>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

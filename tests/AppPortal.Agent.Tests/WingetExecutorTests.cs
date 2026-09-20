@@ -51,8 +51,8 @@ public sealed class WingetExecutorTests : IDisposable
     [Theory]
     [InlineData(0, true, "Installed.")]
     [InlineData(unchecked((int)0x8A150011), true, "Already installed.")]
-    [InlineData(3010, true, "Installed. Restart required.")]
-    [InlineData(1641, true, "Installed. Restart required.")]
+    [InlineData(3010, true, "Installed. This PC has to restart to finish.")]
+    [InlineData(1641, true, "Installed. This PC has to restart to finish.")]
     public async Task Exit_codes_that_mean_nothing_to_do_are_not_failures(int exitCode, bool ok, string detail)
     {
         var result = await Executor(new FakeProcesses((_, _) => new ProcessResult(exitCode, "")))

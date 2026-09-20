@@ -115,6 +115,13 @@ public sealed class DirectInstallerExecutor(
             _ => (installer, direct.SilentArgs?.Trim() ?? ""),
         };
 
+    /// <summary>
+    /// Installed, and not finished. The software is on the device and will not work until the PC
+    /// restarts, so the install stays open and the person is asked rather than told afterwards.
+    /// </summary>
+    internal static ExecutionResult Restart(int exitCode)
+        => new(true, "Installed. This PC has to restart to finish.", exitCode, NeedsRestart: true);
+
     private ExecutionResult Interpret(ProcessResult result)
     {
         switch (result.ExitCode)
@@ -123,9 +130,7 @@ public sealed class DirectInstallerExecutor(
                 return new ExecutionResult(true, "Installed.", 0);
             case RebootRequired:
             case RebootInitiated:
-                // M3-09 turns this into a restart the person is actually asked for. Until then the
-                // detail is the only place it is said, which is why it is said plainly.
-                return new ExecutionResult(true, "Installed. Restart required.", result.ExitCode);
+                return Restart(result.ExitCode);
             default:
                 var tail = WingetOutput.Tail(result.Output, 400).ReplaceLineEndings(" ").Trim();
                 logger.LogWarning("The installer exited {Code}", result.ExitCode);

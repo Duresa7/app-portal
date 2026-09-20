@@ -144,10 +144,20 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
             detail += $" (exit code {code})";
         }
 
+        // Installed is not the same as finished. Software whose driver loads at boot is registered by
+        // its installer and does nothing until the PC restarts, so the job is done and the install is
+        // not: it stays running, saying what it is waiting for, until the restart confirms it.
+        if (completion.Ok && completion.NeedsRestart)
+        {
+            return Update(deviceId, id, "succeeded", null, RebootState.WaitingDetail, attempt,
+                reboot: RebootState.Pending, installState: InstallState.Running);
+        }
+
         return Update(deviceId, id, completion.Ok ? "succeeded" : "failed", null, detail, attempt);
     }
 
-    private bool Update(string deviceId, string id, string state, int? percent, string? detail, int? attempt)
+    private bool Update(string deviceId, string id, string state, int? percent, string? detail, int? attempt,
+        string? reboot = null, InstallState? installState = null)
     {
         if (state is not ("queued" or "downloading" or "installing" or "waiting_for_user"
                           or "succeeded" or "failed" or "cancelled")
@@ -183,7 +193,7 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
 
         if (installId is not null)
         {
-            Mirror(connection, transaction, installId, state, percent, detail, now);
+            Mirror(connection, transaction, installId, state, percent, detail, now, reboot, installState);
         }
 
         transaction.Commit();
@@ -260,9 +270,12 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
     }
 
     private static void Mirror(SqliteConnection connection, SqliteTransaction transaction, string installId,
-        string state, int? percent, string? detail, DateTimeOffset now)
+        string state, int? percent, string? detail, DateTimeOffset now,
+        string? reboot = null, InstallState? forced = null)
     {
-        var installState = state switch
+        // An install waiting for a restart is one the job has finished and the person has not: the job
+        // is succeeded and the install is still running, which is why the caller can override this.
+        var installState = forced ?? state switch
         {
             "queued" => InstallState.Queued,
             "succeeded" => InstallState.Succeeded,
@@ -274,12 +287,14 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
         command.Transaction = transaction;
         command.CommandText = """
             UPDATE installs SET state = @state, percent = COALESCE(@percent, percent), detail = @detail,
+                                reboot_state = COALESCE(@reboot, reboot_state),
                                 completed_at = @completed, last_checked_at = @now
             WHERE id = @id;
             """;
         command.Parameters.AddWithValue("@id", installId);
         command.Parameters.AddWithValue("@state", installState.ToString());
         command.Parameters.AddWithValue("@percent", state == "succeeded" ? 100 : (object?)percent ?? DBNull.Value);
+        command.Parameters.AddWithValue("@reboot", (object?)reboot ?? DBNull.Value);
         command.Parameters.AddWithValue("@detail", (object?)detail ?? DBNull.Value);
         command.Parameters.AddWithValue("@completed", installState is InstallState.Queued or InstallState.Running ? DBNull.Value : SqlTime.From(now));
         command.Parameters.AddWithValue("@now", SqlTime.From(now));

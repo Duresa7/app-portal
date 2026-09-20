@@ -1,4 +1,5 @@
 using AppPortal.Server.Devices;
+using AppPortal.Server.Installs;
 using AppPortal.Shared;
 
 namespace AppPortal.Server.Agent;
@@ -16,7 +17,8 @@ public static class AgentEndpoints
     public static void MapAgentApi(this WebApplication app)
     {
         var group = app.MapGroup(ApiRoutes.Prefix + "/agent");
-        group.MapPost("/heartbeat", (AgentHeartbeatRequest request, HttpContext context, DeviceStore devices, IConfiguration configuration, AgentJobStore jobs) =>
+        group.MapPost("/heartbeat", (AgentHeartbeatRequest request, HttpContext context, DeviceStore devices,
+            IConfiguration configuration, AgentJobStore jobs, RestartConfirmation restarts) =>
         {
             if (string.IsNullOrWhiteSpace(request.AgentVersion) || string.IsNullOrWhiteSpace(request.OsVersion))
             {
@@ -25,6 +27,12 @@ public static class AgentEndpoints
 
             var device = DeviceAuthenticationMiddleware.Current(context);
             devices.RecordHeartbeat(device.Id, request.AgentVersion);
+            if (request.BootTime is { } booted)
+            {
+                // Anything that was waiting for a restart before this boot has had one.
+                restarts.Apply(device, booted);
+            }
+
             var seconds = jobs.HasQueued(device.Id) ? 60 : configuration.GetValue("Agent:HeartbeatSeconds", 900);
             return Results.Ok(new AgentHeartbeatResponse(DateTimeOffset.UtcNow, seconds > 0 ? seconds : 900));
         });

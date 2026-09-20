@@ -54,6 +54,14 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
     public bool HasEngine => !string.IsNullOrEmpty(App.Engine);
 
+    /// <summary>
+    /// The software is on this PC and will not work until it restarts. Asked for rather than done: a
+    /// portal that restarts somebody's machine on its own is a portal people turn off.
+    /// </summary>
+    public bool NeedsRestart => ActiveInstall?.RebootState == RebootState.Pending;
+
+    public string RestartText => $"Restart this PC to finish installing {App.Name}.";
+
     public bool HasRequirements => !string.IsNullOrWhiteSpace(App.Requirements);
 
     public string RequirementsText => App.Requirements ?? "";
@@ -81,7 +89,8 @@ public sealed partial class AppItemViewModel : ViewModelBase
     private bool _isInstalled;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText), nameof(CanInstall), nameof(IsBusy), nameof(Percent), nameof(IsIndeterminate))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(CanInstall), nameof(IsBusy), nameof(Percent), nameof(IsIndeterminate),
+        nameof(NeedsRestart))]
     [NotifyCanExecuteChangedFor(nameof(InstallCommand))]
     private InstallRequest? _activeInstall;
 
@@ -182,4 +191,31 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
     [RelayCommand]
     private void CancelInstall() => IsConfirming = false;
+
+    /// <summary>
+    /// Asks Windows to restart, with a minute's notice and a reason on screen. Nothing here forces it:
+    /// the person pressed the button, and /t 60 leaves them time to save what they were doing.
+    /// </summary>
+    [RelayCommand]
+    private void Restart()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            using var shutdown = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown.exe",
+                $"/g /t 60 /c \"App Portal is finishing the installation of {App.Name}.\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or System.IO.IOException)
+        {
+            LastError = "This PC could not be restarted from here. Restart it yourself to finish.";
+        }
+    }
 }

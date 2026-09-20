@@ -121,7 +121,7 @@ public sealed class WingetExecutor(
     {
         0 => new ExecutionResult(true, "Installed.", 0),
         NoApplicableUpdate => new ExecutionResult(true, "Already installed.", result.ExitCode),
-        RebootRequired or RebootInitiated => new ExecutionResult(true, "Installed. Restart required.", result.ExitCode),
+        RebootRequired or RebootInitiated => DirectInstallerExecutor.Restart(result.ExitCode),
         NoApplicableInstaller => new ExecutionResult(false,
             $"No installer for {winget.Id} matches this PC at {winget.Scope} scope.", result.ExitCode),
         _ => new ExecutionResult(false, Detail(result), result.ExitCode),

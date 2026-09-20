@@ -42,7 +42,7 @@ public sealed class HeartbeatWorker(
                 // Reload on each attempt so enrollment and token rotation do not need a service restart.
                 var settings = PortalSettings.Load();
                 var version = typeof(HeartbeatWorker).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
-                var heartbeat = new AgentHeartbeatRequest(version, ClientVersion(), Environment.OSVersion.VersionString);
+                var heartbeat = new AgentHeartbeatRequest(version, ClientVersion(), Environment.OSVersion.VersionString, BootTime());
                 var answer = await client.SendAsync(settings, heartbeat, stoppingToken);
                 seconds = answer.HeartbeatSeconds;
                 ExitCode = 0;
@@ -100,6 +100,14 @@ public sealed class HeartbeatWorker(
             logger.LogWarning("Could not write agent status ({Reason})", ex.GetType().Name);
         }
     }
+
+    /// <summary>
+    /// When this PC last started. It is what settles an install that was only waiting for a restart:
+    /// anything still waiting from before this moment has had its restart, whoever pressed the button.
+    /// Derived from the uptime rather than read from a log, so it needs no privilege and no parsing.
+    /// </summary>
+    private static DateTimeOffset BootTime()
+        => DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64);
 
     private static string? ClientVersion()
     {

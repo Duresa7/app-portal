@@ -137,7 +137,7 @@ How it behaves:
 - The first successful sign-in creates an administrator row named `DOMAIN\user`, matching the requester label on installs. Disable it like any other account; its password stays in the directory and cannot be set here.
 - Every administrator is a full administrator. There is no group-to-role mapping, no directory sync, and the Windows client does not use this.
 
-Sign in with `DOMAIN\user`, a UPN, or the bare user name when `NetBiosDomain` is set. Configure the section through the environment like any other setting, for example `Directory__Enabled=true` and `Directory__Servers__0=dc01.ad.example.com`. The controllers must be resolvable and reachable on 636 from the container; `extra_hosts` in Compose covers a name your Docker host cannot resolve.
+Sign in with `DOMAIN\user`, a UPN, or the bare user name when `NetBiosDomain` is set; all three resolve to the same administrator account. Configure the section through the environment like any other setting, for example `Directory__Enabled=true` and `Directory__Servers__0=dc01.ad.example.com`. The controllers are addressed by name, because that is what their certificates carry, so they must resolve and answer on 636 from inside the container. If the Docker host's resolver does not serve the directory's zone, copy `deploy/compose.override.example.yaml` to `deploy/compose.override.yaml`, fill in the addresses, and pass both files to `docker compose`. Put the certificate file in `deploy/config/`, which is already mounted read-only at `/app/config`.
 
 ## Upgrading from 0.2.x
 

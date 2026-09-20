@@ -502,3 +502,7 @@ CLAUDE.md
 src/**/appsettings.Local.json
 src/**/appsettings.Production.json
 secrets.json
+
+# Deployment-specific compose overrides and the certificates a deployment trusts
+deploy/compose.override.yaml
+deploy/config/*.pem

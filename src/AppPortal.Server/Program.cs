@@ -44,6 +44,7 @@ builder.Services.AddSingleton<LegacyImport>();
 builder.Services.AddSingleton<CatalogStore>();
 builder.Services.AddSingleton<DeviceStore>();
 builder.Services.AddSingleton<EnrollmentKeyStore>();
+builder.Services.AddSingleton<EnrollmentEventStore>();
 builder.Services.AddSingleton<InstallStore>();
 builder.Services.AddSingleton<AppRequestStore>();
 builder.Services.AddSingleton<InstallService>();
@@ -94,6 +95,7 @@ builder.Services.AddSingleton<AdminSignIn>();
 
 builder.Services.AddRazorPages();
 builder.Services.AddAdminAuthentication();
+builder.Services.AddEnrollmentRateLimiting();
 
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
@@ -152,17 +154,21 @@ app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 
 // The device bearer middleware guards the device API only. Admin JSON routes sit under the same
 // /api/v1 prefix but authenticate with an apa_ token against the session table, so they are excluded
-// here and guarded by the Admin policy instead.
+// here and guarded by the Admin policy instead. Enrollment is excluded because it is where a device
+// goes to get a token in the first place; an enrollment key is what authenticates that one call.
 app.UseWhen(
     context => context.Request.Path.StartsWithSegments(ApiRoutes.Prefix)
-               && !context.Request.Path.StartsWithSegments(AdminSessionApi.Prefix),
+               && !context.Request.Path.StartsWithSegments(AdminSessionApi.Prefix)
+               && !context.Request.Path.StartsWithSegments(ApiRoutes.Enroll),
     branch => branch.UseMiddleware<DeviceAuthenticationMiddleware>());
 
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapPortalApi();
+app.MapEnrollmentApi();
 app.MapAgentApi();
 app.MapAdminSessionApi();
 app.MapRazorPages();

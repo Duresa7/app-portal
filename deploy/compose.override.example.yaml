@@ -1,0 +1,14 @@
+# Copy to compose.override.yaml (gitignored) when the server needs something this deployment alone
+# knows about, and pass both files:
+#
+#   docker compose -f deploy/compose.yaml -f deploy/compose.override.yaml up -d
+#
+# Compose does not merge an override file automatically when you select the base file with -f.
+services:
+  app-portal:
+    # Directory sign-in binds to controllers by name, because the certificate they present names them
+    # and not their addresses. Use this when the Docker host's resolver does not serve the directory's
+    # zone; a deployment whose DNS already resolves the controllers needs none of it.
+    extra_hosts:
+      - "dc01.ad.example.com:192.0.2.10"
+      - "dc02.ad.example.com:192.0.2.11"

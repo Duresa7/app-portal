@@ -8,15 +8,23 @@ using Microsoft.Data.Sqlite;
 
 namespace AppPortal.Server.Admin;
 
-/// <summary>One local administrator. Passwords are only ever held as a PBKDF2 hash.</summary>
+/// <summary>One administrator. A local account's password is only ever held as a PBKDF2 hash.</summary>
 public sealed class AdminRecord
 {
+    public const string Local = "local";
+    public const string Directory = "directory";
+
     public string Id { get; set; } = "";
     public string Username { get; set; } = "";
     public string PasswordHash { get; set; } = "";
     public bool Disabled { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastLoginAt { get; set; }
+
+    /// <summary>"local" for a password in this table, "directory" for one a domain controller checks.</summary>
+    public string Source { get; set; } = Local;
+
+    public bool IsDirectory => string.Equals(Source, Directory, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Raised when an account cannot be created or changed as asked.</summary>
@@ -84,17 +92,46 @@ public sealed class AdminStore(Database database)
             CreatedAt = DateTimeOffset.UtcNow,
         };
         record.PasswordHash = Hasher.HashPassword(record, password);
+        return Insert(record);
+    }
 
+    /// <summary>
+    /// The row behind a directory account, created the first time that account signs in and reused after.
+    /// The hash column holds a hash of random bytes nobody knows, so the local password path can never
+    /// match it even if a later change forgets to check the source.
+    /// </summary>
+    public AdminRecord EnsureDirectory(string username)
+    {
+        var existing = Find(username);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var record = new AdminRecord
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Username = username.Trim(),
+            CreatedAt = DateTimeOffset.UtcNow,
+            Source = AdminRecord.Directory,
+        };
+        record.PasswordHash = Hasher.HashPassword(record, Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
+        return Insert(record);
+    }
+
+    private AdminRecord Insert(AdminRecord record)
+    {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO admins (id, username, password_hash, disabled, created_at, last_login_at)
-            VALUES (@id, @username, @hash, 0, @created, NULL);
+            INSERT INTO admins (id, username, password_hash, disabled, created_at, last_login_at, source)
+            VALUES (@id, @username, @hash, 0, @created, NULL, @source);
             """;
         command.Parameters.AddWithValue("@id", record.Id);
         command.Parameters.AddWithValue("@username", record.Username);
         command.Parameters.AddWithValue("@hash", record.PasswordHash);
         command.Parameters.AddWithValue("@created", SqlTime.From(record.CreatedAt));
+        command.Parameters.AddWithValue("@source", record.Source);
         command.ExecuteNonQuery();
         return record;
     }
@@ -102,6 +139,12 @@ public sealed class AdminStore(Database database)
     public void SetPassword(string username, string password)
     {
         var record = Find(username) ?? throw new AdminRejectedException($"There is no administrator named '{username}'.");
+        if (record.IsDirectory)
+        {
+            throw new AdminRejectedException(
+                $"'{record.Username}' signs in through the directory, so its password is not kept here. Change it in the directory.");
+        }
+
         Validate(username, password);
 
         using var connection = database.Open();
@@ -138,6 +181,13 @@ public sealed class AdminStore(Database database)
         var record = Find(username);
         if (record is null)
         {
+            Hasher.VerifyHashedPassword(Decoy, DecoyHash, password ?? "");
+            return null;
+        }
+
+        if (record.IsDirectory)
+        {
+            // Same cost as a real check, so the answer does not say which accounts are directory accounts.
             Hasher.VerifyHashedPassword(Decoy, DecoyHash, password ?? "");
             return null;
         }
@@ -200,7 +250,7 @@ public sealed class AdminStore(Database database)
     public static string Hash(string token)
         => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
-    private const string Select = "SELECT id, username, password_hash, disabled, created_at, last_login_at FROM admins";
+    private const string Select = "SELECT id, username, password_hash, disabled, created_at, last_login_at, source FROM admins";
 
     private static List<AdminRecord> Read(SqliteCommand command)
     {
@@ -216,6 +266,7 @@ public sealed class AdminStore(Database database)
                 Disabled = reader.GetInt64(3) != 0,
                 CreatedAt = SqlTime.Parse(reader.GetString(4)),
                 LastLoginAt = SqlTime.ParseOptional(reader.IsDBNull(5) ? null : reader.GetString(5)),
+                Source = reader.IsDBNull(6) ? AdminRecord.Local : reader.GetString(6),
             });
         }
 

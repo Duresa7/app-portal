@@ -8,6 +8,7 @@ namespace AppPortal.Server.Pages.Admin;
 
 public sealed class LoginModel(
     AdminStore admins,
+    AdminSignIn signIn,
     AdminSessionStore sessions,
     SignInThrottle throttle,
     ILogger<LoginModel> logger) : PageModel
@@ -36,7 +37,7 @@ public sealed class LoginModel(
             return Page();
         }
 
-        var admin = admins.Verify(username, Password ?? "");
+        var admin = signIn.Authenticate(username, Password ?? "");
         if (admin is null)
         {
             throttle.RecordFailure(username);

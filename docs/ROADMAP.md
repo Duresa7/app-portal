@@ -9,7 +9,7 @@ Settled on 2026-09-19. Change them here first, then in the plans that depend on 
 | Area | Decision |
 |---|---|
 | Audience | A product for any company, any directory or none. The author's own Action1 tenant is the first deployment, not the design limit. |
-| Identity | Devices enroll with managed enrollment keys and hold a device token. The client sends the signed-in Windows account with installs and requests; it is trusted because the PC is managed. Admins sign in with local accounts on the server. OpenID Connect sign-in is a later add-on. No dependency on Active Directory. |
+| Identity | Devices enroll with managed enrollment keys and hold a device token. The client sends the signed-in Windows account with installs and requests; it is trusted because the PC is managed. Admins sign in with local accounts on the server; optional directory sign-in (M1-11) is an add-on, off unless configured, and local accounts are always checked first. OpenID Connect sign-in is a later add-on. No dependency on Active Directory. |
 | Storage | SQLite on the existing data volume is the source of truth for catalog, devices, installs, requests, admins and enrollment keys. `deploy/config/catalog.json` seeds an empty database; `catalog import` and `catalog export` remain. |
 | Install engines | Two: **action1** (exists) and **agent**, a Windows service running as SYSTEM that installs winget packages or direct installers with silent arguments and a SHA-256. A device may have both. A server-wide preference picks the engine when both apply; each catalog app can override it. Every install is labelled with the engine that ran it. Games are ordinary catalog apps; the agent must show download progress and resume downloads. |
 | Agent | Installed on every device. Takes over self-update of client and agent by running the newer MSI. The scheduled-task updater and the rename swap retire with it. |
@@ -43,6 +43,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M1-08](plans/M1-08-enrollment-key-pages.md) | Enrollment key management | M1-03 | Done |
 | [M1-09](plans/M1-09-device-admin-pages.md) | Device management pages | M1-03 | Done |
 | [M1-10](plans/M1-10-release-0.3.0.md) | Release 0.3.0 | M1-04, M1-05, M1-06, M1-07, M1-08, M1-09 | Done |
+| [M1-11](plans/M1-11-directory-sign-in.md) | Optional directory sign-in for administrators | M1-03 | In review |
 | [M1-12](plans/M1-12-admin-list-module.md) | Administration list queries in one module | M1-05, M1-06, M1-07, M1-08, M1-09 | Open |
 | [M2-01](plans/M2-01-enrollment-api.md) | Enrollment API | M1-08, M1-09 | Open |
 | [M2-02](plans/M2-02-agent-service.md) | Agent service skeleton and heartbeat | M1-09 | Open |
@@ -109,4 +110,4 @@ Names every package must use so that parallel work fits together. Details live i
 
 ## Deferred
 
-Not planned in any milestone: OpenID Connect admin sign-in, email notifications, linking requests to catalog apps, per-group catalogs, code signing of the MSI and executables, other RMM engines such as Intune, updater rollback on Action1-only devices.
+Not planned in any milestone: OpenID Connect admin sign-in, group-to-role mapping for directory accounts, email notifications, linking requests to catalog apps, per-group catalogs, code signing of the MSI and executables, other RMM engines such as Intune, updater rollback on Action1-only devices.

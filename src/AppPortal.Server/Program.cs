@@ -34,6 +34,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOptions<Action1Options>().Bind(builder.Configuration.GetSection(Action1Options.Section));
 builder.Services.AddOptions<PortalOptions>().Bind(builder.Configuration.GetSection(PortalOptions.Section));
+builder.Services.AddOptions<DirectoryOptions>().Bind(builder.Configuration.GetSection(DirectoryOptions.Section));
 
 builder.Services.AddSingleton<Database>();
 builder.Services.AddSingleton<AdminStore>();
@@ -60,6 +61,35 @@ else
         client.DefaultRequestHeaders.UserAgent.ParseAdd("AppPortal.Server/0.1");
     });
 }
+
+// Directory sign-in is an add-on: with the section absent or off, no LDAP connection is ever opened and
+// the stand-in below answers every caller. A section that is on but cannot work stops the server here
+// rather than at somebody's first sign-in attempt.
+var directory = builder.Configuration.GetSection(DirectoryOptions.Section).Get<DirectoryOptions>() ?? new DirectoryOptions();
+directory.Validate();
+if (directory.Enabled)
+{
+    if (!string.IsNullOrWhiteSpace(directory.CertificateFile))
+    {
+        if (!File.Exists(directory.CertificateFile))
+        {
+            throw new InvalidOperationException(
+                $"Directory:CertificateFile is {directory.CertificateFile}, which does not exist. Mount the controller certificates there.");
+        }
+
+        OpenLdapEnvironment.PointAtCertificateFile(
+            directory.CertificateFile,
+            LoggerFactory.Create(b => b.AddConsole()).CreateLogger("AppPortal.Server.Admin.Directory"));
+    }
+
+    builder.Services.AddSingleton<IDirectoryAuthenticator, LdapDirectoryAuthenticator>();
+}
+else
+{
+    builder.Services.AddSingleton<IDirectoryAuthenticator, DisabledDirectoryAuthenticator>();
+}
+
+builder.Services.AddSingleton<AdminSignIn>();
 
 builder.Services.AddRazorPages();
 builder.Services.AddAdminAuthentication();

@@ -227,6 +227,7 @@ public static class AdminSessionApi
         group.MapPost("/session", (
             SignInRequest body,
             AdminStore admins,
+            AdminSignIn signIn,
             AdminSessionStore sessions,
             SignInThrottle throttle,
             ILoggerFactory loggers) =>
@@ -240,7 +241,7 @@ public static class AdminSessionApi
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
             }
 
-            var admin = admins.Verify(username, body?.Password ?? "");
+            var admin = signIn.Authenticate(username, body?.Password ?? "");
             if (admin is null)
             {
                 throttle.RecordFailure(username);

@@ -25,12 +25,14 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
     public AppItemViewModel(CatalogApp app, Func<AppItemViewModel, Task> install)
     {
-        App = app;
+        _app = app;
         _install = install;
         TileBrush = new SolidColorBrush(Color.Parse(TilePalette[StableIndex(app.Id, TilePalette.Length)]));
     }
 
-    public CatalogApp App { get; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Name), nameof(Publisher), nameof(Description), nameof(Category), nameof(Featured), nameof(Initial))]
+    private CatalogApp _app;
 
     public string Name => App.Name;
     public string Publisher => App.Publisher;

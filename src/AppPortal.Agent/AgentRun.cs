@@ -27,7 +27,7 @@ public static class AgentRun
 
         var once = args.Contains("--once", StringComparer.OrdinalIgnoreCase);
         var console = args.Contains("--console", StringComparer.OrdinalIgnoreCase);
-        var stateDirectory = Path.GetDirectoryName(PortalSettings.DefaultPath)!;
+        var stateDirectory = Path.GetDirectoryName(PortalSettings.ResolvedPath)!;
         Directory.CreateDirectory(stateDirectory);
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
@@ -48,7 +48,10 @@ public static class AgentRun
             Path.Combine(stateDirectory, "agent.json"), once));
         builder.Services.AddHostedService(provider => provider.GetRequiredService<HeartbeatWorker>());
         using var host = builder.Build();
+        // Take the worker before the run. RunAsync disposes the host on shutdown, so asking the provider
+        // for it afterwards throws instead of reporting the exit code CI reads.
+        var worker = host.Services.GetRequiredService<HeartbeatWorker>();
         await host.RunAsync();
-        return host.Services.GetRequiredService<HeartbeatWorker>().ExitCode;
+        return worker.ExitCode;
     }
 }

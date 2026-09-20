@@ -33,9 +33,15 @@ public class PortalSettings
         }
     }
 
+    /// <summary>
+    /// The settings file this process really uses. APPPORTAL_CONFIG wins, so a developer run and a test
+    /// keep their state in one directory instead of writing beside an installed agent.
+    /// </summary>
+    public static string ResolvedPath => Environment.GetEnvironmentVariable("APPPORTAL_CONFIG") ?? DefaultPath;
+
     public static PortalSettings Load(string? path = null)
     {
-        path ??= Environment.GetEnvironmentVariable("APPPORTAL_CONFIG") ?? DefaultPath;
+        path ??= ResolvedPath;
         var settings = new PortalSettings();
         if (File.Exists(path))
         {

@@ -71,9 +71,15 @@ if (directory.Enabled)
 {
     if (!string.IsNullOrWhiteSpace(directory.CertificateFile))
     {
-        // OpenLDAP performs the bind everywhere but Windows, and it reads its trust anchors from this
-        // variable rather than from the process. Set before the first connection or it is not read.
-        Environment.SetEnvironmentVariable("LDAPTLS_CACERT", directory.CertificateFile);
+        if (!File.Exists(directory.CertificateFile))
+        {
+            throw new InvalidOperationException(
+                $"Directory:CertificateFile is {directory.CertificateFile}, which does not exist. Mount the controller certificates there.");
+        }
+
+        OpenLdapEnvironment.PointAtCertificateFile(
+            directory.CertificateFile,
+            LoggerFactory.Create(b => b.AddConsole()).CreateLogger("AppPortal.Server.Admin.Directory"));
     }
 
     builder.Services.AddSingleton<IDirectoryAuthenticator, LdapDirectoryAuthenticator>();

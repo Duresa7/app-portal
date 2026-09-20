@@ -2,7 +2,7 @@
 
 **Milestone:** 3 (0.5.0)
 **Depends on:** M3-02
-**Unlocks:** M3-06
+**Unlocks:** M3-06, M3-07, M3-09, M3-11
 
 ## Goal
 
@@ -10,20 +10,21 @@ The agent downloads an installer from a URL, verifies its SHA-256, runs it silen
 
 ## Context
 
-- Definition shape from M3-01: `url`, `sha256`, `installerType` (`msi`, `exe`, `msix`), `silentArgs`, `sizeBytes`, `uninstallKey`.
+- Definition shape from M3-01: `url`, `sha256`, `installerType` (`msi`, `exe`, `msix`), `silentArgs`, `sizeBytes`, `uninstallKey`, `scope`, `requiresReboot` and `requirements`. This package reads the first six and the scope; M3-08 reads the requirements and M3-09 the restart flag.
 - Multi-gigabyte downloads must survive a network blip and a service restart: HTTP range requests resume a partial file; the hash is computed over the completed file.
 
 ## Scope
 
 ### In
-- `DirectInstallerExecutor : IPackageExecutor` for `kind == "direct"`: download to `%ProgramData%\AppPortal\downloads\<sha256>.<ext>.part` with resume via `Range`, progress every 1 percent or 5 seconds, verify hash, rename to final, run: `msi` via `msiexec /i <file> /qn /norestart /l*v <log>`, `exe` via the file with `silentArgs`, `msix` via `Add-AppxProvisionedPackage` through PowerShell. Timeout 60 minutes for the run, configurable per definition later.
+- `DirectInstallerExecutor : IPackageExecutor` for `kind == "direct"`: download to `%ProgramData%\AppPortal\downloads\<sha256>.<ext>.part` with resume via `Range`, progress every 1 percent or 5 seconds, verify hash, rename to final, run: `msi` via `msiexec /i <file> /qn /norestart /l*v <log>`, `exe` via the file with `silentArgs`, `msix` via `Add-AppxProvisionedPackage` through PowerShell, which provisions the package for profiles made later and is therefore the machine-scope form only; user scope needs `Add-AppxPackage` inside a session and belongs to M3-07. Timeout 60 minutes for the run, configurable per definition later.
 - Disk space check before download: refuse with a clear detail when free space is below `sizeBytes` plus 1 GB.
 - Cache: keep the verified installer for 7 days so a second device on the same PC image or a retry does not re-download; evict oldest beyond 20 GB.
 - Exit code mapping: 0 and 3010 (reboot required) succeed, with "Restart required" in the detail for 3010; 1641 succeed; others fail with the log tail.
 - Installed-software reporting: after success, read the Uninstall registry key named in `uninstallKey` if given, otherwise scan for a new entry matching the app name, and post it to `/api/v1/agent/software` like the winget executor.
 
 ### Out
-- Uninstall. Delta updates. Torrent-style peer distribution.
+- Uninstall; that is M3-11. Delta updates. Torrent-style peer distribution.
+- Running an installer in somebody's session (M3-07), asking for the restart a 3010 implies (M3-09), and checking the device can take the software at all (M3-08). A user-scope job fails here the same way it does in M3-03.
 
 ## Interface
 

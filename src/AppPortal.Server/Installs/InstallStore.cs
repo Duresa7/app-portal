@@ -28,10 +28,16 @@ public sealed class InstallRecord
     public int PercentComplete { get; set; }
     public string? Detail { get; set; }
 
+    /// <summary>
+    /// The signed-in Windows account that asked for this install, as <c>DOMAIN\user</c>, or null when the
+    /// client did not say. Informational: the device token is what proves the caller.
+    /// </summary>
+    public string? RequestedBy { get; set; }
+
     public bool IsActive => State is InstallState.Queued or InstallState.Running;
 
     public InstallRequest ToPublic()
-        => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail);
+        => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail, RequestedBy);
 }
 
 /// <summary>Install history, one row per request, in the database under the data directory.</summary>
@@ -112,7 +118,7 @@ public sealed class InstallStore(Database database)
             write.CommandText = """
                 INSERT INTO installs (id, device_id, app_id, app_name, requested_by, engine, external_ref,
                                       state, percent, detail, requested_at, completed_at, last_checked_at)
-                VALUES (@id, @device, @appId, @appName, NULL, 'action1', @external,
+                VALUES (@id, @device, @appId, @appName, @requestedBy, 'action1', @external,
                         @state, @percent, @detail, @requested, @completed, @checked)
                 ON CONFLICT(id) DO UPDATE SET
                     app_name = excluded.app_name, external_ref = excluded.external_ref, state = excluded.state,
@@ -124,6 +130,9 @@ public sealed class InstallStore(Database database)
             write.Parameters.AddWithValue("@device", DeviceId(connection, transaction, record.DeviceName));
             write.Parameters.AddWithValue("@appId", record.AppId);
             write.Parameters.AddWithValue("@appName", record.AppName);
+            // Left out of the ON CONFLICT update on purpose: who asked is settled when the install is made,
+            // and the poller refreshes from records that never carried it.
+            write.Parameters.AddWithValue("@requestedBy", (object?)record.RequestedBy ?? DBNull.Value);
             write.Parameters.AddWithValue("@external", (object?)record.AutomationId ?? DBNull.Value);
             write.Parameters.AddWithValue("@state", record.State.ToString());
             write.Parameters.AddWithValue("@percent", record.PercentComplete);
@@ -141,7 +150,8 @@ public sealed class InstallStore(Database database)
 
     private const string Select = """
         SELECT i.id, d.name, d.action1_endpoint_id, i.app_id, i.app_name, i.external_ref,
-               i.state, i.percent, i.detail, i.requested_at, i.completed_at, i.last_checked_at
+               i.state, i.percent, i.detail, i.requested_at, i.completed_at, i.last_checked_at,
+               i.requested_by
         FROM installs i
         JOIN devices d ON d.id = i.device_id
         """;
@@ -166,6 +176,7 @@ public sealed class InstallStore(Database database)
                 RequestedAt = SqlTime.Parse(reader.GetString(9)),
                 CompletedAt = SqlTime.ParseOptional(reader.IsDBNull(10) ? null : reader.GetString(10)),
                 LastCheckedAt = SqlTime.Parse(reader.GetString(11)),
+                RequestedBy = reader.IsDBNull(12) ? null : reader.GetString(12),
             });
         }
 

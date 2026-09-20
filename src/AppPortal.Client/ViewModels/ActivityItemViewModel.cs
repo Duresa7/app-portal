@@ -15,6 +15,11 @@ public sealed class ActivityItemViewModel(InstallRequest request)
     public string Detail => Request.Detail ?? "";
     public DateTimeOffset RequestedAt => Request.RequestedAt;
 
+    /// <summary>"by DOMAIN\user", or empty when the server has no account for this install.</summary>
+    public string RequestedByText => string.IsNullOrWhiteSpace(Request.RequestedBy) ? "" : $"by {Request.RequestedBy}";
+
+    public bool HasRequestedBy => RequestedByText.Length > 0;
+
     public string StateText => Request.State switch
     {
         InstallState.Queued => "Queued",

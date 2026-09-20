@@ -38,13 +38,13 @@ public sealed class InstallService(
     /// </summary>
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> DeviceGates = new(StringComparer.OrdinalIgnoreCase);
 
-    public async Task<InstallRecord> CreateAsync(DeviceRecord device, string appId, CancellationToken ct)
+    public async Task<InstallRecord> CreateAsync(DeviceRecord device, string appId, string? requestedBy, CancellationToken ct)
     {
         var gate = DeviceGates.GetOrAdd(device.Name, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct);
         try
         {
-            return await CreateCoreAsync(device, appId, ct);
+            return await CreateCoreAsync(device, appId, requestedBy, ct);
         }
         finally
         {
@@ -52,7 +52,7 @@ public sealed class InstallService(
         }
     }
 
-    private async Task<InstallRecord> CreateCoreAsync(DeviceRecord device, string appId, CancellationToken ct)
+    private async Task<InstallRecord> CreateCoreAsync(DeviceRecord device, string appId, string? requestedBy, CancellationToken ct)
     {
         var app = catalog.Find(appId)
                   ?? throw new InstallRejectedException(InstallRejection.UnknownApp, $"'{appId}' is not in the catalog.");
@@ -78,6 +78,7 @@ public sealed class InstallService(
             EndpointId = device.EndpointId,
             AppId = app.Id,
             AppName = app.Name,
+            RequestedBy = requestedBy,
             PackageId = app.Action1.PackageId,
             Version = version.Version,
             RequestedAt = DateTimeOffset.UtcNow,
@@ -88,7 +89,8 @@ public sealed class InstallService(
         var automationName = $"App Portal: {app.Name} {version.Version} on {device.Name}";
         record.AutomationId = await action1.StartDeploymentAsync(device.EndpointId, automationName, app.Action1.PackageId, version.Version, $"{app.Name} {version.Version}", ct);
         store.Upsert(record);
-        logger.LogInformation("Device {Device} requested {App} {Version}; automation {Automation}", device.Name, app.Name, version.Version, record.AutomationId);
+        logger.LogInformation("Device {Device} requested {App} {Version} for {User}; automation {Automation}",
+            device.Name, app.Name, version.Version, requestedBy ?? "an unnamed account", record.AutomationId);
         return record;
     }
 

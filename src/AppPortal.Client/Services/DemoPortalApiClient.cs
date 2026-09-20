@@ -43,10 +43,10 @@ public sealed class DemoPortalApiClient : IPortalApiClient
     {
         _installs.Add(new InstallRequest(Guid.NewGuid().ToString("N"), "7-zip", "7-Zip", Environment.MachineName,
             DateTimeOffset.Now.AddHours(-26), DateTimeOffset.Now.AddHours(-26).AddMinutes(1),
-            InstallState.Succeeded, 100, "The packages have been installed successfully."));
+            InstallState.Succeeded, 100, "The packages have been installed successfully.", WindowsAccount.Current()));
         _installs.Add(new InstallRequest(Guid.NewGuid().ToString("N"), "obs", "OBS Studio", Environment.MachineName,
             DateTimeOffset.Now.AddHours(-3), DateTimeOffset.Now.AddHours(-3).AddMinutes(4),
-            InstallState.Failed, 0, "The installer returned exit code 1603."));
+            InstallState.Failed, 0, "The installer returned exit code 1603.", WindowsAccount.Current()));
     }
 
     public Task<IReadOnlyList<CatalogApp>> GetCatalogAsync(CancellationToken ct)
@@ -82,7 +82,7 @@ public sealed class DemoPortalApiClient : IPortalApiClient
                   ?? throw new PortalApiException($"'{appId}' is not in the catalog.");
 
         var request = new InstallRequest(Guid.NewGuid().ToString("N"), app.Id, app.Name, Environment.MachineName,
-            DateTimeOffset.Now, null, InstallState.Queued, 0, "Sent to the management service.");
+            DateTimeOffset.Now, null, InstallState.Queued, 0, "Sent to the management service.", WindowsAccount.Current());
         lock (_gate)
         {
             _installs.Add(request);

@@ -36,7 +36,8 @@ public sealed record InstallRequest(
     DateTimeOffset? CompletedAt,
     InstallState State,
     int PercentComplete,
-    string? Detail);
+    string? Detail,
+    string? RequestedBy);
 
 /// <summary>Software the management plane reports as present on the device.</summary>
 public sealed record InstalledApp(
@@ -48,6 +49,18 @@ public sealed record InstalledApp(
 public sealed record CreateInstallRequest(string AppId);
 
 public sealed record ErrorMessage(string Message);
+
+public static class ApiHeaders
+{
+    /// <summary>
+    /// The signed-in Windows account the client is acting for, as <c>DOMAIN\user</c>. Informational only:
+    /// the device token is what authenticates the call, and the account is trusted because the PC is managed.
+    /// </summary>
+    public const string Requester = "X-AppPortal-User";
+
+    /// <summary>The longest account name the server stores; anything past this is cut off.</summary>
+    public const int RequesterMaxLength = 128;
+}
 
 public static class ApiRoutes
 {

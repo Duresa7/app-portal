@@ -173,6 +173,54 @@ public sealed class PortalApiTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task The_account_the_client_sends_is_stored_against_the_install()
+    {
+        var client = Client();
+        client.DefaultRequestHeaders.Add(ApiHeaders.Requester, @"CONTOSO\jdoe");
+
+        var created = await (await client.PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest("chrome"), Json))
+            .Content.ReadFromJsonAsync<InstallRequest>(Json);
+        Assert.Equal(@"CONTOSO\jdoe", created!.RequestedBy);
+
+        // And it survives the round trip through the database, not just the response the endpoint built.
+        var listed = await client.GetFromJsonAsync<IReadOnlyList<InstallRequest>>(ApiRoutes.Installs, Json);
+        Assert.Equal(@"CONTOSO\jdoe", Assert.Single(listed!).RequestedBy);
+    }
+
+    [Fact]
+    public async Task A_client_that_sends_no_account_still_installs()
+    {
+        // A 0.2.x client knows nothing about the header. It must keep working, with no account recorded.
+        var created = await (await Client().PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest("chrome"), Json))
+            .Content.ReadFromJsonAsync<InstallRequest>(Json);
+
+        Assert.Null(created!.RequestedBy);
+    }
+
+    [Fact]
+    public async Task An_account_carrying_a_control_character_is_refused()
+    {
+        var client = Client();
+        client.DefaultRequestHeaders.TryAddWithoutValidation(ApiHeaders.Requester, "CONTOSO\njdoe");
+
+        var response = await client.PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest("chrome"), Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task An_account_longer_than_the_column_allows_is_cut_to_length()
+    {
+        var client = Client();
+        client.DefaultRequestHeaders.Add(ApiHeaders.Requester, new string('x', ApiHeaders.RequesterMaxLength + 40));
+
+        var created = await (await client.PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest("chrome"), Json))
+            .Content.ReadFromJsonAsync<InstallRequest>(Json);
+
+        Assert.Equal(ApiHeaders.RequesterMaxLength, created!.RequestedBy!.Length);
+    }
+
     public void Dispose()
     {
         _factory.Dispose();

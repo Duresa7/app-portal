@@ -248,6 +248,7 @@
                                                     <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding AppName}" Classes="bodyStrong" />
                                                         <TextBlock Text="{Binding Detail}" Classes="caption" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding RequestedByText}" Classes="caption" IsVisible="{Binding HasRequestedBy}" />
                                                     </StackPanel>
                                                     <TextBlock Grid.Column="2" Text="{Binding StateText}" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="3" Text="{Binding RequestedAt, Converter={x:Static svc:LocalTimeConverter.Instance}}" Classes="secondary" VerticalAlignment="Center" />

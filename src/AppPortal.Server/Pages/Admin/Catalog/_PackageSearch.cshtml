@@ -1,0 +1,46 @@
+@model AppPortal.Server.Pages.Admin.Catalog.PackageSearchView
+<div id="package-search">
+    @if (Model.Error is not null)
+    {
+        <div class="message error">@Model.Error</div>
+    }
+    else if (Model.Packages.Count == 0)
+    {
+        <p class="muted">Nothing in the Software Repository matched.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+            <tr>
+                <th>Package</th>
+                <th>Vendor</th>
+                <th class="right">Use</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var package in Model.Packages)
+            {
+                <tr>
+                    <td>
+                        @package.Name
+                        <div class="muted">@package.Id</div>
+                    </td>
+                    <td>
+                        @package.Vendor
+                        @if (package.Builtin)
+                        {
+                            <span class="pill">Built in</span>
+                        }
+                    </td>
+                    <td class="right">
+                        @* Fills the field rather than saving: the administrator still reviews and submits. *@
+                        <button type="button" class="secondary"
+                                onclick="document.getElementById('package-id').value = '@package.Id';">Use this</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>

@@ -63,6 +63,15 @@
                         </Border>
                     </Grid>
                 </Button>
+                <Button Classes="nav" Classes.selected="{Binding ShowRequests}" Command="{Binding SelectSectionCommand}" CommandParameter="3">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Border Classes="indicator" Grid.Column="0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                            <PathIcon Data="{StaticResource IconRequests}" />
+                            <TextBlock Text="Requests" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </Button>
             </StackPanel>
 
             <!-- Pane footer: this device -->
@@ -252,6 +261,44 @@
                                                     </StackPanel>
                                                     <TextBlock Grid.Column="2" Text="{Binding StateText}" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="3" Text="{Binding RequestedAt, Converter={x:Static svc:LocalTimeConverter.Instance}}" Classes="secondary" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+                <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,*" IsVisible="{Binding ShowRequests}">
+                    <TextBlock Grid.Row="0" Classes="title" Text="Requests" />
+                    <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,20" Text="Ask for software that is not in the catalog. An administrator answers here." />
+                    <Border Grid.Row="2" Classes="card" Padding="16" Margin="0,0,0,16">
+                        <StackPanel Spacing="10">
+                            <TextBox Text="{Binding RequestText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72"
+                                     MaxLength="{Binding RequestMaxLength}" PlaceholderText="What would you like installed, and what do you need it for?" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Button Classes="accent" Command="{Binding SubmitRequestCommand}" Content="Submit" />
+                                <TextBlock Classes="secondary" VerticalAlignment="Center" Text="{Binding RequestNotice}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="3" Classes="card" Padding="4" VerticalAlignment="Top" Margin="0,0,0,24">
+                        <ScrollViewer>
+                            <StackPanel>
+                                <TextBlock Classes="secondary" Margin="12,12" Text="Nothing has been asked for from this device yet." IsVisible="{Binding !Requests.Count}" />
+                                <ItemsControl ItemsSource="{Binding Requests}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RequestItemViewModel">
+                                            <Border Classes="row">
+                                                <Grid ColumnDefinitions="Auto,*,110,170">
+                                                    <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" Background="{Binding StatusBrush}" VerticalAlignment="Center" Margin="4,0,14,0" />
+                                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Text}" Classes="bodyStrong" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding Reason}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasReason}" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding StatusText}" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding CreatedAt, Converter={x:Static svc:LocalTimeConverter.Instance}}" Classes="secondary" VerticalAlignment="Center" />
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>

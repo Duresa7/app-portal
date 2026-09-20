@@ -48,7 +48,36 @@ public sealed record InstalledApp(
 
 public sealed record CreateInstallRequest(string AppId);
 
+public enum AppRequestStatus
+{
+    Pending,
+    Approved,
+    Denied,
+}
+
+/// <summary>Something a user asked for that is not in the catalog, and what an administrator decided.</summary>
+public sealed record AppRequest(
+    string Id,
+    string Text,
+    string DeviceName,
+    string? RequestedBy,
+    AppRequestStatus Status,
+    string? Reason,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? DecidedAt);
+
+public sealed record CreateAppRequest(string Text);
+
 public sealed record ErrorMessage(string Message);
+
+public static class AppRequestLimits
+{
+    /// <summary>The longest request text the server stores, and what the client's box allows.</summary>
+    public const int MaxTextLength = 500;
+
+    /// <summary>How many undecided requests one device may have before it must wait for an answer.</summary>
+    public const int MaxPendingPerDevice = 20;
+}
 
 public static class ApiHeaders
 {
@@ -69,4 +98,5 @@ public static class ApiRoutes
     public const string Device = Prefix + "/device";
     public const string Installed = Prefix + "/device/installed";
     public const string Installs = Prefix + "/installs";
+    public const string Requests = Prefix + "/requests";
 }

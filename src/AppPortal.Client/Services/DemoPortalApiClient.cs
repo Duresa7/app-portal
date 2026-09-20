@@ -29,6 +29,7 @@ public sealed class DemoPortalApiClient : IPortalApiClient
     ];
 
     private readonly List<InstallRequest> _installs = [];
+    private readonly List<AppRequest> _requests = [];
     private readonly List<InstalledApp> _installed =
     [
         new("Microsoft Edge", "Microsoft Corporation", "128.0.2739.42", null),
@@ -47,6 +48,35 @@ public sealed class DemoPortalApiClient : IPortalApiClient
         _installs.Add(new InstallRequest(Guid.NewGuid().ToString("N"), "obs", "OBS Studio", Environment.MachineName,
             DateTimeOffset.Now.AddHours(-3), DateTimeOffset.Now.AddHours(-3).AddMinutes(4),
             InstallState.Failed, 0, "The installer returned exit code 1603.", WindowsAccount.Current()));
+
+        _requests.Add(new AppRequest(Guid.NewGuid().ToString("N"), "Notepad++, for editing config files on this box",
+            Environment.MachineName, WindowsAccount.Current(), AppRequestStatus.Approved,
+            "Added to the catalog, it should appear within the hour.", DateTimeOffset.Now.AddDays(-4), DateTimeOffset.Now.AddDays(-3)));
+        _requests.Add(new AppRequest(Guid.NewGuid().ToString("N"), "A licence for the full Acrobat, not just the reader",
+            Environment.MachineName, WindowsAccount.Current(), AppRequestStatus.Denied,
+            "We have no spare licences this quarter. Ask again in April.", DateTimeOffset.Now.AddDays(-9), DateTimeOffset.Now.AddDays(-8)));
+        _requests.Add(new AppRequest(Guid.NewGuid().ToString("N"), "Slack",
+            Environment.MachineName, WindowsAccount.Current(), AppRequestStatus.Pending, null, DateTimeOffset.Now.AddHours(-5), null));
+    }
+
+    public Task<IReadOnlyList<AppRequest>> GetRequestsAsync(CancellationToken ct)
+    {
+        lock (_gate)
+        {
+            return Task.FromResult<IReadOnlyList<AppRequest>>([.. _requests.OrderByDescending(r => r.CreatedAt)]);
+        }
+    }
+
+    public Task<AppRequest> CreateRequestAsync(string text, CancellationToken ct)
+    {
+        var request = new AppRequest(Guid.NewGuid().ToString("N"), text.Trim(), Environment.MachineName,
+            WindowsAccount.Current(), AppRequestStatus.Pending, null, DateTimeOffset.Now, null);
+        lock (_gate)
+        {
+            _requests.Add(request);
+        }
+
+        return Task.FromResult(request);
     }
 
     public Task<IReadOnlyList<CatalogApp>> GetCatalogAsync(CancellationToken ct)

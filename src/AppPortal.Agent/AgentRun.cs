@@ -102,6 +102,11 @@ public static class AgentRun
                 provider.GetRequiredService<ILogger<JobRunner>>(),
                 software: provider.GetRequiredService<SoftwareReporter>(),
                 sessions: provider.GetRequiredService<IUserSessionLauncher>()));
+            // Every start, because a restart and an upgrade both end in one, and those are the two
+            // moments the server's picture of this device is otherwise wrong.
+            builder.Services.AddHostedService(provider => new StartupSoftwareSweep(
+                provider.GetRequiredService<SoftwareReporter>(),
+                provider.GetRequiredService<ILogger<StartupSoftwareSweep>>()));
             // Same reason: the update loop starts by asking GitHub what the newest release is, and a
             // run whose only purpose is one heartbeat has no business downloading anything.
             builder.Services.AddHostedService(provider =>

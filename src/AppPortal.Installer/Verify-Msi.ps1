@@ -31,9 +31,13 @@ foreach ($file in 'AppPortal.exe', 'AppPortal.Agent.exe') {
 }
 $shortcut = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'App Portal.lnk'
 if (-not (Test-Path $shortcut)) { throw 'The all-users shortcut was not installed.' }
-$entry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' |
-    Where-Object DisplayName -eq 'App Portal'
-if ($entry.DisplayVersion -ne $Version) { throw 'ARP does not report the package version.' }
+# Most keys under Uninstall carry no DisplayName, so ask whether it is there before comparing it.
+# This script sets no strict mode and the shorthand survives; ci-installer-test.ps1 does set it and the
+# same line threw there, so both are written the one way that is right in either.
+$entry = @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' |
+    Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -eq 'App Portal' })
+if ($entry.Count -ne 1) { throw "Programs and Features lists $($entry.Count) copies of App Portal, expected 1." }
+if ($entry[0].DisplayVersion -ne $Version) { throw 'ARP does not report the package version.' }
 $enrollmentPath = Join-Path $dataDir 'enroll.json'
 $enrollment = Get-Content $enrollmentPath -Raw | ConvertFrom-Json
 if ($enrollment.serverUrl -ne 'http://127.0.0.1:59999' -or $enrollment.enrollmentKey -ne 'ape_ci_not_a_real_key' -or $null -ne $enrollment.action1EndpointId) {

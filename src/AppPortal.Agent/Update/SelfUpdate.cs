@@ -76,10 +76,20 @@ public sealed class SelfUpdate(
         {
             latest = await feed.GetLatestAsync(ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogInformation("The release feed could not be reached ({Reason})", ex.GetType().Name);
             return new UpdateStatus(DateTimeOffset.UtcNow, installedText, null, null, UpdateResult.Offline, "The update service could not be reached.");
+        }
+        catch (InvalidDataException ex)
+        {
+            // Reached, answered, and the answer was unusable: a release with no MSI for the version it
+            // names, a tag that is not a version, an empty body. Saying "could not be reached" sends
+            // whoever reads it to the network, and the fault is in the release. This is the shape a
+            // renamed or missing asset takes, and it is the one a whole fleet meets on the same
+            // afternoon, so it says what is wrong and shows as a failure rather than as weather.
+            logger.LogError("The newest release cannot be used ({Message})", ex.Message);
+            return Failed(installed, null, ex.Message);
         }
 
         if (latest is null || latest.Version <= installed)

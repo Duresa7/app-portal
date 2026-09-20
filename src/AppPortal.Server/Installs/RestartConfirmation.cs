@@ -35,6 +35,12 @@ public sealed class RestartConfirmation(
         // Per account, not one list for the device: software installed into somebody's profile is
         // reported under their name, so looking only at the machine-wide list would find nothing and
         // call every per-user install that needed a restart a failure.
+        //
+        // How fresh each list is differs, and the difference is worth knowing. The machine-wide one is
+        // swept when the agent starts, which a restart guarantees, so it describes the PC as it is now.
+        // A person's own list cannot be: the sweep would have to run inside their session, and they may
+        // not have signed in yet. Theirs is as fresh as their last install, which is the moment before
+        // the restart. An empty list counts as found for exactly this reason.
         var byAccount = new Dictionary<string, IReadOnlyList<InstalledSoftware>>(StringComparer.OrdinalIgnoreCase);
         var entries = catalog.Entries;
         foreach (var install in waiting)

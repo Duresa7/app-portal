@@ -20,6 +20,7 @@ public sealed record RequestTableView(
     IReadOnlyList<AppRequestRecord> Requests,
     string Tab,
     int PageNumber,
+    bool HasNextPage,
     int PendingCount,
     string? Message,
     bool MessageIsError,
@@ -89,7 +90,7 @@ public sealed class IndexModel(AppRequestStore requests, IAdminContext current) 
         }
 
         return Partial("_RequestTable", new RequestTableView(
-            Items, Tab, PageNumber, PendingCount, Error ?? Notice, MessageIsError: Error is not null, OutOfBand: true));
+            Items, Tab, PageNumber, HasNextPage, PendingCount, Error ?? Notice, MessageIsError: Error is not null, OutOfBand: true));
     }
 
     private void Load(string? tab, int? page)

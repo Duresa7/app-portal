@@ -23,6 +23,23 @@
     }
     </tbody>
 </table>
+@* Keep the target even when empty: a decision can remove or reveal the next page. *@
+<div id="request-pager" hx-swap-oob="@(Model.OutOfBand ? "true" : null)">
+    @if (Model.PageNumber > 1 || Model.HasNextPage)
+    {
+        <div class="actions">
+            @if (Model.PageNumber > 1)
+            {
+                <a class="nav-item" href="/admin/requests?tab=@Model.Tab&amp;p=@(Model.PageNumber - 1)">Previous</a>
+            }
+            <span class="muted">Page @Model.PageNumber</span>
+            @if (Model.HasNextPage)
+            {
+                <a class="nav-item" href="/admin/requests?tab=@Model.Tab&amp;p=@(Model.PageNumber + 1)">Next</a>
+            }
+        </div>
+    }
+</div>
 @if (Model.OutOfBand)
 {
     @* Swapped by id wherever they sit, so one decision updates the badge in the navigation pane and

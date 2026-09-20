@@ -311,6 +311,41 @@ public sealed class AdminRequestsPageTests : IDisposable
     }
 
     [Fact]
+    public async Task Approving_the_fifty_first_pending_request_removes_the_next_page_link()
+    {
+        var devices = new DeviceStore(_test.Database);
+        var names = new[] { "PAGEPC1", "PAGEPC2", "PAGEPC3" };
+        foreach (var name in names)
+        {
+            devices.Add(name, $"endpoint-{name}");
+        }
+
+        AppRequestRecord? newest = null;
+        for (var i = 0; i < 51; i++)
+        {
+            newest = _requests.Create(names[i / AppRequestLimits.MaxPendingPerDevice], null, $"Request number {i:D2}");
+        }
+
+        var client = await SignedIn();
+        var before = await Html(client, "/admin/requests?tab=pending");
+        Assert.Contains("id=\"request-pager\"", before, StringComparison.Ordinal);
+        Assert.Contains(">Next<", before, StringComparison.Ordinal);
+
+        var response = await Decide(client, "Approve", newest!.Id, "Approved.", htmx: true);
+        var body = await Body(response);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(50, Regex.Matches(body, "<tr id=\"request-").Count);
+        Assert.Matches("<div id=\"request-pager\" hx-swap-oob=\"true\">\\s*</div>", body);
+        Assert.DoesNotContain(">Next<", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("<html", body, StringComparison.OrdinalIgnoreCase);
+
+        var after = await Html(client, "/admin/requests?tab=pending");
+        Assert.Contains("id=\"request-pager\"", after, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Next<", after, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_dashboard_counts_what_is_still_waiting()
     {
         var decided = _requests.Create("TESTPC", null, "Already answered");

@@ -27,21 +27,6 @@
 
 <div class="card">
     <partial name="_RequestTable" model="@(new AppPortal.Server.Pages.Admin.Requests.RequestTableView(
-                                              Model.Items, Model.Tab, Model.PageNumber, Model.PendingCount,
+                                              Model.Items, Model.Tab, Model.PageNumber, Model.HasNextPage, Model.PendingCount,
                                               null, false, false))" />
-
-    @if (Model.PageNumber > 1 || Model.HasNextPage)
-    {
-        <div class="actions">
-            @if (Model.PageNumber > 1)
-            {
-                <a class="nav-item" href="/admin/requests?tab=@Model.Tab&amp;p=@(Model.PageNumber - 1)">Previous</a>
-            }
-            <span class="muted">Page @Model.PageNumber</span>
-            @if (Model.HasNextPage)
-            {
-                <a class="nav-item" href="/admin/requests?tab=@Model.Tab&amp;p=@(Model.PageNumber + 1)">Next</a>
-            }
-        </div>
-    }
 </div>

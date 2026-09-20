@@ -111,6 +111,33 @@ Sign in at `/admin` with a local administrator account. Browser sessions use coo
 
 **Enrollment keys** lets administrators create and revoke keys with an expiry, use limit and default engine. The full key appears once. Automatic enrollment and the local agent arrive in milestone 2; version 0.3.0 still uses manual device registration and Action1 for installs.
 
+### Directory sign-in (optional)
+
+The portal needs no directory. A deployment that already runs Active Directory can let administrators sign in with their domain account instead of a second password, by configuring the `Directory` section:
+
+```jsonc
+"Directory": {
+  "Enabled": true,
+  "Servers": ["dc01.ad.example.com", "dc02.ad.example.com"],
+  "Port": 636,
+  "NetBiosDomain": "EXAMPLE",
+  "RequiredGroup": "APP-AppPortal-Admins",
+  "CertificateThumbprints": ["<sha-256 of the controller certificate>"],
+  "TimeoutSeconds": 10
+}
+```
+
+How it behaves:
+
+- **Local accounts are checked first**, so a directory that is unreachable cannot lock you out of your own portal. Keep one local account.
+- The bind is **LDAPS only** and uses the signing-in user's own credentials; the server holds no service account.
+- Only members of `RequiredGroup` are admitted, nested groups included. There is no default group: leaving it empty stops the server rather than admitting the whole directory.
+- A forest with no certificate authority gives its controllers self-signed certificates. List their SHA-256 thumbprints in `CertificateThumbprints` to pin them; with no thumbprints, ordinary chain validation applies and a self-signed certificate is refused.
+- The first successful sign-in creates an administrator row named `DOMAIN\user`, matching the requester label on installs. Disable it like any other account; its password stays in the directory and cannot be set here.
+- Every administrator is a full administrator. There is no group-to-role mapping, no directory sync, and the Windows client does not use this.
+
+Sign in with `DOMAIN\user`, a UPN, or the bare user name when `NetBiosDomain` is set. Configure the section through the environment like any other setting, for example `Directory__Enabled=true` and `Directory__Servers__0=dc01.ad.example.com`. The controllers must be resolvable and reachable on 636 from the container; `extra_hosts` in Compose covers a name your Docker host cannot resolve.
+
 ## Upgrading from 0.2.x
 
 Stop the old container and back up both the data volume and `deploy/config` before starting 0.3.0. Keep the existing volume mounted at `/app/data` and the catalog available at `/app/config/catalog.json` for the first start. The server imports `devices.json`, `installs.json` and the catalog into `app-portal.db`; existing device tokens remain valid. Verify the device list, catalog and install history, then create the first administrator with `admin add`.

@@ -1,4 +1,5 @@
 using AppPortal.Server.Admin;
+using AppPortal.Server.Options;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -7,9 +8,17 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace AppPortal.Server.Pages.Admin;
 
 [Authorize(Policy = AdminAuth.Policy)]
-public sealed class AdminsModel(AdminStore admins, AdminSessionStore sessions, IAdminContext current) : PageModel
+public sealed class AdminsModel(
+    AdminStore admins,
+    AdminSessionStore sessions,
+    IAdminContext current,
+    Microsoft.Extensions.Options.IOptions<DirectoryOptions> directory) : PageModel
 {
     public IReadOnlyList<AdminRecord> Admins { get; private set; } = [];
+
+    public bool DirectoryEnabled => directory.Value.Enabled;
+
+    public string DirectoryGroup => directory.Value.RequiredGroup;
 
     public string? Error { get; private set; }
 

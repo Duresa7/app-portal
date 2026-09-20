@@ -20,6 +20,13 @@
 
 <div class="card">
     <h2>Add an administrator</h2>
+    @if (Model.DirectoryEnabled)
+    {
+        <p class="muted">
+            Accounts added here keep their password in this portal. A directory account needs nothing added:
+            it appears in the table above the first time somebody in @Model.DirectoryGroup signs in with it.
+        </p>
+    }
     <form method="post" asp-page-handler="Add">
         <label for="new-username">User name</label>
         <input id="new-username" name="NewUsername" type="text" autocomplete="off" />
@@ -45,7 +52,7 @@
 
         <div class="actions">
             <button type="submit">Reset</button>
-            <span class="muted">Every session that account holds is signed out.</span>
+            <span class="muted">Every session that account holds is signed out. Local accounts only; a directory password lives in the directory.</span>
         </div>
     </form>
 </div>

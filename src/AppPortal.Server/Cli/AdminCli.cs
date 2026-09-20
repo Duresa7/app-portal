@@ -48,7 +48,7 @@ public static class AdminCli
                     foreach (var admin in admins.All())
                     {
                         var lastLogin = admin.LastLoginAt is { } at ? $"{at:u}" : "never signed in";
-                        output.WriteLine($"{admin.Username}\t{(admin.Disabled ? "disabled" : "enabled")}\t{lastLogin}");
+                        output.WriteLine($"{admin.Username}\t{admin.Source}\t{(admin.Disabled ? "disabled" : "enabled")}\t{lastLogin}");
                     }
 
                     return 0;

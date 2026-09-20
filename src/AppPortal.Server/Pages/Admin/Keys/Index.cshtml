@@ -1,0 +1,78 @@
+@page "/admin/keys"
+@model AppPortal.Server.Pages.Admin.Keys.IndexModel
+@{
+    ViewData["Title"] = "Enrollment keys";
+    ViewData["Nav"] = "keys";
+}
+@if (Model.Error is not null)
+{
+    <div class="message error">@Model.Error</div>
+}
+@if (Model.Notice is not null)
+{
+    <div class="message ok">@Model.Notice</div>
+}
+
+@if (Model.CreatedPlaintext is not null)
+{
+    <div class="card">
+        <h2>Copy this key now</h2>
+        <p class="muted">
+            Only its hash is stored, so this is the one time it can be read. If it is lost, revoke the key
+            and create another.
+        </p>
+        <input id="new-key" type="text" readonly value="@Model.CreatedPlaintext" />
+        <div class="actions">
+            <button type="button" onclick="copyKey()">Copy</button>
+            <span class="muted" id="copy-said"></span>
+        </div>
+    </div>
+    @* Inline because the admin area carries no script bundle, and this is the only script it needs. *@
+    <script>
+        function copyKey() {
+            var box = document.getElementById('new-key');
+            var said = document.getElementById('copy-said');
+            box.select();
+            box.setSelectionRange(0, box.value.length);
+            var done = function () { said.textContent = 'Copied.'; };
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(box.value).then(done, function () {
+                    said.textContent = 'Press Ctrl+C to copy the selected key.';
+                });
+            } else {
+                said.textContent = 'Press Ctrl+C to copy the selected key.';
+            }
+        }
+    </script>
+}
+
+<div class="card">
+    <h2>Keys</h2>
+    <partial name="_KeyTable" model="Model.Keys" />
+</div>
+
+<div class="card">
+    <h2>Create a key</h2>
+    <form method="post" asp-page-handler="Create">
+        <label for="new-name">Name</label>
+        <input id="new-name" name="NewName" type="text" autocomplete="off" value="@Model.NewName" />
+
+        <label for="new-engine">Default engine</label>
+        <select id="new-engine" name="NewEngine">
+            <option value="action1" selected="@(Model.NewEngine == "action1")">action1</option>
+            <option value="agent" selected="@(Model.NewEngine == "agent")">agent</option>
+            <option value="both" selected="@(Model.NewEngine == "both")">both</option>
+        </select>
+
+        <label for="new-expires">Expires (optional)</label>
+        <input id="new-expires" name="NewExpires" type="text" autocomplete="off" placeholder="YYYY-MM-DD" value="@Model.NewExpires" />
+
+        <label for="new-max-uses">Maximum uses (optional)</label>
+        <input id="new-max-uses" name="NewMaxUses" type="text" autocomplete="off" placeholder="unlimited" value="@Model.NewMaxUses" />
+
+        <div class="actions">
+            <button type="submit">Create</button>
+            <span class="muted">The key is shown once, on the next screen.</span>
+        </div>
+    </form>
+</div>

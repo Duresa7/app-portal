@@ -193,7 +193,26 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
 
         if (installId is not null)
         {
-            Mirror(connection, transaction, installId, state, percent, detail, now, reboot, installState);
+            // A step that succeeded has not finished the install it belongs to. Deciding that here,
+            // inside the same transaction, is what stops the card flashing "Installed" between one
+            // step of a chain and the next.
+            var forced = installState;
+            var stepDetail = detail;
+            if (state == "succeeded" && forced is null && HasStepAfter(connection, transaction, installId, id))
+            {
+                forced = InstallState.Running;
+                stepDetail = "Installed. Moving on to the next step.";
+            }
+            else if (state is "failed" or "cancelled"
+                     && StepLabel(connection, transaction, installId, id) is { } label)
+            {
+                // Which of the three, not just that one of them. A chain that says only "failed"
+                // leaves an administrator to open every app in it to find out which.
+                stepDetail = $"{label}: {detail}";
+            }
+
+            Mirror(connection, transaction, installId, state, percent, stepDetail, now, reboot, forced);
+            MirrorStep(connection, transaction, installId, id, state, detail);
         }
 
         transaction.Commit();
@@ -267,6 +286,79 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
             var who = string.IsNullOrWhiteSpace(requester) ? "the person who asked" : requester;
             Mirror(connection, transaction, installId, "failed", 0, $"Nobody signed in as {who} within 7 days.", now);
         }
+    }
+
+    /// <summary>
+    /// How this job reads as a step, like "Step 2 of 3, A Launcher", or null when the install has
+    /// only the one step and there is nothing to number.
+    /// </summary>
+    private static string? StepLabel(SqliteConnection connection, SqliteTransaction transaction,
+        string installId, string jobId)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT s.position, s.app_name, (SELECT COUNT(*) FROM install_steps WHERE install_id = @install)
+            FROM install_steps s WHERE s.install_id = @install AND s.external_ref = @ref;
+            """;
+        command.Parameters.AddWithValue("@install", installId);
+        command.Parameters.AddWithValue("@ref", jobId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        var count = reader.GetInt64(2);
+        return count > 1 ? $"Step {reader.GetInt64(0) + 1} of {count}, {reader.GetString(1)}" : null;
+    }
+
+    /// <summary>
+    /// Writes the outcome onto the step this job is, so a chain can tell a finished step from an
+    /// install that is still running only because the next step has not started yet.
+    /// </summary>
+    private static void MirrorStep(SqliteConnection connection, SqliteTransaction transaction,
+        string installId, string jobId, string state, string? detail)
+    {
+        var stepState = state switch
+        {
+            "queued" => InstallState.Queued,
+            "succeeded" => InstallState.Succeeded,
+            "failed" => InstallState.Failed,
+            "cancelled" => InstallState.Cancelled,
+            _ => InstallState.Running,
+        };
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE install_steps SET state = @state, detail = @detail
+            WHERE install_id = @install AND external_ref = @ref;
+            """;
+        command.Parameters.AddWithValue("@install", installId);
+        command.Parameters.AddWithValue("@ref", jobId);
+        command.Parameters.AddWithValue("@state", stepState.ToString());
+        command.Parameters.AddWithValue("@detail", (object?)detail ?? DBNull.Value);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Whether this install has a step beyond the one this job is. Inline rather than through the step
+    /// store, because it runs inside a transaction that store knows nothing about.
+    /// </summary>
+    private static bool HasStepAfter(SqliteConnection connection, SqliteTransaction transaction, string installId, string jobId)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT EXISTS(
+                SELECT 1 FROM install_steps
+                WHERE install_id = @install
+                  AND position > COALESCE((SELECT position FROM install_steps
+                                           WHERE install_id = @install AND external_ref = @ref), -1));
+            """;
+        command.Parameters.AddWithValue("@install", installId);
+        command.Parameters.AddWithValue("@ref", jobId);
+        return Convert.ToInt64(command.ExecuteScalar()) != 0;
     }
 
     private static void Mirror(SqliteConnection connection, SqliteTransaction transaction, string installId,

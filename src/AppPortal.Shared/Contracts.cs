@@ -54,7 +54,10 @@ public sealed record InstallRequest(
     string? Detail,
     string? RequestedBy,
     string? Engine = null,
-    string? RebootState = null);
+    string? RebootState = null,
+    string? StepName = null,
+    int StepNumber = 0,
+    int StepCount = 0);
 
 /// <summary>Software the management plane reports as present on the device.</summary>
 public sealed record InstalledApp(

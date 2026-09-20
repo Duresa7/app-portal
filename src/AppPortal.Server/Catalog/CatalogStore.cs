@@ -39,6 +39,13 @@ public sealed class CatalogEntry
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Requirements { get; set; }
 
+    /// <summary>
+    /// Catalog apps that must be installed before this one, in the order they should go on. Held on
+    /// the entry so that an export carries a chain and an import rebuilds it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public List<string> Requires { get; set; } = [];
+
     public Action1PackageRef Action1 { get; set; } = new();
     public PackageDefinition? Agent { get; set; }
     public MatchRule? Match { get; set; }
@@ -256,6 +263,7 @@ public sealed class CatalogStore
             }
 
             WritePackages(connection, transaction, entry);
+            ReplacePrerequisites(connection, transaction, entry.Id.Trim(), entry.Requires);
         }
 
         transaction.Commit();
@@ -299,6 +307,7 @@ public sealed class CatalogStore
         }
 
         WritePackages(connection, transaction, entry);
+        ReplacePrerequisites(connection, transaction, entry.Id.Trim(), entry.Requires);
 
         transaction.Commit();
     }
@@ -448,6 +457,79 @@ public sealed class CatalogStore
             });
         }
 
+        AttachPrerequisites(connection, entries);
         return entries;
+    }
+
+    private static void AttachPrerequisites(SqliteConnection connection, List<CatalogEntry> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        var byId = entries.ToDictionary(entry => entry.Id, StringComparer.OrdinalIgnoreCase);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT app_id, requires_app_id FROM catalog_prerequisites ORDER BY app_id, position;";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (byId.TryGetValue(reader.GetString(0), out var entry))
+            {
+                entry.Requires.Add(reader.GetString(1));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes what an app needs first, refusing anything that would make a loop. Refused on save
+    /// rather than on install, because the administrator who made the loop is the one who can undo it
+    /// and the person pressing Install is not.
+    /// </summary>
+    private void ReplacePrerequisites(SqliteConnection connection, SqliteTransaction transaction,
+        string appId, IReadOnlyList<string> needs)
+    {
+        using (var clear = connection.CreateCommand())
+        {
+            clear.Transaction = transaction;
+            clear.CommandText = "DELETE FROM catalog_prerequisites WHERE app_id = @app;";
+            clear.Parameters.AddWithValue("@app", appId);
+            clear.ExecuteNonQuery();
+        }
+
+        var position = 0;
+        foreach (var required in needs.Where(id => !string.IsNullOrWhiteSpace(id))
+                     .Select(id => id.Trim())
+                     .Where(id => !string.Equals(id, appId, StringComparison.OrdinalIgnoreCase))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = "INSERT INTO catalog_prerequisites (app_id, requires_app_id, position) VALUES (@app, @requires, @position);";
+            insert.Parameters.AddWithValue("@app", appId);
+            insert.Parameters.AddWithValue("@requires", required);
+            insert.Parameters.AddWithValue("@position", position++);
+            insert.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>Refuses a set of prerequisites that would close a loop, naming the apps in it.</summary>
+    public void EnsureNoCycle(string appId, IReadOnlyList<string> needs)
+    {
+        if (needs.Count == 0)
+        {
+            return;
+        }
+
+        var entries = Entries;
+        var byId = entries.ToDictionary(entry => entry.Id, StringComparer.OrdinalIgnoreCase);
+        var edges = entries.Where(entry => entry.Requires.Count > 0)
+            .ToDictionary(entry => entry.Id, entry => (IReadOnlyList<string>)entry.Requires, StringComparer.OrdinalIgnoreCase);
+        foreach (var id in needs.Where(id => !byId.ContainsKey(id)))
+        {
+            throw new PrerequisiteException($"'{id}' is not in the catalog.");
+        }
+
+        PrerequisiteResolver.EnsureNoCycle(appId, needs, edges, byId);
     }
 }

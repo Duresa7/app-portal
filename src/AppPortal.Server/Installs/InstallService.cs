@@ -33,7 +33,10 @@ public sealed class InstallService(
     ILogger<InstallService> logger,
     IEnumerable<IInstallEngine> engines,
     DeviceSoftwareStore software,
-    SettingsStore settings)
+    SettingsStore settings,
+    PrerequisiteStore prerequisites,
+    InstallStepStore steps,
+    DeviceStore devices)
 {
     private readonly Dictionary<string, IInstallEngine> _engines = engines.ToDictionary(e => e.Name);
 
@@ -74,12 +77,26 @@ public sealed class InstallService(
             throw new InstallRejectedException(InstallRejection.TooManyActive, "Too many installs are already in progress on this device. Wait for one to finish.");
         }
 
-        var chosen = EngineSelector.Choose(device, app, settings.DefaultEngine)
-                     ?? throw new InstallRejectedException(InstallRejection.PackageVersionNotFound,
-                         $"{app.Name} cannot be installed on this PC.");
-        var definition = chosen == EngineLabel.Agent ? store.FindAgentPackage(app.Id) : null;
-        var engine = _engines[chosen];
+        // What has to happen, in order, ending with the app somebody actually asked for. An app that
+        // needs nothing first yields a chain of one, so there is no second code path to keep in step.
+        var installed = software.ForDevice(device.Id, requestedBy);
+        var chain = PrerequisiteResolver.Expand(app, catalog.Entries.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase),
+            prerequisites.All(), entry => installed.Any(item => entry.MatchesInstalled(item.Name)));
 
+        var plan = new List<(CatalogEntry App, string Engine)>();
+        foreach (var entry in chain)
+        {
+            // Each step is routed on its own, so a chain may run partly through one engine and partly
+            // through the other. A step nothing can install makes the whole chain impossible.
+            var stepEngine = EngineSelector.Choose(device, entry, settings.DefaultEngine)
+                             ?? throw new InstallRejectedException(InstallRejection.PackageVersionNotFound,
+                                 entry.Id == app.Id
+                                     ? $"{app.Name} cannot be installed on this PC."
+                                     : $"{app.Name} needs {entry.Name} first, and that cannot be installed on this PC.");
+            plan.Add((entry, stepEngine));
+        }
+
+        var first = plan[0];
         var record = new InstallRecord
         {
             Id = Guid.NewGuid().ToString("N"),
@@ -91,19 +108,125 @@ public sealed class InstallService(
             RequestedBy = requestedBy,
             RequestedAt = DateTimeOffset.UtcNow,
             State = InstallState.Queued,
-            Engine = chosen,
+            Engine = first.Engine,
+            StepName = first.App.Name,
+            StepNumber = 1,
+            StepCount = plan.Count,
         };
 
-        record.AutomationId = await engine.StartAsync(device, app, definition, record, ct);
-        logger.LogInformation("Device {Device} requested {App} for {User}; engine {Engine}, reference {Reference}",
-            device.Name, app.Name, requestedBy ?? "an unnamed account", record.Engine, record.AutomationId);
+        // The first step is started before the rest are written down, because starting it is what
+        // creates the install row the steps point at.
+        record.AutomationId = await StartStepAsync(device, record, first.App, first.Engine, 0, ct);
+        steps.Add([.. plan.Skip(1).Select((step, index) => new InstallStep
+        {
+            InstallId = record.Id,
+            Position = index + 1,
+            AppId = step.App.Id,
+            AppName = step.App.Name,
+            Engine = step.Engine,
+            State = InstallState.Queued,
+        })]);
+
+        logger.LogInformation("Device {Device} requested {App} for {User}; {Steps} step(s), engine {Engine}, reference {Reference}",
+            device.Name, app.Name, requestedBy ?? "an unnamed account", plan.Count, record.Engine, record.AutomationId);
         return record;
     }
 
-    public Task<InstallRecord> RefreshAsync(InstallRecord record, CancellationToken ct)
+    /// <summary>Starts one step and records its reference, so a refresh can find it again.</summary>
+    private async Task<string?> StartStepAsync(DeviceRecord device, InstallRecord record, CatalogEntry app,
+        string engineName, int position, CancellationToken ct)
     {
-        var engine = _engines[record.Engine];
-        return engine.RefreshAsync(record, ct);
+        var definition = engineName == EngineLabel.Agent ? store.FindAgentPackage(app.Id) : null;
+        var reference = await _engines[engineName].StartAsync(device, app, definition, record, ct);
+        steps.Update(new InstallStep
+        {
+            InstallId = record.Id,
+            Position = position,
+            AppId = app.Id,
+            AppName = app.Name,
+            Engine = engineName,
+            ExternalRef = reference,
+            State = InstallState.Running,
+        });
+        return reference;
+    }
+
+    public async Task<InstallRecord> RefreshAsync(InstallRecord record, CancellationToken ct)
+    {
+        var refreshed = await _engines[record.Engine].RefreshAsync(record, ct);
+        return await AdvanceAsync(refreshed, ct);
+    }
+
+    /// <summary>
+    /// Moves a chained install on to its next step when the step it was on has finished. Driven from
+    /// the refresh the client already makes rather than from the completion itself: the step that
+    /// finishes does so inside the job store's own transaction, and starting the next one from in
+    /// there would mean an install engine reaching back into a write that has not been committed.
+    /// </summary>
+    private async Task<InstallRecord> AdvanceAsync(InstallRecord record, CancellationToken ct)
+    {
+        var chain = steps.For(record.Id);
+        if (chain.Count <= 1)
+        {
+            return record;
+        }
+
+        var running = chain.FirstOrDefault(step => step.ExternalRef == record.AutomationId);
+        if (running is null)
+        {
+            return record;
+        }
+
+        // The step's own outcome where the job store wrote one, and the install's otherwise: an
+        // Action1 step is settled by the poller, which knows nothing about chains.
+        var outcome = running.State is InstallState.Succeeded or InstallState.Failed or InstallState.Cancelled
+            ? running.State
+            : record.State;
+        running.State = outcome;
+        running.Detail ??= record.Detail;
+        steps.Update(running);
+        record.StepCount = chain.Count;
+        record.StepNumber = running.Position + 1;
+        record.StepName = running.AppName;
+
+        if (outcome is InstallState.Failed or InstallState.Cancelled)
+        {
+            // The rest are not attempted. Naming the step is the whole value of the message: "failed"
+            // on a three-app chain otherwise tells nobody which of the three to look at.
+            record.State = outcome;
+            record.Detail = $"Step {running.Position + 1} of {chain.Count}, {running.AppName}: {running.Detail}";
+            record.CompletedAt ??= DateTimeOffset.UtcNow;
+            store.Upsert(record);
+            return record;
+        }
+
+        if (outcome != InstallState.Succeeded || record.IsWaitingForRestart)
+        {
+            // A step that has to restart the PC first keeps the chain where it is until it has.
+            return record;
+        }
+
+        var next = chain.FirstOrDefault(step => step.Position > running.Position);
+        if (next is null)
+        {
+            return record;
+        }
+
+        var device = devices.Find(record.DeviceId ?? "")
+                     ?? throw new InstallRejectedException(InstallRejection.UnknownApp, "The device is no longer known.");
+        var app = catalog.Find(next.AppId)
+                  ?? throw new InstallRejectedException(InstallRejection.UnknownApp, $"'{next.AppId}' has left the catalog.");
+
+        record.State = InstallState.Running;
+        record.PercentComplete = 0;
+        record.Engine = next.Engine;
+        record.CompletedAt = null;
+        record.StepNumber = next.Position + 1;
+        record.StepName = next.AppName;
+        record.Detail = $"Installing {next.AppName} ({next.Position + 1} of {chain.Count})";
+        record.AutomationId = await StartStepAsync(device, record, app, next.Engine, next.Position, ct);
+        store.Upsert(record);
+        return record;
     }
 
     public async Task<IReadOnlyList<InstallRecord>> ListForDeviceAsync(DeviceRecord device, bool refreshActive, CancellationToken ct)

@@ -48,6 +48,16 @@ public sealed class InstallRecord
     /// </summary>
     public string? RebootState { get; set; }
 
+    /// <summary>
+    /// Which step of the chain is running, for an install that needed other apps first. Not stored:
+    /// filled from the steps when the record is read out, so there is one place the truth lives.
+    /// </summary>
+    public string? StepName { get; set; }
+
+    public int StepNumber { get; set; }
+
+    public int StepCount { get; set; }
+
     public bool IsWaitingForRestart => RebootState == AppPortal.Shared.RebootState.Pending;
 
     public string EngineText => EngineLabel.For(Engine);
@@ -55,7 +65,8 @@ public sealed class InstallRecord
     public bool IsActive => State is InstallState.Queued or InstallState.Running;
 
     public InstallRequest ToPublic()
-        => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail, RequestedBy, Engine, RebootState);
+        => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail, RequestedBy, Engine, RebootState,
+            StepName, StepNumber, StepCount);
 }
 
 /// <summary>Install history, one row per request, in the database under the data directory.</summary>

@@ -130,10 +130,14 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
             if (ActiveInstall is { } active)
             {
+                // An app that needed others first installs as one thing with several steps, and
+                // "Installing, 40%" over and over tells the person nothing about which of them.
+                var step = active.StepCount > 1 ? $"{active.StepName} ({active.StepNumber} of {active.StepCount}), " : "";
                 return active.State switch
                 {
                     InstallState.Queued => "Queued, waiting for this PC",
-                    InstallState.Running => $"Installing, {active.PercentComplete}%",
+                    InstallState.Running when active.RebootState == RebootState.Pending => RebootState.WaitingDetail,
+                    InstallState.Running => $"Installing {step}{active.PercentComplete}%",
                     _ => active.State.ToString(),
                 };
             }

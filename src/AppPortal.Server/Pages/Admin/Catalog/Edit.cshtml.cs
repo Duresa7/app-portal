@@ -58,6 +58,10 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         ErrorMessage = "Requirements must be 500 characters or fewer.")]
     public string Requirements { get; set; } = "";
 
+    /// <summary>App ids this one needs first, one per line, in the order they should be installed.</summary>
+    [BindProperty]
+    public string Requires { get; set; } = "";
+
 
     [BindProperty]
     public bool Hidden { get; set; }
@@ -172,6 +176,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             Hidden = Hidden,
             EngineOverride = EmptyToNull(EngineOverride),
             Requirements = EmptyToNull(Requirements),
+            Requires = [.. SplitLines(Requires)],
             Match = string.IsNullOrWhiteSpace(MatchNameContains) && string.IsNullOrWhiteSpace(MatchNameEquals)
                 ? null
                 : new MatchRule
@@ -198,7 +203,16 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
                     DirectScope, DirectRequiresReboot),
                 _ => throw new InvalidDataException("The agent package kind must be winget or direct."),
             };
+            // Before the save, not after: a loop written into the catalog is a loop every install of
+            // those apps has to walk around, and the person who can undo it is the one on this page.
+            catalog.EnsureNoCycle(entry.Id, entry.Requires);
             catalog.Upsert(entry);
+        }
+        catch (PrerequisiteException ex)
+        {
+            Error = ex.Message;
+            Fill(entry);
+            return Page();
         }
         catch (InvalidDataException ex)
         {
@@ -293,6 +307,10 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
 
     private static string? EmptyToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
+    /// <summary>One app id per line, blank lines ignored, so the box can be typed in comfortably.</summary>
+    private static IEnumerable<string> SplitLines(string? value)
+        => (value ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     private void Fill(CatalogEntry entry)
     {
         Id = entry.Id;
@@ -305,6 +323,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         Hidden = entry.Hidden;
         EngineOverride = entry.EngineOverride ?? "";
         Requirements = entry.Requirements ?? "";
+        Requires = string.Join('\n', entry.Requires);
         MatchNameContains = entry.Match?.NameContains ?? "";
         MatchNameEquals = entry.Match?.NameEquals ?? "";
         PackageId = entry.Action1.PackageId;

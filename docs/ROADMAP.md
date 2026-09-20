@@ -56,7 +56,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M2-04](plans/M2-04-agent-self-update.md) | Agent self-update via MSI | M2-03 | Done |
 | [M2-05](plans/M2-05-setup-bootstrapper.md) | Setup.exe bootstrapper | M2-01, M2-03 | Done |
 | [M2-06](plans/M2-06-installer-ci-verification.md) | Installer verification in CI | M2-03, M2-05 | Done |
-| [M2-07](plans/M2-07-release-0.6.0.md) | Release 0.6.0 | M2-04, M2-06 | In review |
+| [M2-07](plans/M2-07-release-0.6.0.md) | Release 0.6.0 | M2-04, M2-06 | Done |
 | [M3-01](plans/M3-01-local-package-definitions.md) | Local package definitions in the catalog | M1-06 | Done |
 | [M3-02](plans/M3-02-agent-job-protocol.md) | Agent job protocol with progress | M2-02 | Done |
 | [M3-03](plans/M3-03-winget-executor.md) | winget executor | M3-02 | Done |
@@ -80,6 +80,10 @@ Milestone 3 shipped as [v0.5.0](https://github.com/Duresa7/app-portal/releases/t
 Milestone 2 finished after milestone 3 and ships as 0.6.0. The agent now keeps the whole installation current from the release MSI, `AppPortalSetup.exe` puts one PC on through a wizard or one silent command, and the client zip retires.
 
 The caveat from 0.5.0 still stands for the install engine: **the Win32 code behind per-user installs has still never run outside a test double.** What is no longer untested is the package itself. `deploy/windows/ci-installer-test.ps1` installs it on a Windows runner, enrolls it against a real server, uses it and takes it off again, and the release cannot be built if any of that fails.
+
+An audit before the tag found six defects in the milestone 3 work, all fixed in [#42](https://github.com/Duresa7/app-portal/pull/42): a catalog column the admin form silently dropped, a prerequisite chain that stopped dead when one of its steps ran through Action1, a mislabelled engine on a cross-engine chain, per-user installs recorded as failures after a restart, a client that could not tell a removal from an install, and the flaky shutdown test.
+
+**Known gap, not fixed.** M3-09 specifies that the agent sweeps installed software when it starts. It does not: the only sweep runs straight after an install the agent itself did. So the restart check compares against the list from *before* the restart, and a device whose only engine is the agent shows an empty Installed list after an MSI upgrade until somebody installs something. Closing it is a small change to the agent and an untestable one without a real PC, which is how the six defects above got in. Do it with the per-user verification, not before it.
 
 Milestone 1 shipped as [v0.3.0](https://github.com/Duresa7/app-portal/releases/tag/v0.3.0). The [release gate](https://github.com/Duresa7/app-portal/actions/runs/35485822532) passed, the downloaded client archive matched `SHA256SUMS`, and `ghcr.io/duresa7/app-portal-server:0.3.0` was pulled without registry credentials. The upgrade check used a copied 0.2.1 fake-mode data volume; validate a copy of production data before upgrading a live deployment.
 

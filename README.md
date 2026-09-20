@@ -171,7 +171,7 @@ The upgrade was checked using a copy of a data volume written by the 0.2.1 serve
 
 ## Install one PC with Setup.exe
 
-`AppPortalSetup.exe` is the whole product in one file: the MSI, the .NET runtime and a four-page wizard. Carry it to a machine, double-click it, answer two questions, and the PC is enrolled. Download it from the [latest release](https://github.com/Duresa7/app-portal/releases/latest).
+`AppPortalSetup.exe` is the whole product in one file: the MSI, the .NET runtime and a four-page wizard. Carry it to a machine, double-click it, answer two questions, and the PC is enrolled. Releases from the next one onwards attach it beside the MSI; until then, build it with `dotnet publish src/AppPortal.Setup -c Release -r win-x64 --self-contained -p:AppPortalMsiPath=<path to the .msi>`.
 
 It asks for the server address and an enrollment key, checks both against the server before it installs anything, and asks for an Action1 endpoint id only when the key enrolls devices through Action1. It then runs the MSI, waits up to a minute for the agent to enroll and report in, and names the device as the server recorded it. Enter moves to the next page and Escape cancels, so the whole path works from the keyboard.
 

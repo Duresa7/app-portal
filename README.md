@@ -58,7 +58,9 @@ Demo mode fills the whole interface with sample data held in memory. Installs ad
 | `tests/AppPortal.Server.Tests` | xUnit tests against an in-memory Action1 stand-in |
 | `tests/AppPortal.Client.Tests` | Client catalog refresh regression tests |
 | `tests/AppPortal.Updater.Tests` | xUnit tests for version parsing, checksum parsing and the file swap |
-| `deploy/` | Dockerfile, compose file, environment template, server smoke test, Windows install script |
+| `src/AppPortal.Agent` | SYSTEM service for enrollment and heartbeats |
+| `src/AppPortal.Installer` | WiX v5 MSI, built and verified on Windows |
+| `deploy/` | Dockerfile, compose file, environment template and server smoke test |
 | `docs/` | Screenshots and design notes |
 
 ## Server setup
@@ -78,7 +80,7 @@ Requirements: Docker and an Action1 API credential. A secrets manager whose CLI 
    ```
    Enter the password at the prompt. For unattended setup, supply `APPPORTAL_ADMIN_PASSWORD` through the process environment. Open `/admin` on the server, sign in, and manage further accounts under **Admins**.
 5. **Prepare the catalog.** Open **Catalog** to add or edit apps, search and verify Action1 packages, or import a JSON catalog. Hide removes an app from the device catalog while retaining its history; delete is refused when installs reference it. Export downloads the current catalog. See [the catalog format](deploy/config/README.md).
-6. **Register a device.** Open **Devices**, enter its name and Action1 endpoint ID, and copy the device token shown once. Store it in your secrets manager and pass it to the client installer. Only the token's SHA-256 is stored on the server.
+6. **Create an enrollment key.** Open **Enrollment keys**, choose its expiry and use limit, and copy the key shown once. Pass it to the MSI through your deployment system's secret parameter. The agent exchanges it for a device token at first start; the server must expose the milestone 2 enrollment endpoint. Manual device registration remains available for older clients.
 
 The CLI remains available for scripts:
 
@@ -109,7 +111,7 @@ Sign in at `/admin` with a local administrator account. Browser sessions use coo
 
 **Devices** supports renaming, disabling, token rotation and removal. Disabling or rotating a token takes effect on the next API call. Removal is refused while an install is active; afterward, install and request history remains available to administrators. A replacement device does not inherit the retired device's history.
 
-**Enrollment keys** lets administrators create and revoke keys with an expiry, use limit and default engine. The full key appears once. Automatic enrollment and the local agent arrive in milestone 2; version 0.3.0 still uses manual device registration and Action1 for installs.
+**Enrollment keys** lets administrators create and revoke keys with an expiry, use limit and default engine. The full key appears once. The MSI and agent use these keys with the milestone 2 enrollment API; a 0.3.0 server still needs manual device registration.
 
 ### Directory sign-in (optional)
 
@@ -147,15 +149,21 @@ After verification, archive the legacy JSON files outside the mounted directorie
 
 The upgrade was checked using a copy of a data volume written by the 0.2.1 server in fake mode. Its original token authenticated after migration, catalog and install records remained available, and a restart produced no duplicate records.
 
-## Client deployment
+## Deploy the MSI
 
-The CI workflow publishes `AppPortal-client-win-x64.zip`: a self-contained build plus `Install-AppPortalClient.ps1`. Deploy it through Action1 as a custom package (or run it as SYSTEM any other way):
+Download `AppPortal-<version>-x64.msi` from the [latest release](https://github.com/Duresa7/app-portal/releases/latest). Run it elevated or as SYSTEM through Group Policy, Intune or your RMM:
 
 ```powershell
-.\Install-AppPortalClient.ps1 -ServerUrl https://portal.example.internal -DeviceToken <token>
+msiexec /i AppPortal-0.4.0-x64.msi /qn SERVERURL=https://portal.example.internal ENROLLMENTKEY=ape_...
 ```
 
-The script copies the client to `%ProgramFiles%\App Portal`, writes `%ProgramData%\AppPortal\client.json` readable by Users and writable only by Administrators, adds a Start menu shortcut for all users, registers an uninstall entry, and registers the updater task described next. Pass the token through the RMM's secret parameter rather than embedding it in the package.
+Use the filename matching the release version. `ACTION1ENDPOINTID=<endpoint-id>` is optional. Pass the key through the deployment system's secret parameter. Property values must not contain quotes, backslashes, tabs or line breaks; percent-encode special characters in the URL.
+
+The MSI installs the client and agent to `%ProgramFiles%\App Portal`, registers `AppPortalAgent` as an automatic SYSTEM service, and adds an all-users Start menu shortcut and an Apps & Features entry. It writes `%ProgramData%\AppPortal\enroll.json` only when both `SERVERURL` and `ENROLLMENTKEY` are supplied. Only SYSTEM and Administrators can read that file. On first start, the agent calls `POST /api/v1/enroll`, writes `client.json` with the returned device token, and deletes `enroll.json`. Users can read `client.json` but cannot change it. An existing token is preserved and any new enrollment file is discarded. Failed enrollment retains the key file and retries.
+
+Upgrade silently with `msiexec /i AppPortal-<new-version>-x64.msi /qn`; no enrollment properties are needed. The token and local data survive, and the service restarts. Uninstall with `msiexec /x AppPortal-<version>-x64.msi /qn`. Data under `%ProgramData%\AppPortal` stays unless you also pass `REMOVEDATA=1`.
+
+`AppPortal-client-win-x64.zip` is deprecated and continues shipping for one transition release for demos and existing zip deployments. The PowerShell installer scripts have been removed. MSI deployments do not register the old updater task; until the agent's MSI self-update package lands, deploy newer MSIs through your management system. When migrating a script installation, retire its **App Portal Updater** task before installing the MSI so the old updater cannot replace MSI-owned files.
 
 The client's **Requests** section accepts up to 500 characters describing the software needed. Each device can have 20 pending requests. The newest request appears immediately after submission; status and administrator reasons refresh with the rest of the client.
 
@@ -163,19 +171,9 @@ The client's **Requests** section accepts up to 500 characters describing the so
 
 ## Updates
 
-Deploy the client once. After that it keeps itself current from this repository's releases.
+MSI installations upgrade through the MSI as described above. Automatic MSI updates are added in M2-04.
 
-`AppPortal.Updater.exe` sits beside the client and runs from a scheduled task, **App Portal Updater**, as SYSTEM: five minutes after boot, a minute after any logon, once a day at a random time between noon and one, and whenever a user presses the update button in the client. Each run:
-
-1. Asks `api.github.com` for the latest release and compares its tag with the installed `AppPortal.exe` version.
-2. Downloads `AppPortal-client-win-x64.zip` while hashing it, fetches `SHA256SUMS` from the same release, and discards the archive on any mismatch. A release without checksums is refused.
-3. Unpacks the archive's `client` folder into `%ProgramFiles%\App Portal\.staged`.
-4. If no client from that folder is running, moves the current files into `.previous`, moves the staged files into place, and updates the uninstall entry's version. Windows lets a running executable be renamed but not overwritten, which is why the swap is two moves and why the updater can replace itself. If anything fails half-way, the old files move back.
-5. Writes `%ProgramData%\AppPortal\update.json` and appends to `updater.log` in the same folder.
-
-The client never touches the release feed. It reads `update.json` and shows one of two banners: *available*, with an **Update now** button that starts the task; or *ready*, once a build is staged, with **Restart to update**, which starts the task and exits so the swap can proceed. The task's security descriptor grants Authenticated Users read and execute, so a standard user can start it and nothing else; only SYSTEM and Administrators can write to Program Files, so nothing a user controls can put a build on the machine. A client that is left open is never killed: the swap waits for the next run.
-
-What the checksum does and does not prove: it catches a truncated or corrupted download and a mismatch between the archive and what CI published. It does not defend against a compromised GitHub account, because the checksums come from the same release. The releases are unsigned; that is the next thing to add. To point installations at a fork, add `"updateRepository": "owner/name"` to `client.json`. Run `AppPortal.Updater.exe --check` from an elevated prompt to look without changing anything.
+Legacy zip installations still use `AppPortal.Updater.exe` and the **App Portal Updater** SYSTEM task. That updater downloads the release zip, verifies `SHA256SUMS`, and replaces the client when it is closed. The zip remains available for one transition release. Do not run that updater against an MSI installation.
 
 ## Development
 
@@ -197,18 +195,20 @@ The version every project carries is in `Directory.Build.props`; a release build
 
 `dotnet run -- --screenshot out.png 2 --theme dark` renders a section (0 apps, 1 installed, 2 activity, 3 requests) in the chosen theme to a PNG and exits, which is how the images in `docs/` were produced under Xvfb.
 
+The Windows-only installer project is intentionally outside `AppPortal.sln`, so the solution builds and tests on Linux. On Windows, publish `src/AppPortal.Client` and `src/AppPortal.Agent` with `-c Release -r win-x64 --self-contained` to `out/client` and `out/agent`, then run `dotnet build src/AppPortal.Installer/AppPortal.Installer.wixproj -c Release -o out/installer`. Its version comes from `Directory.Build.props`.
+
 Before pushing, `dotnet format` puts the code in the shape CI checks for, and `deploy/smoke-test.sh <image>` runs the same server smoke test CI runs against a locally built image.
 
 ## Releasing
 
-Every push runs the format check, build and tests on Linux and Windows, publishes the client zip and verifies it on Windows (checksum, file list, binaries report the props version, the client starts in demo mode and renders), and builds the server image and exercises it in fake mode. A release is cut by tagging:
+Every push runs the format check, build and tests on Linux and Windows, publishes the MSI and client zip and verifies them on Windows (checksum, file list, binaries report the props version, the client starts in demo mode and renders), and builds the server image and exercises it in fake mode. A release is cut by tagging:
 
 ```bash
 # Directory.Build.props already says 0.3.0 and that commit is on main
 git tag v0.3.0 && git push origin v0.3.0
 ```
 
-The tag run repeats all of the above, then a final job pushes `ghcr.io/duresa7/app-portal-server:0.3.0` and `:latest` and creates the GitHub release with the zip and `SHA256SUMS`. Nothing a device or a server host can pull exists before that job, so a failure anywhere leaves no release. The run refuses a tag whose version differs from `Directory.Build.props` or whose commit is not on main. A repository ruleset lets only administrators create, move or delete `v*` tags.
+The tag run repeats all of the above, then a final job pushes `ghcr.io/duresa7/app-portal-server:0.3.0` and `:latest` and creates the GitHub release with the MSI, deprecated zip and `SHA256SUMS`. Nothing a device or a server host can pull exists before that job, so a failure anywhere leaves no release. The run refuses a tag whose version differs from `Directory.Build.props` or whose commit is not on main. A repository ruleset lets only administrators create, move or delete `v*` tags.
 
 Two things CI cannot do:
 
@@ -253,7 +253,7 @@ A few behaviours are deliberate and were put in after a review found the failure
 - Device tokens do not expire. Rotate them on the device detail page, or run `device add` again for the same name.
 - Admin sign-in uses local accounts. OpenID Connect and email notifications are not implemented.
 - Request approval is a recorded decision; an administrator must separately add any approved software to the catalog.
-- Enrollment keys can be managed, but automatic enrollment, the Windows agent and non-Action1 install engines are not yet implemented.
+- Automatic enrollment requires the milestone 2 enrollment API. The agent currently enrolls and reports heartbeats; non-Action1 install engines arrive later.
 - Updates come only from GitHub releases over HTTPS, verified by SHA-256 but not signed. A machine without internet access keeps the build it has.
 - Action1's API is rate limited (HTTP 429). The server polls active installs every 30 seconds by default; keep the catalog small and the device count modest.
 

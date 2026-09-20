@@ -190,6 +190,12 @@
                                                         <TextBlock Text="{Binding DownloadSizeText}" IsVisible="{Binding HasDownloadSize}" Classes="caption" />
                                                         <TextBlock Text="Installs for you only" IsVisible="{Binding InstallsForYouOnly}" Classes="caption" />
                                                         <TextBlock Text="{Binding EngineText}" IsVisible="{Binding HasEngine}" Classes="caption" />
+                                                        <TextBlock Text="{Binding RequirementsText}" IsVisible="{Binding HasRequirements}"
+                                                                   TextWrapping="Wrap" Classes="caption" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsConfirming}">
+                                                            <Button Content="Install anyway" Command="{Binding ConfirmInstallCommand}" />
+                                                            <Button Content="Not now" Command="{Binding CancelInstallCommand}" />
+                                                        </StackPanel>
                                                     </StackPanel>
                                                 </Grid>
                                                 <TextBlock Grid.Row="1" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" Margin="0,14,0,14" MaxLines="2" TextTrimming="CharacterEllipsis" MinHeight="40" />

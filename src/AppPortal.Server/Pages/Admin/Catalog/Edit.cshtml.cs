@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 using AppPortal.Server.Action1;
 using AppPortal.Server.Admin;
 using AppPortal.Server.Catalog;
@@ -50,6 +52,11 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     /// <summary>Empty to follow the server's default, which is what almost every app should do.</summary>
     [BindProperty]
     public string EngineOverride { get; set; } = "";
+
+    [BindProperty]
+    [StringLength(AppPortal.Shared.CatalogLimits.MaxRequirementsLength,
+        ErrorMessage = "Requirements must be 500 characters or fewer.")]
+    public string Requirements { get; set; } = "";
 
 
     [BindProperty]
@@ -164,6 +171,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             Featured = Featured,
             Hidden = Hidden,
             EngineOverride = EmptyToNull(EngineOverride),
+            Requirements = EmptyToNull(Requirements),
             Match = string.IsNullOrWhiteSpace(MatchNameContains) && string.IsNullOrWhiteSpace(MatchNameEquals)
                 ? null
                 : new MatchRule
@@ -296,6 +304,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         Featured = entry.Featured;
         Hidden = entry.Hidden;
         EngineOverride = entry.EngineOverride ?? "";
+        Requirements = entry.Requirements ?? "";
         MatchNameContains = entry.Match?.NameContains ?? "";
         MatchNameEquals = entry.Match?.NameEquals ?? "";
         PackageId = entry.Action1.PackageId;

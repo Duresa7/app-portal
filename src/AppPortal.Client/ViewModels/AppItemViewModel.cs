@@ -54,6 +54,10 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
     public bool HasEngine => !string.IsNullOrEmpty(App.Engine);
 
+    public bool HasRequirements => !string.IsNullOrWhiteSpace(App.Requirements);
+
+    public string RequirementsText => App.Requirements ?? "";
+
     public bool HasDownloadSize => App.DownloadSizeBytes is not null;
     public string DownloadSizeText => App.DownloadSizeBytes switch
     {
@@ -92,7 +96,7 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
     public bool IsBusy => IsRequesting || ActiveInstall is not null;
 
-    public bool CanInstall => !IsBusy && !IsInstalled;
+    public bool CanInstall => !IsBusy && !IsInstalled && !IsConfirming;
 
     public bool HasError => LastError is not null;
 
@@ -147,6 +151,35 @@ public sealed partial class AppItemViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// True once Install has been pressed on an app that states requirements, and until the person has
+    /// either agreed to them or backed out. The text is on the card either way; this is what stops it
+    /// being scrolled past, on the apps that have something to say and on no others.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanInstall))]
+    private bool _isConfirming;
+
     [RelayCommand(CanExecute = nameof(CanInstall))]
-    private Task InstallAsync() => _install(this);
+    private Task InstallAsync()
+    {
+        if (HasRequirements && !IsConfirming)
+        {
+            IsConfirming = true;
+            return Task.CompletedTask;
+        }
+
+        IsConfirming = false;
+        return _install(this);
+    }
+
+    [RelayCommand]
+    private Task ConfirmInstallAsync()
+    {
+        IsConfirming = false;
+        return _install(this);
+    }
+
+    [RelayCommand]
+    private void CancelInstall() => IsConfirming = false;
 }

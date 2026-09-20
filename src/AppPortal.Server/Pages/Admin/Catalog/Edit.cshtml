@@ -97,6 +97,15 @@
     </div>
 
     <div class="card">
+        <h2>Requirements</h2>
+        <label for="requirements">What this app needs, in your own words (optional)</label>
+        <textarea id="requirements" name="Requirements" rows="3" maxlength="500"
+                  placeholder="Needs Secure Boot and TPM 2.0 turned on. Needs a vendor account. Windows 11 only.">@Model.Requirements</textarea>
+        <p class="muted">
+            Shown on the app and confirmed by the person before they install it. The portal does not
+            check any of this and will never refuse an install because of it.
+        </p>
+
         <h2>Engine</h2>
         <label for="engine-override">Prefer</label>
         <select id="engine-override" name="EngineOverride">

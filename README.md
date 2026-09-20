@@ -221,7 +221,20 @@ Before pushing, `dotnet format` puts the code in the shape CI checks for, and `d
 
 ## Releasing
 
-Every push runs the format check, build and tests on Linux and Windows, publishes the MSI and client zip and verifies them on Windows (checksum, file list, binaries report the props version, the client starts in demo mode and renders), and builds the server image and exercises it in fake mode. A release is cut by tagging:
+CI runs in two shapes, because Windows minutes bill at several times the Linux rate and the Windows jobs are most of the cost of the workflow.
+
+- **Every push and pull request:** the format check, build and tests on Linux, and the server image built and exercised in fake mode.
+- **Before a release:** the same plus everything on Windows. A `v*` tag runs it automatically; at any other time start it from the Actions tab with the *Run the Windows jobs as well* box ticked. Treat a red result there as blocking the tag.
+
+The Windows half is what proves the thing a PC actually receives. `installer-verify` publishes the client and the agent, builds the MSI and the bootstrapper, and then runs [`deploy/windows/ci-installer-test.ps1`](deploy/windows/ci-installer-test.ps1) against a fake-mode server started in the job: the MSI must report the props version and the unchanging upgrade code, `AppPortalSetup.exe /quiet` must return 0, the service must come up as SYSTEM, the device must enroll and appear on `/admin/devices` with a heartbeat, the installed client must render, the uninstall must leave nothing behind, and an install of the previous release must upgrade in place without losing its device token. The script takes the same arguments by hand, so a failure that only reproduces on a virtual machine can be chased there:
+
+```powershell
+./deploy/windows/ci-installer-test.ps1 -Msi out/installer/AppPortal-0.5.0-x64.msi -Version 0.5.0 -Setup out/setup/AppPortalSetup.exe
+```
+
+It installs and uninstalls software and writes to `%ProgramData%`, so run it on a throwaway machine.
+
+A release is cut by tagging:
 
 ```bash
 # Directory.Build.props already says 0.3.0 and that commit is on main

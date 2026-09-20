@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace AppPortal.Shared;
 
 /// <summary>One application the administrator has approved for self-service installation.</summary>
@@ -147,3 +150,11 @@ public sealed record AgentHeartbeatRequest(string AgentVersion, string? ClientVe
 /// the next one, so a fleet that is calling in too often can be slowed down without shipping a build.
 /// </summary>
 public sealed record AgentHeartbeatResponse(DateTimeOffset ServerTime, int HeartbeatSeconds);
+
+public sealed record AgentJob(string Id, string InstallId, PackageDefinition Definition, int Attempt);
+
+public sealed record AgentJobProgress(string State, int Percent, string? Detail);
+
+public sealed record AgentJobCompletion(bool Ok, string? Detail, int? ExitCode);
+
+public sealed record ExecutionResult(bool Ok, string? Detail, int? ExitCode = null);

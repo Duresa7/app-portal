@@ -11,6 +11,18 @@ public abstract record PackageDefinition
     public abstract void Validate();
 
     /// <summary>
+    /// The discriminator the JSON above writes, readable from code. The agent keys its executors on it,
+    /// and it is ignored on the way out because the polymorphic writer already emits it.
+    /// </summary>
+    [JsonIgnore]
+    public string Kind => this switch
+    {
+        WingetPackageDefinition => "winget",
+        DirectPackageDefinition => "direct",
+        _ => throw new InvalidOperationException($"{GetType().Name} has no kind; add it beside the JsonDerivedType attributes."),
+    };
+
+    /// <summary>
     /// Who the install is for. A machine-wide install runs as SYSTEM and serves everyone on the device.
     /// A per-user install runs in the requester's own session and lands in their profile, which is the
     /// only place the installers that write to %LocalAppData% can usefully go.

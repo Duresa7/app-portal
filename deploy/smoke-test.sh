@@ -11,6 +11,7 @@ port="${SMOKE_PORT:-18080}"
 config="$(cd "$(dirname "$0")" && pwd)/config"
 scratch=$(mktemp -d)
 jar="$scratch/cookies"
+mkdir "$scratch/data"
 
 cleanup() {
     if [[ "${failed:-0}" != 0 ]]; then
@@ -25,7 +26,7 @@ trap 'failed=$?; cleanup' EXIT
 step() { echo; echo "==> $*"; }
 
 step "Start $image in fake mode"
-docker run -d --name "$name" -p "127.0.0.1:$port:8080" -e Action1__Mode=Fake -v "$config:/app/config:ro" "$image" >/dev/null
+docker run -d --user "$(id -u):$(id -g)" --name "$name" -p "127.0.0.1:$port:8080" -e Action1__Mode=Fake -v "$config:/app/config:ro" -v "$scratch/data:/app/data" "$image" >/dev/null
 
 step "Wait for /healthz"
 for _ in $(seq 1 30); do
@@ -123,6 +124,35 @@ cat "$scratch/install.json"; echo
 step "The install shows up in the device's history"
 curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/v1/installs" | grep -q "\"appId\":\"$app_id\""
 echo "listed"
+
+step "An agent-only app becomes a job and reports progress on the same install"
+# M3-01 owns catalog authoring; seed its package row directly until that UI is available here.
+python3 - "$scratch/data/app-portal.db" <<'PYSQL'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("INSERT INTO catalog_apps (id, name, created_at, updated_at) VALUES ('agent-smoke', 'Agent Smoke', '', '')")
+    db.execute("INSERT INTO catalog_packages VALUES ('agent-smoke', 'agent', ?)",
+               ('{"kind":"winget","id":"Smoke.Package","scope":"machine"}',))
+PYSQL
+curl -fsS -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+    -d '{"agentVersion":"0.5.0","clientVersion":null,"osVersion":"smoke"}' \
+    "http://127.0.0.1:$port/api/v1/agent/heartbeat" >/dev/null
+curl -fsS -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+    -d '{"appId":"agent-smoke"}' "http://127.0.0.1:$port/api/v1/installs" > "$scratch/agent-install.json"
+agent_install=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$scratch/agent-install.json")
+curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/v1/agent/jobs?wait=0" > "$scratch/job.json"
+job_id=$(python3 -c 'import json,sys; j=json.load(open(sys.argv[1])); assert j["installId"]==sys.argv[2]; print(j["id"])' "$scratch/job.json" "$agent_install")
+curl -fsS -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+    -d '{"state":"downloading","percent":43,"detail":"Downloading 43%"}' \
+    "http://127.0.0.1:$port/api/v1/agent/jobs/$job_id/progress" >/dev/null
+curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/v1/installs/$agent_install" \
+    | python3 -c 'import json,sys; i=json.load(sys.stdin); assert i["percentComplete"]==43; assert i["detail"]=="Downloading 43%"'
+curl -fsS -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+    -d '{"ok":false,"detail":"no executor","exitCode":null}' \
+    "http://127.0.0.1:$port/api/v1/agent/jobs/$job_id/complete" >/dev/null
+curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/v1/installs/$agent_install" \
+    | python3 -c 'import json,sys; i=json.load(sys.stdin); assert i["state"]=="Failed"; assert i["detail"]=="no executor"'
+echo "agent progress and completion reached the original install"
 
 step "admin add creates the first administrator"
 docker exec -e APPPORTAL_ADMIN_PASSWORD=smoke-password-1234 "$name" \

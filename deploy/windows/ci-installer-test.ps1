@@ -304,9 +304,12 @@ try {
         $after = (Get-Content $settingsPath -Raw | ConvertFrom-Json).deviceToken
         if ($after -ne $before) { throw 'The upgrade replaced the device token; the PC would enroll twice.' }
 
-        $entry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' |
-            Where-Object DisplayName -eq 'App Portal'
-        if (@($entry).Count -ne 1) { throw 'The upgrade left two copies of App Portal installed.' }
+        # Most keys under Uninstall have no DisplayName at all, and under Set-StrictMode comparing a
+        # property that is not there throws rather than answering no. So ask whether it exists first.
+        $entry = @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' |
+            Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -eq 'App Portal' })
+        if ($entry.Count -ne 1) { throw "Programs and Features lists $($entry.Count) copies of App Portal, expected 1." }
+        $entry = $entry[0]
         if ($entry.DisplayVersion -ne $Version) {
             throw "After the upgrade Programs and Features says $($entry.DisplayVersion), expected $Version."
         }

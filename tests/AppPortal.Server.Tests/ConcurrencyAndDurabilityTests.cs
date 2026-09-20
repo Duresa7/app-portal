@@ -137,6 +137,19 @@ public sealed class ConcurrencyAndDurabilityTests : IDisposable
     }
 
     [Fact]
+    public void A_data_directory_that_cannot_be_created_fails_where_the_start_up_guard_sees_it()
+    {
+        // An unwritable or unmounted data volume refuses in the constructor, before any migration runs.
+        // Program.cs therefore resolves the service inside the same try that logs and exits non-zero;
+        // resolved outside it, this escapes as an unhandled exception with nothing written to the log.
+        var blocker = Path.Combine(_test.Root, "not-a-directory");
+        File.WriteAllText(blocker, "a file standing where the data directory should be");
+
+        Assert.ThrowsAny<IOException>(
+            () => new Database(Path.Combine(blocker, "data", AppPortal.Server.Data.Database.FileName)));
+    }
+
+    [Fact]
     public void Migrations_are_applied_once_and_running_them_again_changes_nothing()
     {
         var path = Path.Combine(_test.Root, "twice", AppPortal.Server.Data.Database.FileName);

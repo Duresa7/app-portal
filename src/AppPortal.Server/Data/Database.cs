@@ -35,18 +35,36 @@ public sealed class Database
             Directory.CreateDirectory(directory);
         }
 
-        _connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            // Private cache, which is the default: a shared cache serialises connections at table level
-            // and answers a second writer with an error that busy_timeout does not wait out.
-            Cache = SqliteCacheMode.Private,
-            Pooling = true,
-        }.ToString();
+        _connectionString = ConnectionStringFor(path);
     }
 
     public string Path { get; }
+
+    private static string ConnectionStringFor(string path) => new SqliteConnectionStringBuilder
+    {
+        DataSource = path,
+        Mode = SqliteOpenMode.ReadWriteCreate,
+        // Private cache, which is the default: a shared cache serialises connections at table level
+        // and answers a second writer with an error that busy_timeout does not wait out.
+        Cache = SqliteCacheMode.Private,
+        Pooling = true,
+    }.ToString();
+
+    /// <summary>
+    /// Closes the pooled connections to this one file, so that it can be deleted or read as bytes while
+    /// the process keeps running. Deliberately narrow: <c>SqliteConnection.ClearAllPools</c> reaches
+    /// every pool in the process and disposes handles that other work is holding.
+    /// </summary>
+    public void ClearPool() => ClearPoolAt(_connectionString);
+
+    /// <summary>The same, for a file this process has not opened through a <see cref="Database"/>.</summary>
+    public static void ClearPoolFor(string path) => ClearPoolAt(ConnectionStringFor(path));
+
+    private static void ClearPoolAt(string connectionString)
+    {
+        using var connection = new SqliteConnection(connectionString);
+        SqliteConnection.ClearPool(connection);
+    }
 
     public SqliteConnection Open()
     {

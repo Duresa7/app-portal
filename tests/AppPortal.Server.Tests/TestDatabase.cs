@@ -64,7 +64,9 @@ public sealed class TestDatabase : IDisposable
 
     public void Dispose()
     {
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        // Only this test's own file. Clearing every pool in the process reaches the databases of the
+        // test classes running beside this one, and disposes connections they are in the middle of using.
+        Database.ClearPool();
         try
         {
             Directory.Delete(Root, recursive: true);

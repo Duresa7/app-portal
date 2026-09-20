@@ -26,9 +26,21 @@ public sealed class CatalogEntry
     public bool Hidden { get; set; }
 
     public Action1PackageRef Action1 { get; set; } = new();
+    public PackageDefinition? Agent { get; set; }
     public MatchRule? Match { get; set; }
 
-    public CatalogApp ToPublic() => new(Id, Name, Publisher, Description, Category, IconUrl, Featured);
+    public CatalogApp ToPublic() => new(Id, Name, Publisher, Description, Category, IconUrl, Featured,
+        (HasAction1, Agent is not null) switch
+        {
+            (true, true) => ["action1", "agent"],
+            (true, false) => ["action1"],
+            (false, true) => ["agent"],
+            _ => [],
+        },
+        (Agent as DirectPackageDefinition)?.SizeBytes);
+
+    [JsonIgnore]
+    public bool HasAction1 => !string.IsNullOrWhiteSpace(Action1?.PackageId);
 
     /// <summary>True when an inventory row names this app.</summary>
     public bool MatchesInstalled(string installedName)
@@ -69,8 +81,6 @@ public sealed class CatalogFile
 /// </summary>
 public sealed class CatalogStore
 {
-    private const string ActionOneEngine = "action1";
-
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         ReadCommentHandling = JsonCommentHandling.Skip,
@@ -154,21 +164,22 @@ public sealed class CatalogStore
 
     public static IReadOnlyList<CatalogEntry> Parse(string json)
     {
-        var file = JsonSerializer.Deserialize<CatalogFile>(json, Json) ?? new CatalogFile();
+        CatalogFile file;
+        try
+        {
+            file = JsonSerializer.Deserialize<CatalogFile>(json, Json) ?? new CatalogFile();
+        }
+        catch (NotSupportedException ex)
+        {
+            throw new InvalidDataException("An agent definition needs a kind of winget or direct.", ex);
+        }
+
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in file.Apps)
         {
-            if (string.IsNullOrWhiteSpace(entry.Id) || string.IsNullOrWhiteSpace(entry.Name))
-            {
-                throw new InvalidDataException("Every catalog app needs an id and a name.");
-            }
+            Validate(entry);
 
-            if (string.IsNullOrWhiteSpace(entry.Action1.PackageId))
-            {
-                throw new InvalidDataException($"Catalog app '{entry.Id}' has no action1.packageId.");
-            }
-
-            if (!seen.Add(entry.Id))
+            if (!seen.Add(entry.Id.Trim()))
             {
                 throw new InvalidDataException($"Catalog app id '{entry.Id}' appears more than once.");
             }
@@ -185,6 +196,11 @@ public sealed class CatalogStore
     /// </summary>
     public int Import(IReadOnlyList<CatalogEntry> entries)
     {
+        foreach (var entry in entries)
+        {
+            Validate(entry);
+        }
+
         using var connection = _database.Open();
         using var transaction = connection.BeginTransaction();
         foreach (var entry in entries)
@@ -201,7 +217,7 @@ public sealed class CatalogStore
                         category = excluded.category, icon_url = excluded.icon_url, featured = excluded.featured,
                         hidden = excluded.hidden, match_json = excluded.match_json, updated_at = excluded.updated_at;
                     """;
-                app.Parameters.AddWithValue("@id", entry.Id);
+                app.Parameters.AddWithValue("@id", entry.Id.Trim());
                 app.Parameters.AddWithValue("@name", entry.Name);
                 app.Parameters.AddWithValue("@publisher", entry.Publisher ?? "");
                 app.Parameters.AddWithValue("@description", entry.Description ?? "");
@@ -214,26 +230,13 @@ public sealed class CatalogStore
                 app.ExecuteNonQuery();
             }
 
-            using var package = connection.CreateCommand();
-            package.Transaction = transaction;
-            package.CommandText = """
-                INSERT INTO catalog_packages (app_id, engine, definition_json) VALUES (@id, @engine, @definition)
-                ON CONFLICT(app_id, engine) DO UPDATE SET definition_json = excluded.definition_json;
-                """;
-            package.Parameters.AddWithValue("@id", entry.Id);
-            package.Parameters.AddWithValue("@engine", ActionOneEngine);
-            package.Parameters.AddWithValue("@definition", JsonSerializer.Serialize(entry.Action1, Json));
-            package.ExecuteNonQuery();
+            WritePackages(connection, transaction, entry);
         }
 
         transaction.Commit();
         return entries.Count;
     }
 
-    /// <summary>
-    /// Writes one app and its Action1 package. The edit pages own every field including hidden, unlike
-    /// <see cref="Import"/>, which leaves an app's hidden flag where the administrator put it.
-    /// </summary>
     public void Upsert(CatalogEntry entry)
     {
         Validate(entry);
@@ -266,18 +269,7 @@ public sealed class CatalogStore
             app.ExecuteNonQuery();
         }
 
-        using (var package = connection.CreateCommand())
-        {
-            package.Transaction = transaction;
-            package.CommandText = """
-                INSERT INTO catalog_packages (app_id, engine, definition_json) VALUES (@id, @engine, @definition)
-                ON CONFLICT(app_id, engine) DO UPDATE SET definition_json = excluded.definition_json;
-                """;
-            package.Parameters.AddWithValue("@id", entry.Id.Trim());
-            package.Parameters.AddWithValue("@engine", ActionOneEngine);
-            package.Parameters.AddWithValue("@definition", JsonSerializer.Serialize(entry.Action1, Json));
-            package.ExecuteNonQuery();
-        }
+        WritePackages(connection, transaction, entry);
 
         transaction.Commit();
     }
@@ -340,10 +332,40 @@ public sealed class CatalogStore
             throw new InvalidDataException("An app needs a name.");
         }
 
-        if (string.IsNullOrWhiteSpace(entry.Action1.PackageId))
+        if (!entry.HasAction1 && entry.Agent is null)
         {
-            throw new InvalidDataException("An app needs an Action1 package id.");
+            throw new InvalidDataException("An app needs an Action1 package id or an agent package.");
         }
+
+        entry.Agent?.Validate();
+    }
+
+    private static void WritePackages(SqliteConnection connection, SqliteTransaction transaction, CatalogEntry entry)
+    {
+        WritePackage(connection, transaction, entry.Id.Trim(), "action1",
+            entry.HasAction1 ? JsonSerializer.Serialize(entry.Action1, Json) : null);
+        WritePackage(connection, transaction, entry.Id.Trim(), "agent",
+            entry.Agent is null ? null : JsonSerializer.Serialize(entry.Agent, Json));
+    }
+
+    private static void WritePackage(SqliteConnection connection, SqliteTransaction transaction, string id, string engine, string? definition)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = definition is null
+            ? "DELETE FROM catalog_packages WHERE app_id = @id AND engine = @engine;"
+            : """
+                INSERT INTO catalog_packages (app_id, engine, definition_json) VALUES (@id, @engine, @definition)
+                ON CONFLICT(app_id, engine) DO UPDATE SET definition_json = excluded.definition_json;
+                """;
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@engine", engine);
+        if (definition is not null)
+        {
+            command.Parameters.AddWithValue("@definition", definition);
+        }
+
+        command.ExecuteNonQuery();
     }
 
     /// <summary>The catalog in the shape of the checked-in `catalog.json`, so an export re-imports.</summary>
@@ -362,9 +384,10 @@ public sealed class CatalogStore
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT a.id, a.name, a.publisher, a.description, a.category, a.icon_url, a.featured, a.match_json, p.definition_json, a.hidden
+            SELECT a.id, a.name, a.publisher, a.description, a.category, a.icon_url, a.featured, a.match_json, p.definition_json, a.hidden, agent.definition_json
             FROM catalog_apps a
             LEFT JOIN catalog_packages p ON p.app_id = a.id AND p.engine = 'action1'
+            LEFT JOIN catalog_packages agent ON agent.app_id = a.id AND agent.engine = 'agent'
             """
             + (id is null
                 ? (visibleOnly ? " WHERE a.hidden = 0" : "") + (orderBy ?? " ORDER BY a.rowid") + ";"
@@ -390,6 +413,7 @@ public sealed class CatalogStore
                 Match = reader.IsDBNull(7) ? null : JsonSerializer.Deserialize<MatchRule>(reader.GetString(7), Json),
                 Action1 = reader.IsDBNull(8) ? new Action1PackageRef() : JsonSerializer.Deserialize<Action1PackageRef>(reader.GetString(8), Json) ?? new Action1PackageRef(),
                 Hidden = reader.GetInt64(9) != 0,
+                Agent = reader.IsDBNull(10) ? null : JsonSerializer.Deserialize<PackageDefinition>(reader.GetString(10), Json),
             });
         }
 

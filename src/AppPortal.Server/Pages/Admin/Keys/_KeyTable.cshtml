@@ -24,7 +24,7 @@
     @foreach (var key in Model.Rows)
     {
         <tr>
-            <td>@key.Name</td>
+            <td><a href="/admin/keys/@key.Id">@key.Name</a></td>
             <td class="muted">@key.DisplayPrefix&hellip;</td>
             <td>@EnrollmentKeyStore.Name(key.DefaultEngine)</td>
             <td>@key.UsesText</td>

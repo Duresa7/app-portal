@@ -2,7 +2,7 @@
 
 **Milestone:** 3 (0.5.0)
 **Depends on:** M3-02
-**Unlocks:** M3-06
+**Unlocks:** M3-06, M3-07, M3-11
 
 ## Goal
 
@@ -17,13 +17,14 @@ The agent installs winget packages machine-wide as SYSTEM and reports progress a
 ## Scope
 
 ### In
-- `WingetExecutor : IPackageExecutor` for `kind == "winget"`: locate winget, run `winget install --id <id> --exact --scope machine --silent --accept-package-agreements --accept-source-agreements --disable-interactivity [--version v] [extraArgs]`, stream output to the job log, map exit codes, report progress.
+- `WingetExecutor : IPackageExecutor` for `kind == "winget"`: locate winget, run `winget install --id <id> --exact --scope <scope> --silent --accept-package-agreements --accept-source-agreements --disable-interactivity [--version v] [extraArgs]`, with the scope taken from the definition rather than fixed, stream output to the job log, map exit codes, report progress.
 - Source update once per day (`winget source update`) before the first install of the day, with a timeout.
 - Job log file per job under `%ProgramData%\AppPortal\jobs\<id>.log`, last 4 KB sent as detail on failure.
 - Installed-software reporting: the agent runs `winget list` after a success and posts the found display name and version with the completion so `GET /api/v1/device/installed` can show agent-installed apps (server side: store them in `device_software(device_id, name, version, seen_at)` via migration 009 and merge with Action1 inventory when both exist).
 
 ### Out
-- Uninstall. Upgrades of already-installed apps. Per-user scope.
+- Uninstall; that is M3-11. Upgrades of already-installed apps.
+- Running a user-scope install inside somebody's session; that is M3-07. This package passes the scope through and carries out machine scope. A user-scope job fails here with "This package installs for one person, and the agent cannot yet run in a user session", and M3-07 replaces that failure with the real path.
 
 ## Interface
 

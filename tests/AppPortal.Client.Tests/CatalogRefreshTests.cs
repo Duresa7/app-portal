@@ -21,7 +21,7 @@ public sealed class CatalogRefreshTests
         api.Catalog = [api.Catalog[0] with
         {
             Name = "Renamed app", Publisher = "New publisher", Description = "Updated description",
-            Category = "Design", Featured = true,
+            Category = "Design", Featured = true, DownloadSizeBytes = 5_000_000_000L,
         }];
 
         await model.RefreshAsync();
@@ -32,6 +32,10 @@ public sealed class CatalogRefreshTests
         Assert.Equal("Updated description", card.Description);
         Assert.Equal("Design", card.Category);
         Assert.True(card.Featured);
+        Assert.True(card.HasDownloadSize);
+        Assert.Equal("5 GB download", card.DownloadSizeText);
+        Assert.Contains(nameof(card.DownloadSizeText), changed);
+        Assert.Contains(nameof(card.HasDownloadSize), changed);
         Assert.Equal("R", card.Initial);
         Assert.True(card.IsRequesting);
         Assert.Equal("Retained status", card.LastError);

@@ -31,7 +31,7 @@ public sealed partial class AppItemViewModel : ViewModelBase
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Name), nameof(Publisher), nameof(Description), nameof(Category), nameof(Featured), nameof(Initial))]
+    [NotifyPropertyChangedFor(nameof(Name), nameof(Publisher), nameof(Description), nameof(Category), nameof(Featured), nameof(Initial), nameof(DownloadSizeText), nameof(HasDownloadSize))]
     private CatalogApp _app;
 
     public string Name => App.Name;
@@ -39,6 +39,15 @@ public sealed partial class AppItemViewModel : ViewModelBase
     public string Description => App.Description;
     public string Category => App.Category;
     public bool Featured => App.Featured;
+    public bool HasDownloadSize => App.DownloadSizeBytes is not null;
+    public string DownloadSizeText => App.DownloadSizeBytes switch
+    {
+        null => "",
+        >= 1_000_000_000 => $"{App.DownloadSizeBytes / 1_000_000_000d:0.#} GB download",
+        >= 1_000_000 => $"{App.DownloadSizeBytes / 1_000_000d:0.#} MB download",
+        >= 1_000 => $"{App.DownloadSizeBytes / 1_000d:0.#} KB download",
+        _ => $"{App.DownloadSizeBytes} bytes download",
+    };
     public string Initial => string.IsNullOrEmpty(App.Name) ? "?" : App.Name[..1].ToUpperInvariant();
 
     /// <summary>Backplate for the lettered tile, stable per app so the grid looks deliberate rather than random.</summary>

@@ -46,7 +46,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M1-11](plans/M1-11-directory-sign-in.md) | Optional directory sign-in for administrators | M1-03 | Done |
 | [M1-12](plans/M1-12-admin-list-module.md) | Administration list queries in one module | M1-05, M1-06, M1-07, M1-08, M1-09 | Done |
 | [M2-01](plans/M2-01-enrollment-api.md) | Enrollment API | M1-08, M1-09 | Open |
-| [M2-02](plans/M2-02-agent-service.md) | Agent service skeleton and heartbeat | M1-09 | Open |
+| [M2-02](plans/M2-02-agent-service.md) | Agent service skeleton and heartbeat | M1-09 | In review |
 | [M2-03](plans/M2-03-msi-packaging.md) | MSI packaging of client and agent | M2-02 | Open |
 | [M2-04](plans/M2-04-agent-self-update.md) | Agent self-update via MSI | M2-03 | Open |
 | [M2-05](plans/M2-05-setup-bootstrapper.md) | Setup.exe bootstrapper | M2-01, M2-03 | Open |

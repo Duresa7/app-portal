@@ -100,3 +100,12 @@ public static class ApiRoutes
     public const string Installs = Prefix + "/installs";
     public const string Requests = Prefix + "/requests";
 }
+
+/// <summary>What the agent reports on each heartbeat. The client version is null when none is installed.</summary>
+public sealed record AgentHeartbeatRequest(string AgentVersion, string? ClientVersion, string OsVersion);
+
+/// <summary>
+/// The answer to a heartbeat. <see cref="HeartbeatSeconds"/> is how long the agent should wait before
+/// the next one, so a fleet that is calling in too often can be slowed down without shipping a build.
+/// </summary>
+public sealed record AgentHeartbeatResponse(DateTimeOffset ServerTime, int HeartbeatSeconds);

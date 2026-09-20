@@ -34,6 +34,11 @@ public sealed class InstallRecord
     /// </summary>
     public string? RequestedBy { get; set; }
 
+    /// <summary>Which install engine carried this out. Always action1 until M3 adds the agent.</summary>
+    public string Engine { get; set; } = EngineLabel.Action1;
+
+    public string EngineText => EngineLabel.For(Engine);
+
     public bool IsActive => State is InstallState.Queued or InstallState.Running;
 
     public InstallRequest ToPublic()
@@ -41,6 +46,21 @@ public sealed class InstallRecord
 }
 
 /// <summary>Install history, one row per request, in the database under the data directory.</summary>
+/// <summary>
+/// What the installs page is asking for. Every field is optional and they combine with AND, which is
+/// how the filter row on the page reads: each control the administrator fills in narrows the result.
+/// </summary>
+public sealed record InstallFilter(
+    string? Device = null,
+    string? AppId = null,
+    InstallState? State = null,
+    string? Requester = null,
+    DateTimeOffset? From = null,
+    DateTimeOffset? To = null)
+{
+    public static readonly InstallFilter None = new();
+}
+
 public sealed class InstallStore(Database database)
 {
     public IReadOnlyList<InstallRecord> All()
@@ -59,6 +79,109 @@ public sealed class InstallStore(Database database)
         command.Parameters.AddWithValue("@name", deviceName);
         return Read(command);
     }
+
+    /// <summary>
+    /// Fleet-wide history, newest first, narrowed by whatever the administrator filled in. Every clause
+    /// is optional; the ordering rides the installs_requested index.
+    /// </summary>
+    public IReadOnlyList<InstallRecord> ListRecent(InstallFilter filter, int limit, int offset)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + Where(command, filter) + " ORDER BY i.requested_at DESC LIMIT @limit OFFSET @offset;";
+        command.Parameters.AddWithValue("@limit", limit);
+        command.Parameters.AddWithValue("@offset", offset);
+        return Read(command);
+    }
+
+    /// <summary>How many installs match, so the page knows whether there is another one to show.</summary>
+    public int CountMatching(InstallFilter filter)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM installs i JOIN devices d ON d.id = i.device_id" + Where(command, filter) + ";";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    /// <summary>Installs in one state since a moment, for the dashboard tiles. A null state counts every one.</summary>
+    public int CountBy(InstallState? state, DateTimeOffset? since)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        var clauses = new List<string>();
+        if (state is not null)
+        {
+            clauses.Add("state = @state COLLATE NOCASE");
+            command.Parameters.AddWithValue("@state", state.Value.ToString());
+        }
+
+        if (since is not null)
+        {
+            clauses.Add("requested_at >= @since");
+            command.Parameters.AddWithValue("@since", SqlTime.From(since.Value));
+        }
+
+        command.CommandText = "SELECT COUNT(*) FROM installs"
+                              + (clauses.Count == 0 ? "" : " WHERE " + string.Join(" AND ", clauses)) + ";";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    /// <summary>Installs still queued or running, which is what the tiles and the polling rows care about.</summary>
+    public int CountActive()
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM installs WHERE state IN ('Queued', 'Running') COLLATE NOCASE;";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    private static string Where(SqliteCommand command, InstallFilter filter)
+    {
+        var clauses = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(filter.Device))
+        {
+            clauses.Add("d.name = @device COLLATE NOCASE");
+            command.Parameters.AddWithValue("@device", filter.Device.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.AppId))
+        {
+            clauses.Add("i.app_id = @app COLLATE NOCASE");
+            command.Parameters.AddWithValue("@app", filter.AppId.Trim());
+        }
+
+        if (filter.State is not null)
+        {
+            clauses.Add("i.state = @state COLLATE NOCASE");
+            command.Parameters.AddWithValue("@state", filter.State.Value.ToString());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Requester))
+        {
+            // Substring, because an administrator looking for one person types a name, not DOMAIN\name.
+            clauses.Add("i.requested_by LIKE @requester ESCAPE '\\'");
+            command.Parameters.AddWithValue("@requester", "%" + Escape(filter.Requester.Trim()) + "%");
+        }
+
+        if (filter.From is not null)
+        {
+            clauses.Add("i.requested_at >= @from");
+            command.Parameters.AddWithValue("@from", SqlTime.From(filter.From.Value));
+        }
+
+        if (filter.To is not null)
+        {
+            clauses.Add("i.requested_at < @to");
+            command.Parameters.AddWithValue("@to", SqlTime.From(filter.To.Value));
+        }
+
+        return clauses.Count == 0 ? "" : " WHERE " + string.Join(" AND ", clauses);
+    }
+
+    /// <summary>A name with a wildcard in it should match that character, not every character.</summary>
+    private static string Escape(string term)
+        => term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
     public InstallRecord? Find(string id)
     {
@@ -151,7 +274,7 @@ public sealed class InstallStore(Database database)
     private const string Select = """
         SELECT i.id, d.name, d.action1_endpoint_id, i.app_id, i.app_name, i.external_ref,
                i.state, i.percent, i.detail, i.requested_at, i.completed_at, i.last_checked_at,
-               i.requested_by
+               i.requested_by, i.engine
         FROM installs i
         JOIN devices d ON d.id = i.device_id
         """;
@@ -177,6 +300,7 @@ public sealed class InstallStore(Database database)
                 CompletedAt = SqlTime.ParseOptional(reader.IsDBNull(10) ? null : reader.GetString(10)),
                 LastCheckedAt = SqlTime.Parse(reader.GetString(11)),
                 RequestedBy = reader.IsDBNull(12) ? null : reader.GetString(12),
+                Engine = reader.IsDBNull(13) ? EngineLabel.Action1 : reader.GetString(13),
             });
         }
 

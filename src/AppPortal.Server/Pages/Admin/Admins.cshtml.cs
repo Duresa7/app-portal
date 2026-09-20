@@ -1,9 +1,9 @@
 using AppPortal.Server.Admin;
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Options;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace AppPortal.Server.Pages.Admin;
 
@@ -12,17 +12,11 @@ public sealed class AdminsModel(
     AdminStore admins,
     AdminSessionStore sessions,
     IAdminContext current,
-    Microsoft.Extensions.Options.IOptions<DirectoryOptions> directory) : PageModel
+    Microsoft.Extensions.Options.IOptions<DirectoryOptions> directory) : AdminListPage<NoFilter, AdminRecord>
 {
-    public IReadOnlyList<AdminRecord> Admins { get; private set; } = [];
-
     public bool DirectoryEnabled => directory.Value.Enabled;
 
     public string DirectoryGroup => directory.Value.RequiredGroup;
-
-    public string? Error { get; private set; }
-
-    public string? Notice { get; private set; }
 
     [BindProperty]
     public string NewUsername { get; set; } = "";
@@ -35,8 +29,6 @@ public sealed class AdminsModel(
 
     [BindProperty]
     public string ResetPassword { get; set; } = "";
-
-    public void OnGet() => Load();
 
     public IActionResult OnPostAdd()
     {
@@ -101,16 +93,7 @@ public sealed class AdminsModel(
         return Done();
     }
 
-    private void Load() => Admins = admins.All();
+    protected override string TablePartial => "Shared/_AdminTable";
 
-    /// <summary>
-    /// htmx asked for the table alone, so give it the table alone; a plain browser post gets the page.
-    /// </summary>
-    private IActionResult Done()
-    {
-        Load();
-        return Request.Headers.ContainsKey("HX-Request")
-            ? Partial("Shared/_AdminTable", Admins)
-            : Page();
-    }
+    protected override void Load() => Slice = admins.List(Filter, Query);
 }

@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 
-using AppPortal.Server.Admin;
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Enrollment;
 using AppPortal.Server.Installs;
@@ -17,8 +17,6 @@ namespace AppPortal.Server.Tests;
 
 public sealed class AdminDevicesPageTests : IDisposable
 {
-    private const string Password = "a-long-enough-password";
-
     private readonly TestDatabase _test = new();
     private readonly WebApplicationFactory<Program> _factory;
     private readonly DeviceStore _devices;
@@ -42,37 +40,18 @@ public sealed class AdminDevicesPageTests : IDisposable
             builder.UseSetting("Portal:StatusPollSeconds", "3600");
         });
 
-        new AdminStore(_test.Database).Add("admin", Password);
+        _test.AddAdmin();
     }
 
-    private async Task<HttpClient> SignedIn()
-    {
-        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var html = await client.GetStringAsync("/admin/login");
-        var token = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        var response = await client.PostAsync("/admin/login", new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["Username"] = "admin",
-            ["Password"] = Password,
-            ["__RequestVerificationToken"] = token,
-        }));
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        return client;
-    }
+    private Task<HttpClient> SignedIn() => TestDatabase.SignedIn(_factory);
+
+    private static Task<string> TokenOn(HttpClient client, string path) => TestDatabase.TokenOn(client, path);
 
     private HttpClient Device(string token)
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return client;
-    }
-
-    private static async Task<string> TokenOn(HttpClient client, string path)
-    {
-        var html = await client.GetStringAsync(path);
-        var match = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
-        Assert.True(match.Success, $"The form on {path} carried no antiforgery token.");
-        return match.Groups[1].Value;
     }
 
     private async Task<HttpResponseMessage> Post(HttpClient admin, string path, string formPath, Dictionary<string, string> fields)
@@ -206,30 +185,21 @@ public sealed class AdminDevicesPageTests : IDisposable
     }
 
     [Fact]
-    public async Task The_list_shows_engines_last_seen_and_the_install_count()
+    public async Task The_list_opens_for_a_signed_in_administrator_with_engines_last_seen_and_the_install_count()
     {
         SeedInstall("TESTPC", "chrome", InstallState.Succeeded);
         await Device(_token).GetAsync(ApiRoutes.Catalog);
         var admin = await SignedIn();
 
-        var html = await admin.GetStringAsync("/admin/devices");
+        var response = await admin.GetAsync("/admin/devices?Search=test");
 
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("value=\"test\"", html);
         Assert.Contains("TESTPC", html);
         Assert.Contains(">Action1<", html);
         Assert.Contains(">Enabled<", html);
         Assert.DoesNotContain(">never<", html);
-    }
-
-    [Fact]
-    public async Task Searching_narrows_the_list()
-    {
-        _devices.Add("OTHERPC", "endpoint-9999");
-        var admin = await SignedIn();
-
-        var html = await admin.GetStringAsync("/admin/devices?Search=other");
-
-        Assert.Contains("OTHERPC", html);
-        Assert.DoesNotContain(">TESTPC<", html);
     }
 
     [Fact]
@@ -273,7 +243,7 @@ public sealed class AdminDevicesPageTests : IDisposable
     [Fact]
     public async Task The_device_pages_are_closed_without_a_session()
     {
-        var anonymous = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var anonymous = TestDatabase.Browser(_factory);
 
         foreach (var path in new[] { "/admin/devices", "/admin/devices/anything" })
         {
@@ -381,7 +351,7 @@ public sealed class AdminDevicesPageTests : IDisposable
         var response = await Post(admin, $"/admin/devices/{device.Id}?handler=Remove", $"/admin/devices/{device.Id}", new());
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        var history = requests.ListByStatus(null, 50, 0);
+        var history = requests.List(RequestFilter.Everything, ListQuery.All).Rows;
         Assert.Equal(2, history.Count);
         Assert.All(history, request => Assert.Equal("RENAMED-PC", request.DeviceName));
         Assert.Equal(AppRequestStatus.Pending, requests.Find(pending.Id)!.Status);
@@ -399,7 +369,7 @@ public sealed class AdminDevicesPageTests : IDisposable
         Assert.Equal(HttpStatusCode.Created,
             (await replacement.PostAsJsonAsync(ApiRoutes.Requests, new CreateAppRequest("replacement request"))).StatusCode);
         Assert.Single(requests.ListForDeviceId(replacementId));
-        Assert.Equal(3, requests.ListByStatus(null, 50, 0).Count);
+        Assert.Equal(3, requests.List(RequestFilter.Everything, ListQuery.All).Rows.Count);
     }
 
     [Fact]

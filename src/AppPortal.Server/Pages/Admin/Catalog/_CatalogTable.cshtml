@@ -1,12 +1,19 @@
-@model AppPortal.Server.Pages.Admin.Catalog.CatalogTableView
+@using AppPortal.Server.Admin.Lists
+@using AppPortal.Server.Catalog
+@model Slice<CatalogEntry>
+@{
+    // The messages travel with the rows because htmx swaps this fragment alone: a refused delete has
+    // to explain itself inside the thing that came back, or the reason never reaches the screen.
+    var list = ViewData.Page();
+}
 <div id="catalog-table">
-    @if (Model.Error is not null)
+    @if (list.Error is not null)
     {
-        <div class="message error">@Model.Error</div>
+        <div class="message error">@list.Error</div>
     }
-    @if (Model.Notice is not null)
+    @if (list.Notice is not null)
     {
-        <div class="message ok">@Model.Notice</div>
+        <div class="message ok">@list.Notice</div>
     }
     <table>
         <thead>
@@ -20,13 +27,13 @@
         </tr>
         </thead>
         <tbody>
-        @if (Model.Apps.Count == 0)
+        @if (Model.Rows.Count == 0)
         {
             <tr>
                 <td colspan="6" class="muted">No apps match.</td>
             </tr>
         }
-        @foreach (var app in Model.Apps)
+        @foreach (var app in Model.Rows)
         {
             <tr>
                 <td>

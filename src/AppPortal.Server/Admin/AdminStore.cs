@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Data;
 
 using Microsoft.AspNetCore.Identity;
@@ -42,13 +43,27 @@ public sealed class AdminStore(Database database)
 
     private static readonly PasswordHasher<AdminRecord> Hasher = new();
 
-    public IReadOnlyList<AdminRecord> All()
+    /// <summary>Every account, by user name. What the command line prints.</summary>
+    public IReadOnlyList<AdminRecord> All() => List(NoFilter.Instance, ListQuery.All).Rows;
+
+    /// <summary>The accounts, by user name unless the query sorts otherwise. Nothing narrows this list.</summary>
+    public Slice<AdminRecord> List(NoFilter filter, ListQuery query)
     {
+        var orderBy = Sorts.OrderBy(query.Sort);
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = Select + " ORDER BY username;";
-        return Read(command);
+        command.CommandText = Select + orderBy + ";";
+        return Slice.Of(Read(command), query);
     }
+
+    /// <summary>By user name is how an account is found in a table; every other order is by request.</summary>
+    private static readonly SortColumns Sorts = new(
+        "username",
+        ("username", "username"),
+        ("created", "created_at"),
+        ("lastlogin", "last_login_at"),
+        ("disabled", "disabled"),
+        ("source", "source"));
 
     /// <summary>True when no account exists yet, which is what the first-run message in the log reports.</summary>
     public bool None()

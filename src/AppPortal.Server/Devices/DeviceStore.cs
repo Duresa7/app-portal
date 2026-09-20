@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Data;
 
 using Microsoft.Data.Sqlite;
@@ -137,14 +138,29 @@ public sealed class DeviceStore(Database database)
         return Read(command).FirstOrDefault();
     }
 
-    /// <summary>Devices whose name contains the term. An empty term is every device.</summary>
-    public IReadOnlyList<DeviceRecord> Search(string? term)
+    /// <summary>
+    /// Devices whose name contains the search term, by name unless the query sorts otherwise. The
+    /// fleet is read whole and narrowed here: a substring match on a few hundred names is not worth a
+    /// LIKE, and the retired-device rules that make removal careful stay out of the read path.
+    /// </summary>
+    public Slice<DeviceRecord> List(SearchFilter filter, ListQuery query)
     {
-        var needle = (term ?? "").Trim();
-        return needle.Length == 0
-            ? All()
-            : [.. All().Where(d => d.Name.Contains(needle, StringComparison.OrdinalIgnoreCase))];
+        var orderBy = Sorts.OrderBy(query.Sort);
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + orderBy + ";";
+        var devices = Read(command);
+        var matching = filter.IsEmpty ? devices : devices.Where(d => filter.Matches(d.Name)).ToList();
+        return Slice.Of(matching, query);
     }
+
+    /// <summary>By name is how a fleet is scanned; every other order is by request.</summary>
+    private static readonly SortColumns Sorts = new(
+        "name",
+        ("name", "name"),
+        ("created", "created_at"),
+        ("lastseen", "last_seen_at"),
+        ("enabled", "enabled"));
 
     /// <summary>
     /// Writes the fields an administrator can change. The token is not among them: rotating is its own

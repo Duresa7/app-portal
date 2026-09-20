@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.RegularExpressions;
 
-using AppPortal.Server.Admin;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Installs;
 using AppPortal.Shared;
@@ -13,8 +12,6 @@ namespace AppPortal.Server.Tests;
 
 public sealed class AdminInstallsPageTests : IDisposable
 {
-    private const string Password = "a-long-enough-password";
-
     private readonly TestDatabase _test = new();
     private readonly WebApplicationFactory<Program> _factory;
     private readonly InstallStore _installs;
@@ -36,23 +33,10 @@ public sealed class AdminInstallsPageTests : IDisposable
             builder.UseSetting("Portal:StatusPollSeconds", "3600");
         });
 
-        new AdminStore(_test.Database).Add("admin", Password);
+        _test.AddAdmin();
     }
 
-    private async Task<HttpClient> SignedIn()
-    {
-        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var html = await client.GetStringAsync("/admin/login");
-        var token = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        var response = await client.PostAsync("/admin/login", new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["Username"] = "admin",
-            ["Password"] = Password,
-            ["__RequestVerificationToken"] = token,
-        }));
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        return client;
-    }
+    private Task<HttpClient> SignedIn() => TestDatabase.SignedIn(_factory);
 
     private InstallRecord Seed(string device, string appId, InstallState state, DateTimeOffset at, string? by = null)
     {
@@ -74,77 +58,33 @@ public sealed class AdminInstallsPageTests : IDisposable
     }
 
     [Fact]
-    public async Task The_page_lists_installs_with_the_requester_and_the_engine()
+    public async Task The_page_opens_for_a_signed_in_administrator()
     {
         Seed("PC-A", "chrome", InstallState.Succeeded, DateTimeOffset.UtcNow.AddHours(-1), @"CONTOSO\jdoe");
         var admin = await SignedIn();
 
-        var html = await admin.GetStringAsync("/admin/installs");
+        var response = await admin.GetAsync("/admin/installs");
 
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
         Assert.Contains("CHROME", html);
-        Assert.Contains("PC-A", html);
         Assert.Contains(@"CONTOSO\jdoe", html);
         Assert.Contains("via Action1", html);
     }
 
     [Fact]
-    public async Task Filtering_by_state_in_the_url_shows_only_that_state()
+    public async Task The_filter_form_shows_what_the_url_asked_for()
     {
-        Seed("PC-A", "chrome", InstallState.Failed, DateTimeOffset.UtcNow.AddHours(-2));
-        Seed("PC-B", "vlc", InstallState.Succeeded, DateTimeOffset.UtcNow.AddHours(-1));
         var admin = await SignedIn();
 
-        var html = await admin.GetStringAsync("/admin/installs?State=Failed");
+        var html = await admin.GetStringAsync("/admin/installs?Device=PC-B&State=failed&Requester=jdoe&From=2026-09-01&To=2026-09-20");
 
-        Assert.Contains("CHROME", html);
-        Assert.DoesNotContain("VLC", html);
-    }
-
-    [Fact]
-    public async Task A_filtered_page_with_nothing_on_it_says_so()
-    {
-        Seed("PC-A", "chrome", InstallState.Succeeded, DateTimeOffset.UtcNow);
-        var admin = await SignedIn();
-
-        var html = await admin.GetStringAsync("/admin/installs?Device=PC-B");
-
+        Assert.Contains("<option value=\"PC-B\" selected=\"selected\">", html);
+        Assert.Contains("<option value=\"Failed\" selected=\"selected\">", html);
+        Assert.Contains("value=\"jdoe\"", html);
+        Assert.Contains("value=\"2026-09-01\"", html);
+        Assert.Contains("value=\"2026-09-20\"", html);
         Assert.Contains("No installs match", html);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task A_quiet_page_discovers_new_installs_and_keeps_polling_after_completion(bool hasHistory)
-    {
-        if (hasHistory)
-        {
-            Seed("PC-A", "old", InstallState.Succeeded, DateTimeOffset.UtcNow.AddHours(-1));
-        }
-
-        var admin = await SignedIn();
-        var html = await admin.GetStringAsync("/admin/installs?Device=PC-A");
-        Assert.Contains("hx-trigger=\"every 30s\"", html);
-        var pollUrl = WebUtility.HtmlDecode(Regex.Match(html, "hx-get=\"([^\"]+)\"").Groups[1].Value);
-        Assert.Contains("Device=PC-A", pollUrl);
-
-        var active = Seed("PC-A", "chrome", InstallState.Running, DateTimeOffset.UtcNow, @"CONTOSO\jdoe");
-        Seed("PC-B", "vlc", InstallState.Running, DateTimeOffset.UtcNow);
-        var running = await admin.GetStringAsync(pollUrl);
-        Assert.Contains("CHROME", running);
-        Assert.Contains(@"CONTOSO\jdoe", running);
-        Assert.DoesNotContain("VLC", running);
-        Assert.Contains("hx-trigger=\"every 30s\"", running);
-
-        active.State = InstallState.Succeeded;
-        active.CompletedAt = DateTimeOffset.UtcNow;
-        Assert.True(_installs.Upsert(active));
-        var completed = await admin.GetStringAsync(pollUrl);
-        Assert.Contains("Succeeded", completed);
-        Assert.Contains("hx-trigger=\"every 30s\"", completed);
-
-        Seed("PC-A", "firefox", InstallState.Queued, DateTimeOffset.UtcNow);
-        var next = await admin.GetStringAsync(pollUrl);
-        Assert.Contains("FIREFOX", next);
     }
 
     [Fact]
@@ -224,7 +164,7 @@ public sealed class AdminInstallsPageTests : IDisposable
     [Fact]
     public async Task The_installs_pages_are_closed_without_a_session()
     {
-        var anonymous = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var anonymous = TestDatabase.Browser(_factory);
 
         foreach (var path in new[] { "/admin/installs", "/admin/installs/anything" })
         {

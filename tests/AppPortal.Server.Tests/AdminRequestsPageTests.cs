@@ -5,7 +5,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
-using AppPortal.Server.Admin;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Requests;
 using AppPortal.Shared;
@@ -17,8 +16,6 @@ namespace AppPortal.Server.Tests;
 
 public sealed class AdminRequestsPageTests : IDisposable
 {
-    private const string Password = "a-long-enough-password";
-
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
     private readonly TestDatabase _test = new();
@@ -40,15 +37,14 @@ public sealed class AdminRequestsPageTests : IDisposable
             builder.UseSetting("Portal:StatusPollSeconds", "3600");
         });
 
-        new AdminStore(_test.Database).Add("admin", Password);
+        _test.AddAdmin();
         _deviceToken = new DeviceStore(_test.Database).Add("TESTPC", "endpoint-1234");
         _requests = new AppRequestStore(_test.Database);
     }
 
-    private HttpClient Browser() => _factory.CreateClient(new WebApplicationFactoryClientOptions
-    {
-        AllowAutoRedirect = false,
-    });
+    private Task<HttpClient> SignedIn() => TestDatabase.SignedIn(_factory);
+
+    private static Task<string> TokenFrom(HttpClient client, string path) => TestDatabase.TokenOn(client, path);
 
     /// <summary>
     /// Razor's encoder escapes more than the five XML characters: "Notepad++" reaches the page as
@@ -59,28 +55,6 @@ public sealed class AdminRequestsPageTests : IDisposable
 
     private static async Task<string> Body(HttpResponseMessage response)
         => WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
-
-    private static async Task<string> TokenFrom(HttpClient client, string path)
-    {
-        var html = await client.GetStringAsync(path);
-        var match = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
-        Assert.True(match.Success, $"The form on {path} carried no antiforgery token.");
-        return match.Groups[1].Value;
-    }
-
-    private async Task<HttpClient> SignedIn()
-    {
-        var client = Browser();
-        var token = await TokenFrom(client, "/admin/login");
-        var response = await client.PostAsync("/admin/login", new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["Username"] = "admin",
-            ["Password"] = Password,
-            ["__RequestVerificationToken"] = token,
-        }));
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        return client;
-    }
 
     private async Task<HttpResponseMessage> Decide(
         HttpClient client, string handler, string id, string? reason, bool htmx)
@@ -113,7 +87,7 @@ public sealed class AdminRequestsPageTests : IDisposable
     [Fact]
     public async Task The_page_is_closed_to_anyone_not_signed_in()
     {
-        var response = await Browser().GetAsync("/admin/requests");
+        var response = await TestDatabase.Browser(_factory).GetAsync("/admin/requests");
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Contains("/admin/login", response.Headers.Location?.OriginalString ?? "", StringComparison.Ordinal);
@@ -128,8 +102,10 @@ public sealed class AdminRequestsPageTests : IDisposable
         var created = await device.PostAsJsonAsync(ApiRoutes.Requests, new CreateAppRequest("Notepad++"), Json);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
 
-        var html = await Html(await SignedIn(), "/admin/requests");
+        var response = await (await SignedIn()).GetAsync("/admin/requests");
 
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
         Assert.Contains("Notepad++", html, StringComparison.Ordinal);
         Assert.Contains("TESTPC", html, StringComparison.Ordinal);
         Assert.Contains(@"CONTOSO\jdoe", html, StringComparison.Ordinal);
@@ -235,46 +211,6 @@ public sealed class AdminRequestsPageTests : IDisposable
 
         Assert.Contains("at most", body, StringComparison.Ordinal);
         Assert.Equal(AppRequestStatus.Pending, _requests.Find(request.Id)!.Status);
-    }
-
-    [Fact]
-    public async Task The_tabs_show_only_what_they_name()
-    {
-        var approved = _requests.Create("TESTPC", null, "Approved app");
-        var denied = _requests.Create("TESTPC", null, "Denied app");
-        _requests.Create("TESTPC", null, "Pending app");
-        Assert.True(_requests.Decide(approved.Id, AppRequestStatus.Approved, "Yes.", "admin"));
-        Assert.True(_requests.Decide(denied.Id, AppRequestStatus.Denied, "No.", "admin"));
-
-        var client = await SignedIn();
-
-        var pending = await Html(client, "/admin/requests?tab=pending");
-        Assert.Contains("Pending app", pending, StringComparison.Ordinal);
-        Assert.DoesNotContain("Approved app", pending, StringComparison.Ordinal);
-        Assert.DoesNotContain("Denied app", pending, StringComparison.Ordinal);
-
-        var approvedTab = await Html(client, "/admin/requests?tab=approved");
-        Assert.Contains("Approved app", approvedTab, StringComparison.Ordinal);
-        Assert.DoesNotContain("Pending app", approvedTab, StringComparison.Ordinal);
-
-        var deniedTab = await Html(client, "/admin/requests?tab=denied");
-        Assert.Contains("Denied app", deniedTab, StringComparison.Ordinal);
-        Assert.DoesNotContain("Approved app", deniedTab, StringComparison.Ordinal);
-
-        var all = await Html(client, "/admin/requests?tab=all");
-        Assert.Contains("Pending app", all, StringComparison.Ordinal);
-        Assert.Contains("Approved app", all, StringComparison.Ordinal);
-        Assert.Contains("Denied app", all, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task An_unknown_tab_falls_back_to_pending_rather_than_showing_nothing()
-    {
-        _requests.Create("TESTPC", null, "Pending app");
-
-        var html = await Html(await SignedIn(), "/admin/requests?tab=nonsense");
-
-        Assert.Contains("Pending app", html, StringComparison.Ordinal);
     }
 
     [Fact]

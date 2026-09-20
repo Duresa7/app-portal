@@ -1,6 +1,7 @@
 namespace AppPortal.Shared;
 
 /// <summary>One application the administrator has approved for self-service installation.</summary>
+[method: System.Text.Json.Serialization.JsonConstructor]
 public sealed record CatalogApp(
     string Id,
     string Name,
@@ -8,7 +9,15 @@ public sealed record CatalogApp(
     string Description,
     string Category,
     string? IconUrl,
-    bool Featured);
+    bool Featured,
+    string[] Engines,
+    long? DownloadSizeBytes)
+{
+    public CatalogApp(string id, string name, string publisher, string description, string category, string? iconUrl, bool featured)
+        : this(id, name, publisher, description, category, iconUrl, featured, ["action1"], null)
+    {
+    }
+}
 
 /// <summary>The device the caller authenticated as, plus what the management plane knows about it.</summary>
 public sealed record DeviceInfo(

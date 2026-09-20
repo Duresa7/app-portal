@@ -68,6 +68,27 @@ public sealed record AppRequest(
 
 public sealed record CreateAppRequest(string Text);
 
+/// <summary>
+/// What a PC presents to turn an enrollment key into a device of its own. Sent without a bearer token:
+/// the key is what authenticates the call, and the token that comes back is what authenticates the next.
+/// </summary>
+public sealed record EnrollRequest(
+    string Key,
+    string DeviceName,
+    string MachineId,
+    string? Action1EndpointId,
+    string? AgentVersion);
+
+/// <summary>
+/// The device a successful enrollment created or took over. <see cref="DeviceToken"/> is shown once,
+/// here, and is never recoverable from the server afterwards.
+/// </summary>
+public sealed record EnrollResponse(
+    string DeviceId,
+    string DeviceToken,
+    string DeviceName,
+    IReadOnlyList<string> Engines);
+
 public sealed record ErrorMessage(string Message);
 
 public static class AppRequestLimits
@@ -89,6 +110,12 @@ public static class ApiHeaders
 
     /// <summary>The longest account name the server stores; anything past this is cut off.</summary>
     public const int RequesterMaxLength = 128;
+
+    /// <summary>
+    /// The enrollment key on <c>GET /api/v1/enroll/check</c>. A header rather than a query parameter so
+    /// the secret stays out of access logs and browser history.
+    /// </summary>
+    public const string EnrollmentKey = "X-Enrollment-Key";
 }
 
 public static class ApiRoutes
@@ -99,4 +126,6 @@ public static class ApiRoutes
     public const string Installed = Prefix + "/device/installed";
     public const string Installs = Prefix + "/installs";
     public const string Requests = Prefix + "/requests";
+    public const string Enroll = Prefix + "/enroll";
+    public const string EnrollCheck = Enroll + "/check";
 }

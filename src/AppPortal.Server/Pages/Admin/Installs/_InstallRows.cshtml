@@ -1,13 +1,10 @@
 @using AppPortal.Shared
 @model AppPortal.Server.Pages.Admin.Installs.IndexModel
 @{
-    // While something is still moving, ask again in 30 seconds. Once everything has settled these are
-    // null, Razor drops the attributes, and a quiet fleet costs no requests at all.
-    var pollUrl = Model.HasActive ? "/admin/installs?handler=Rows" + Model.QueryFor(Model.Skip).Replace('?', '&') : null;
-    var pollTrigger = Model.HasActive ? "every 30s" : null;
-    var pollSwap = Model.HasActive ? "outerHTML" : null;
+    // Keep checking a quiet fleet too, so installs started after this page opened appear automatically.
+    var pollUrl = "/admin/installs?handler=Rows" + Model.QueryFor(Model.Skip).Replace('?', '&');
 }
-<div id="install-rows" hx-get="@pollUrl" hx-trigger="@pollTrigger" hx-swap="@pollSwap">
+<div id="install-rows" hx-get="@pollUrl" hx-trigger="every 30s" hx-swap="outerHTML">
     <table>
         <thead>
         <tr>

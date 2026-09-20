@@ -111,18 +111,40 @@ public sealed class AdminInstallsPageTests : IDisposable
         Assert.Contains("No installs match", html);
     }
 
-    [Fact]
-    public async Task Active_rows_poll_and_settled_ones_do_not()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_quiet_page_discovers_new_installs_and_keeps_polling_after_completion(bool hasHistory)
     {
-        Seed("PC-A", "chrome", InstallState.Running, DateTimeOffset.UtcNow);
+        if (hasHistory)
+        {
+            Seed("PC-A", "old", InstallState.Succeeded, DateTimeOffset.UtcNow.AddHours(-1));
+        }
+
         var admin = await SignedIn();
+        var html = await admin.GetStringAsync("/admin/installs?Device=PC-A");
+        Assert.Contains("hx-trigger=\"every 30s\"", html);
+        var pollUrl = WebUtility.HtmlDecode(Regex.Match(html, "hx-get=\"([^\"]+)\"").Groups[1].Value);
+        Assert.Contains("Device=PC-A", pollUrl);
 
-        var polling = await admin.GetStringAsync("/admin/installs");
-        Assert.Contains("hx-trigger=\"every 30s\"", polling);
+        var active = Seed("PC-A", "chrome", InstallState.Running, DateTimeOffset.UtcNow, @"CONTOSO\jdoe");
+        Seed("PC-B", "vlc", InstallState.Running, DateTimeOffset.UtcNow);
+        var running = await admin.GetStringAsync(pollUrl);
+        Assert.Contains("CHROME", running);
+        Assert.Contains(@"CONTOSO\jdoe", running);
+        Assert.DoesNotContain("VLC", running);
+        Assert.Contains("hx-trigger=\"every 30s\"", running);
 
-        // Nothing is moving on this filtered view, so the page should stop asking.
-        var still = await admin.GetStringAsync("/admin/installs?State=Succeeded");
-        Assert.DoesNotContain("hx-trigger=\"every 30s\"", still);
+        active.State = InstallState.Succeeded;
+        active.CompletedAt = DateTimeOffset.UtcNow;
+        Assert.True(_installs.Upsert(active));
+        var completed = await admin.GetStringAsync(pollUrl);
+        Assert.Contains("Succeeded", completed);
+        Assert.Contains("hx-trigger=\"every 30s\"", completed);
+
+        Seed("PC-A", "firefox", InstallState.Queued, DateTimeOffset.UtcNow);
+        var next = await admin.GetStringAsync(pollUrl);
+        Assert.Contains("FIREFOX", next);
     }
 
     [Fact]

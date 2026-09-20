@@ -55,13 +55,10 @@ public sealed class IndexModel(InstallStore installs, DeviceStore devices, Catal
 
     public int LastShown => Math.Min(Skip + PageSize, Total);
 
-    /// <summary>True while anything on this page could still move, which is when polling earns its keep.</summary>
-    public bool HasActive => Installs.Any(i => i.IsActive);
-
     public void OnGet() => Load();
 
     /// <summary>
-    /// htmx polls this every 30 seconds while a row is active and swaps the table. The filters travel
+    /// htmx polls this every 30 seconds and swaps the table. The filters travel
     /// with it, so a poll shows the same slice the administrator is looking at.
     /// </summary>
     public IActionResult OnGetRows()

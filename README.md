@@ -213,6 +213,8 @@ Upgrade silently with `msiexec /i AppPortal-<new-version>-x64.msi /qn`; no enrol
 
 `AppPortal-client-win-x64.zip` is gone from 0.6.0 onwards, and the PowerShell installer scripts with it. A PC put on from one of those zips cannot reach this release by itself: the updater it carries replaces files by renaming them, which is not how an MSI arrives. Move those machines once by deploying `AppPortal-0.6.0-x64.msi` through whatever channel the zip went through. The MSI reuses the existing `client.json`, so the device keeps its token and does not enroll twice, and the agent deletes the leftover **App Portal Updater** scheduled task the first time it starts. From there the agent keeps the machine current on its own.
 
+The **Agent** column on `/admin/devices` is how to find the machines that need this. Only the agent's enrollment and heartbeat write that column, so a device showing `—` has never run one and is still a zip installation. Those PCs go on working at the version they have and keep their place in the portal; they simply never move again, and they say nothing about it, so look rather than wait to notice.
+
 The client's **Requests** section accepts up to 500 characters describing the software needed. Each device can have 20 pending requests. The newest request appears immediately after submission; status and administrator reasons refresh with the rest of the client.
 
 ![Requests in the Windows client](docs/images/requests.png)

@@ -172,6 +172,23 @@ public sealed class SelfUpdateTests : IDisposable
     }
 
     [Fact]
+    public async Task A_release_that_cannot_be_used_says_so_instead_of_blaming_the_network()
+    {
+        // What the zip did to devices when the MSI replaced it: the feed answers perfectly, the release
+        // simply has nothing that machine can install. Reported as offline it is invisible, and a fleet
+        // that has quietly stopped updating is found months later.
+        var processes = new FakeProcesses();
+        var feed = new FakeFeed(null, new InvalidDataException("Release v9.9.9 has no AppPortal-9.9.9-x64.msi."));
+
+        var status = await Update(feed, new FakeDownloader(_paths), processes).RunAsync(CancellationToken.None);
+
+        Assert.Equal(UpdateResult.Failed, status.Result);
+        Assert.Equal("Release v9.9.9 has no AppPortal-9.9.9-x64.msi.", status.Message);
+        Assert.Equal("0.4.0", status.InstalledVersion);
+        Assert.Empty(processes.Started);
+    }
+
+    [Fact]
     public async Task A_download_that_does_not_verify_is_a_failure_and_nothing_is_run()
     {
         var processes = new FakeProcesses();

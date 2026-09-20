@@ -430,10 +430,15 @@ public sealed partial class MainViewModel : ViewModelBase
                                                       && i.State is InstallState.Queued or InstallState.Running);
             item.ActiveInstall = active;
             var installedByInventory = _installedRaw.Any(a => string.Equals(a.CatalogAppId, item.App.Id, StringComparison.OrdinalIgnoreCase));
-            var justSucceeded = active is null && Installs.Any(i => string.Equals(i.AppId, item.App.Id, StringComparison.OrdinalIgnoreCase)
-                                                                   && i.State == InstallState.Succeeded
-                                                                   && i.CompletedAt is { } done && DateTimeOffset.UtcNow - done < TimeSpan.FromHours(6));
-            item.IsInstalled = installedByInventory || justSucceeded;
+            // A removal is a row in the same history with the same states, so the two have to be told
+            // apart here. Without that, taking an app off leaves the card saying Installed and offering
+            // Remove again until the inventory catches up, which is the opposite of what happened.
+            var installedAt = LastSucceededAt(item.App.Id, InstallKind.Install);
+            var removedAt = LastSucceededAt(item.App.Id, InstallKind.Uninstall);
+            var justSucceeded = active is null && installedAt is { } done && DateTimeOffset.UtcNow - done < TimeSpan.FromHours(6);
+            var justRemoved = active is null && removedAt is { } gone && DateTimeOffset.UtcNow - gone < TimeSpan.FromHours(6)
+                              && (installedAt is not { } put || put < gone);
+            item.IsInstalled = (installedByInventory || justSucceeded) && !justRemoved;
             if (active is null && item.LastError is null)
             {
                 var lastFailure = Installs.FirstOrDefault(i => string.Equals(i.AppId, item.App.Id, StringComparison.OrdinalIgnoreCase) && i.State == InstallState.Failed);
@@ -444,6 +449,14 @@ public sealed partial class MainViewModel : ViewModelBase
             }
         }
     }
+
+    /// <summary>When this app was last put on, or last taken off, whichever kind is asked for.</summary>
+    private DateTimeOffset? LastSucceededAt(string appId, string kind)
+        => Installs.Where(i => string.Equals(i.AppId, appId, StringComparison.OrdinalIgnoreCase)
+                               && i.Kind == kind
+                               && i.State == InstallState.Succeeded
+                               && i.CompletedAt is not null)
+            .Max(i => i.CompletedAt);
 
     private void ApplyFilter()
     {

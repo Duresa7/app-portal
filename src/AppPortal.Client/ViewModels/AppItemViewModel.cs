@@ -98,14 +98,14 @@ public sealed partial class AppItemViewModel : ViewModelBase
     private bool _isInstalled;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText), nameof(CanInstall), nameof(IsBusy), nameof(Percent), nameof(IsIndeterminate),
-        nameof(NeedsRestart))]
-    [NotifyCanExecuteChangedFor(nameof(InstallCommand))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(CanInstall), nameof(CanRemove), nameof(IsBusy), nameof(Percent),
+        nameof(IsIndeterminate), nameof(NeedsRestart))]
+    [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(RemoveCommand))]
     private InstallRequest? _activeInstall;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText), nameof(CanInstall), nameof(IsBusy), nameof(IsIndeterminate))]
-    [NotifyCanExecuteChangedFor(nameof(InstallCommand))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(CanInstall), nameof(CanRemove), nameof(IsBusy), nameof(IsIndeterminate))]
+    [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(RemoveCommand))]
     private bool _isRequesting;
 
     [ObservableProperty]
@@ -142,11 +142,14 @@ public sealed partial class AppItemViewModel : ViewModelBase
                 // An app that needed others first installs as one thing with several steps, and
                 // "Installing, 40%" over and over tells the person nothing about which of them.
                 var step = active.StepCount > 1 ? $"{active.StepName} ({active.StepNumber} of {active.StepCount}), " : "";
+                // A removal runs through the same row and the same states, so the card has to say which
+                // of the two the person is watching.
+                var verb = active.Kind == InstallKind.Uninstall ? "Removing" : "Installing";
                 return active.State switch
                 {
                     InstallState.Queued => "Queued, waiting for this PC",
                     InstallState.Running when active.RebootState == RebootState.Pending => RebootState.WaitingDetail,
-                    InstallState.Running => $"Installing {step}{active.PercentComplete}%",
+                    InstallState.Running => $"{verb} {step}{active.PercentComplete}%",
                     _ => active.State.ToString(),
                 };
             }
@@ -179,7 +182,8 @@ public sealed partial class AppItemViewModel : ViewModelBase
     /// being scrolled past, on the apps that have something to say and on no others.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanInstall))]
+    [NotifyPropertyChangedFor(nameof(CanInstall), nameof(CanRemove))]
+    [NotifyCanExecuteChangedFor(nameof(RemoveCommand))]
     private bool _isConfirming;
 
     [RelayCommand(CanExecute = nameof(CanInstall))]

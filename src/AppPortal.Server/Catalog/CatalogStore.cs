@@ -253,7 +253,6 @@ public sealed class CatalogStore
                         category = excluded.category, icon_url = excluded.icon_url, featured = excluded.featured,
                         hidden = excluded.hidden, match_json = excluded.match_json,
                         engine_override = excluded.engine_override, requirements = excluded.requirements,
-                    user_removable = excluded.user_removable,
                         user_removable = excluded.user_removable,
                         updated_at = excluded.updated_at;
                     """;
@@ -300,6 +299,7 @@ public sealed class CatalogStore
                     category = excluded.category, icon_url = excluded.icon_url, featured = excluded.featured,
                     hidden = excluded.hidden, match_json = excluded.match_json,
                     engine_override = excluded.engine_override, requirements = excluded.requirements,
+                    user_removable = excluded.user_removable,
                     updated_at = excluded.updated_at;
                 """;
             app.Parameters.AddWithValue("@id", entry.Id.Trim());

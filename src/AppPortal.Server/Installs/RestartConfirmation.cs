@@ -32,12 +32,19 @@ public sealed class RestartConfirmation(
             return 0;
         }
 
-        var present = software.ForDevice(device.Id);
+        // Per account, not one list for the device: software installed into somebody's profile is
+        // reported under their name, so looking only at the machine-wide list would find nothing and
+        // call every per-user install that needed a restart a failure.
+        var byAccount = new Dictionary<string, IReadOnlyList<InstalledSoftware>>(StringComparer.OrdinalIgnoreCase);
         var entries = catalog.Entries;
         foreach (var install in waiting)
         {
-            // The agent sweeps what is installed when it starts, so this list is what the device looks
-            // like after the restart rather than before it.
+            var account = install.RequestedBy ?? "";
+            if (!byAccount.TryGetValue(account, out var present))
+            {
+                byAccount[account] = present = software.ForDevice(device.Id, account);
+            }
+
             var entry = entries.FirstOrDefault(e => e.Id == install.AppId);
             var found = present.Any(item => entry?.MatchesInstalled(item.Name)
                                             ?? item.Name.Contains(install.AppName, StringComparison.OrdinalIgnoreCase));

@@ -266,6 +266,84 @@ public sealed class CatalogStoreTests
         Assert.Empty(store.Entries);
     }
 
+    /// <summary>
+    /// The table is written by two nearly identical statements, one for an import and one for a single
+    /// app off the form, and a column added to one and not the other is dropped on every save through
+    /// the other. Each column is set on the way in, changed on the way back, and read again: a writer
+    /// that leaves a column out of its ON CONFLICT list fails the second read.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Saving_an_app_again_keeps_every_column_the_form_can_change(bool import)
+    {
+        using var test = new TestDatabase();
+        var store = new CatalogStore(test.Database, "");
+        var first = new CatalogEntry
+        {
+            Id = "steam",
+            Name = "Steam",
+            Publisher = "Valve",
+            Description = "Games.",
+            Category = "Games",
+            IconUrl = "https://example.invalid/steam.png",
+            Featured = true,
+            Hidden = true,
+            EngineOverride = EngineLabel.Agent,
+            Requirements = "A Steam account.",
+            UserRemovable = true,
+            Match = new MatchRule { NameContains = "Steam" },
+            Agent = new WingetPackageDefinition("Valve.Steam", "user"),
+        };
+        Save(store, first, import);
+
+        var written = store.Find("steam")!;
+        Assert.True(written.UserRemovable);
+        Assert.Equal(EngineLabel.Agent, written.EngineOverride);
+        Assert.Equal("A Steam account.", written.Requirements);
+
+        // The same app again, with only the name changed. Everything else has to survive.
+        first.Name = "Steam Client";
+        Save(store, first, import);
+
+        var again = store.Find("steam")!;
+        Assert.Equal("Steam Client", again.Name);
+        Assert.True(again.UserRemovable);
+        Assert.True(again.Featured);
+        Assert.True(again.Hidden);
+        Assert.Equal(EngineLabel.Agent, again.EngineOverride);
+        Assert.Equal("A Steam account.", again.Requirements);
+        Assert.Equal("Valve", again.Publisher);
+        Assert.Equal("Steam", again.Match!.NameContains);
+
+        // And turning each of them off has to take, not only turning them on.
+        first.UserRemovable = false;
+        first.Featured = false;
+        first.Hidden = false;
+        first.EngineOverride = null;
+        first.Requirements = null;
+        Save(store, first, import);
+
+        var off = store.Find("steam")!;
+        Assert.False(off.UserRemovable);
+        Assert.False(off.Featured);
+        Assert.False(off.Hidden);
+        Assert.Null(off.EngineOverride);
+        Assert.Null(off.Requirements);
+    }
+
+    private static void Save(CatalogStore store, CatalogEntry entry, bool import)
+    {
+        if (import)
+        {
+            store.Import([entry]);
+        }
+        else
+        {
+            store.Upsert(entry);
+        }
+    }
+
     private static string CheckedInCatalog
     {
         get

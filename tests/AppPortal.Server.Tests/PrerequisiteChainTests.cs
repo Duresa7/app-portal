@@ -183,6 +183,57 @@ public sealed class PrerequisiteChainTests : IDisposable
     }
 
     [Fact]
+    public async Task A_chain_that_crosses_engines_follows_the_step_it_is_on()
+    {
+        // Each step is routed on its own, so a chain may run partly through one engine and partly
+        // through the other. The install row has to move with it: the refresh reads the engine off the
+        // row to decide whom to ask, and Action1 answers "unknown automation" for an agent job id,
+        // which would fail an install that is running perfectly well.
+        var devices = new DeviceStore(_test.Database);
+        var token = devices.Add("BOTH-PC", "endpoint-1");
+        devices.RecordHeartbeat(devices.FindByName("BOTH-PC")!.Id, "0.5.0");
+        _catalog.Upsert(new CatalogEntry
+        {
+            Id = "a1-runtime",
+            Name = "An Action1 Runtime",
+            Action1 = new Action1PackageRef { PackageId = "Vendor_Runtime" },
+        });
+        Chain("game", "a1-runtime");
+        using var client = Client(token);
+
+        var install = await Start(client, "game");
+        Assert.Equal(2, install.StepCount);
+        Assert.Equal(EngineLabel.Action1, _installs.Find(install.Id)!.Engine);
+
+        // The stand-in answers Pending, then Running, then Success, and the success moves the chain on.
+        await Refresh(client);
+        await Refresh(client);
+        var moved = await RefreshOne(client);
+
+        Assert.Equal(EngineLabel.Agent, moved.Engine);
+        Assert.Equal(InstallState.Running, moved.State);
+        Assert.Equal(2, moved.StepNumber);
+        Assert.Equal("A Game", moved.StepName);
+        // And the row says so too, rather than still claiming the whole install finished with the
+        // prerequisite. What is stored is what the next refresh and the history page read.
+        var stored = _installs.Find(install.Id)!;
+        Assert.Equal(EngineLabel.Agent, stored.Engine);
+        Assert.Equal(InstallState.Running, stored.State);
+        Assert.Null(stored.CompletedAt);
+
+        // The next refresh asks the agent rather than Action1, which knows nothing of a job id, and
+        // the game finishes the chain.
+        await Refresh(client);
+        Assert.Equal(InstallState.Running, _installs.Find(install.Id)!.State);
+        Assert.Equal("A Game", await FinishStepAsync(client));
+
+        var finished = _installs.Find(install.Id)!;
+        Assert.Equal(InstallState.Succeeded, finished.State);
+        Assert.Equal(EngineLabel.Agent, finished.Engine);
+        Assert.Equal([InstallState.Succeeded, InstallState.Succeeded], _steps.For(install.Id).Select(step => step.State));
+    }
+
+    [Fact]
     public void The_chain_survives_an_export_and_an_import()
     {
         Chain("game", "runtime", "launcher");
@@ -216,13 +267,20 @@ public sealed class PrerequisiteChainTests : IDisposable
     }
 
     /// <summary>The poll the client makes, which is what moves a chain on to its next step.</summary>
-    private static async Task Refresh(HttpClient client)
-        => Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(ApiRoutes.Installs + "?refresh=true")).StatusCode);
+    private static async Task Refresh(HttpClient client) => await RefreshOne(client);
 
-    private HttpClient Client()
+    /// <summary>The same poll, and the one install it answers with.</summary>
+    private static async Task<InstallRequest> RefreshOne(HttpClient client)
+    {
+        var response = await client.GetAsync(ApiRoutes.Installs + "?refresh=true");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return Assert.Single((await response.Content.ReadFromJsonAsync<List<InstallRequest>>(Json))!);
+    }
+
+    private HttpClient Client(string? token = null)
     {
         var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token ?? _token);
         return client;
     }
 

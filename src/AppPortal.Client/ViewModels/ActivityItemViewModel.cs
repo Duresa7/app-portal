@@ -20,11 +20,17 @@ public sealed class ActivityItemViewModel(InstallRequest request)
 
     public bool HasRequestedBy => RequestedByText.Length > 0;
 
+    /// <summary>
+    /// A removal is a row in the same history with the same states, so the words have to say which it
+    /// was. History that calls both of them "Installed" cannot show what happened to an app.
+    /// </summary>
+    private bool IsRemoval => Request.Kind == InstallKind.Uninstall;
+
     public string StateText => Request.State switch
     {
         InstallState.Queued => "Queued",
-        InstallState.Running => $"Installing {Request.PercentComplete}%",
-        InstallState.Succeeded => "Installed",
+        InstallState.Running => $"{(IsRemoval ? "Removing" : "Installing")} {Request.PercentComplete}%",
+        InstallState.Succeeded => IsRemoval ? "Removed" : "Installed",
         InstallState.Failed => "Failed",
         InstallState.Cancelled => "Cancelled",
         _ => Request.State.ToString(),

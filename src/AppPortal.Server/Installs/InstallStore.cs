@@ -319,19 +319,25 @@ public sealed class InstallStore(Database database)
     /// earlier call can land after a fast later one and push a finished install back to Running.
     /// Returns false when the write was dropped as stale.
     /// </summary>
-    public bool Upsert(InstallRecord record)
+    /// <param name="reopening">
+    /// Said out loud by the one caller that means to move a settled install back to running: a chain
+    /// whose step has finished and whose next step is starting. Everything else reaching that state is
+    /// a stale write, so the guard stays on by default.
+    /// </param>
+    public bool Upsert(InstallRecord record, bool reopening = false)
     {
         using var connection = database.Open();
         // Immediate takes the write lock now rather than at the first write, so two callers reading the
         // stored row and deciding whether to overwrite it cannot interleave.
         using var transaction = connection.BeginTransaction(deferred: false);
 
-        var written = Upsert(record, connection, transaction);
+        var written = Upsert(record, connection, transaction, reopening);
         transaction.Commit();
         return written;
     }
 
-    internal static bool Upsert(InstallRecord record, SqliteConnection connection, SqliteTransaction transaction)
+    internal static bool Upsert(InstallRecord record, SqliteConnection connection, SqliteTransaction transaction,
+        bool reopening = false)
     {
         string? storedState = null;
         string? storedChecked = null;
@@ -353,7 +359,7 @@ public sealed class InstallStore(Database database)
         if (storedState is not null)
         {
             var storedIsActive = ParseState(storedState) is InstallState.Queued or InstallState.Running;
-            if (!storedIsActive && record.IsActive)
+            if (!storedIsActive && record.IsActive && !reopening)
             {
                 return false;
             }
@@ -373,7 +379,8 @@ public sealed class InstallStore(Database database)
                 VALUES (@id, @device, @deviceName, @appId, @appName, @requestedBy, @engine, @external,
                         @state, @percent, @detail, @reboot, @kind, @requested, @completed, @checked)
                 ON CONFLICT(id) DO UPDATE SET
-                    app_name = excluded.app_name, external_ref = excluded.external_ref, state = excluded.state,
+                    app_name = excluded.app_name, engine = excluded.engine, external_ref = excluded.external_ref,
+                    state = excluded.state,
                     percent = excluded.percent, detail = excluded.detail, reboot_state = excluded.reboot_state,
                     completed_at = excluded.completed_at, last_checked_at = excluded.last_checked_at;
                 """;
@@ -390,6 +397,8 @@ public sealed class InstallStore(Database database)
             // Left out of the ON CONFLICT update on purpose: who asked is settled when the install is made,
             // and the poller refreshes from records that never carried it.
             write.Parameters.AddWithValue("@requestedBy", (object?)record.RequestedBy ?? DBNull.Value);
+            // Kept current on purpose: a chain routes each step on its own, so the step running now may
+            // be on the other engine, and the refresh reads this column to decide whom to ask.
             write.Parameters.AddWithValue("@engine", record.Engine);
             write.Parameters.AddWithValue("@external", (object?)record.AutomationId ?? DBNull.Value);
             write.Parameters.AddWithValue("@state", record.State.ToString());

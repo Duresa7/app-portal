@@ -297,6 +297,15 @@ public sealed class InstallService(
         record.StepNumber = next.Position + 1;
         record.StepName = next.AppName;
         record.Detail = $"Installing {next.AppName} ({next.Position + 1} of {chain.Count})";
+
+        // Written before the step is started, and with the previous step's reference cleared. A step
+        // that settled the row, which an Action1 step does, leaves it saying the whole install
+        // succeeded; the store refuses to move a settled install back to running unless the caller
+        // says it means to, and the engine starting the next step writes through that same guard. So
+        // the row is reopened first, and nothing in between names an engine and a reference that
+        // belong to different steps.
+        record.AutomationId = null;
+        store.Upsert(record, reopening: true);
         record.AutomationId = await StartStepAsync(device, record, app, next.Engine, next.Position, ct);
         store.Upsert(record);
         return record;

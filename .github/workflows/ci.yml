@@ -25,7 +25,7 @@ jobs:
     outputs:
       version: ${{ steps.read.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Read the version and check the tag against it
@@ -59,8 +59,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - run: dotnet restore
@@ -69,7 +69,7 @@ jobs:
         run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --no-restore -c Release
       - run: dotnet test --no-build -c Release --logger "trx;LogFileName=results.trx"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-${{ matrix.os }}
@@ -80,8 +80,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: version
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Publish self-contained win-x64
@@ -98,7 +98,7 @@ jobs:
           cp deploy/windows/Uninstall-AppPortalClient.ps1 out/package/client/
           cd out/package && zip -qr ../AppPortal-client-win-x64.zip .
           cd .. && sha256sum AppPortal-client-win-x64.zip > SHA256SUMS && cat SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: AppPortal-client-win-x64
           path: |
@@ -113,7 +113,7 @@ jobs:
     env:
       EXPECTED_VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: AppPortal-client-win-x64
           path: package
@@ -169,7 +169,7 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "AppPortal.exe exited with $($p.ExitCode)" }
           if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 1024) { throw 'No screenshot was written.' }
           "Client rendered $((Get-Item $out).Length) bytes in $out"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: client-smoke-screenshot
@@ -181,14 +181,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: version
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build
         run: docker build -f deploy/Dockerfile -t "$IMAGE:ci" .
       - name: Start in fake Action1 mode and exercise it
         run: deploy/smoke-test.sh "$IMAGE:ci"
       - name: Save the tested image for the release job
         run: docker save "$IMAGE:ci" | gzip > server-image.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: server-image
           path: server-image.tar.gz
@@ -206,11 +206,11 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: AppPortal-client-win-x64
           path: out
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: server-image
           path: image
@@ -225,7 +225,7 @@ jobs:
       - name: Create the GitHub release
         # Last on purpose: every installed client polls the latest release, so this is the moment
         # the build reaches devices.
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             out/AppPortal-client-win-x64.zip

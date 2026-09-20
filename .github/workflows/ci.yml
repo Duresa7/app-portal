@@ -23,9 +23,11 @@ on:
         type: boolean
         default: true
 
-# A second push to the same branch makes the first run's remaining minutes worthless.
+# A second push to the same branch makes the first run's remaining minutes worthless. The event is part
+# of the group because a pre-release run is started by hand on main and takes half an hour of Windows
+# time; a one-line docs push to main must not be able to throw that away.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:

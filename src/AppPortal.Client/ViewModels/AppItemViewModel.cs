@@ -46,6 +46,14 @@ public sealed partial class AppItemViewModel : ViewModelBase
     /// </summary>
     public bool InstallsForYouOnly => App.InstallScope == "user";
 
+    /// <summary>
+    /// Which engine would carry this out, so that a person reporting a problem and the administrator
+    /// reading the history are looking at the same word.
+    /// </summary>
+    public string EngineText => EngineLabel.For(App.Engine);
+
+    public bool HasEngine => !string.IsNullOrEmpty(App.Engine);
+
     public bool HasDownloadSize => App.DownloadSizeBytes is not null;
     public string DownloadSizeText => App.DownloadSizeBytes switch
     {

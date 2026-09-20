@@ -10,6 +10,7 @@ using AppPortal.Server.Enrollment;
 using AppPortal.Server.Installs;
 using AppPortal.Server.Options;
 using AppPortal.Server.Requests;
+using AppPortal.Server.Settings;
 using AppPortal.Shared;
 
 using Microsoft.Extensions.Options;
@@ -49,6 +50,7 @@ builder.Services.AddSingleton<InstallStore>();
 builder.Services.AddSingleton<AppRequestStore>();
 builder.Services.AddSingleton<AgentJobStore>();
 builder.Services.AddSingleton<DeviceSoftwareStore>();
+builder.Services.AddSingleton<SettingsStore>();
 
 // Both engines are registered and InstallService picks between them per install. Adding an engine is
 // adding a registration here, which is the seam AGENTS.md asks for: nothing wires an install engine

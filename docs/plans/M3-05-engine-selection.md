@@ -29,6 +29,11 @@ When an app can be installed by more than one engine on a device, a server-wide 
 
 `settings` table; `CatalogApp.Engine: string`; `InstallRequest.Engine: string`. `EngineSelector.Choose(device, app, defaultEngine) -> string?` in the server with exhaustive tests.
 
+Two things differ from this plan as written:
+
+- The migration is **014**. 010 through 013 were taken by the agent jobs, the device software, the job requester and the software account while this package was open.
+- The dashboard split by engine is not here. The dashboard has no chart of any kind yet, and adding its first one to carry this is a bigger change than this package should make; the installs list already filters and labels by engine, which is what somebody asking the question actually uses.
+
 ## Steps
 
 1. Selector with a table-driven test covering every combination.

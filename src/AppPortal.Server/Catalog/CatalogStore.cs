@@ -25,9 +25,19 @@ public sealed class CatalogEntry
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Hidden { get; set; }
 
+    /// <summary>
+    /// The engine this app prefers when a device could use either, or null to follow the server. It
+    /// decides nothing on a device that has only one of them.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EngineOverride { get; set; }
+
     public Action1PackageRef Action1 { get; set; } = new();
     public PackageDefinition? Agent { get; set; }
     public MatchRule? Match { get; set; }
+
+    /// <summary>The contract, with the engine this device would use and nothing about any other.</summary>
+    public CatalogApp ToPublic(string? engine) => ToPublic() with { Engine = engine };
 
     public CatalogApp ToPublic() => new(Id, Name, Publisher, Description, Category, IconUrl, Featured,
         (HasAction1, Agent is not null) switch
@@ -213,13 +223,15 @@ public sealed class CatalogStore
                 app.Transaction = transaction;
                 app.CommandText = """
                     INSERT INTO catalog_apps (id, name, publisher, description, category, icon_url, featured, hidden, match_json, engine_override, created_at, updated_at)
-                    VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, NULL, @now, @now)
+                    VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, @engine, @now, @now)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name, publisher = excluded.publisher, description = excluded.description,
                         category = excluded.category, icon_url = excluded.icon_url, featured = excluded.featured,
-                        hidden = excluded.hidden, match_json = excluded.match_json, updated_at = excluded.updated_at;
+                        hidden = excluded.hidden, match_json = excluded.match_json,
+                        engine_override = excluded.engine_override, updated_at = excluded.updated_at;
                     """;
                 app.Parameters.AddWithValue("@id", entry.Id.Trim());
+                app.Parameters.AddWithValue("@engine", (object?)entry.EngineOverride ?? DBNull.Value);
                 app.Parameters.AddWithValue("@name", entry.Name);
                 app.Parameters.AddWithValue("@publisher", entry.Publisher ?? "");
                 app.Parameters.AddWithValue("@description", entry.Description ?? "");
@@ -252,13 +264,15 @@ public sealed class CatalogStore
             app.Transaction = transaction;
             app.CommandText = """
                 INSERT INTO catalog_apps (id, name, publisher, description, category, icon_url, featured, hidden, match_json, engine_override, created_at, updated_at)
-                VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, NULL, @now, @now)
+                VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, @engine, @now, @now)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name, publisher = excluded.publisher, description = excluded.description,
                     category = excluded.category, icon_url = excluded.icon_url, featured = excluded.featured,
-                    hidden = excluded.hidden, match_json = excluded.match_json, updated_at = excluded.updated_at;
+                    hidden = excluded.hidden, match_json = excluded.match_json,
+                    engine_override = excluded.engine_override, updated_at = excluded.updated_at;
                 """;
             app.Parameters.AddWithValue("@id", entry.Id.Trim());
+            app.Parameters.AddWithValue("@engine", (object?)entry.EngineOverride ?? DBNull.Value);
             app.Parameters.AddWithValue("@name", entry.Name.Trim());
             app.Parameters.AddWithValue("@publisher", entry.Publisher ?? "");
             app.Parameters.AddWithValue("@description", entry.Description ?? "");
@@ -386,7 +400,7 @@ public sealed class CatalogStore
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT a.id, a.name, a.publisher, a.description, a.category, a.icon_url, a.featured, a.match_json, p.definition_json, a.hidden, agent.definition_json
+            SELECT a.id, a.name, a.publisher, a.description, a.category, a.icon_url, a.featured, a.match_json, p.definition_json, a.hidden, agent.definition_json, a.engine_override
             FROM catalog_apps a
             LEFT JOIN catalog_packages p ON p.app_id = a.id AND p.engine = 'action1'
             LEFT JOIN catalog_packages agent ON agent.app_id = a.id AND agent.engine = 'agent'
@@ -416,6 +430,7 @@ public sealed class CatalogStore
                 Action1 = reader.IsDBNull(8) ? new Action1PackageRef() : JsonSerializer.Deserialize<Action1PackageRef>(reader.GetString(8), Json) ?? new Action1PackageRef(),
                 Hidden = reader.GetInt64(9) != 0,
                 Agent = reader.IsDBNull(10) ? null : JsonSerializer.Deserialize<PackageDefinition>(reader.GetString(10), Json),
+                EngineOverride = reader.IsDBNull(11) ? null : reader.GetString(11),
             });
         }
 

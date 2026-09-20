@@ -47,7 +47,7 @@ public sealed class InstallRecord
     public bool IsActive => State is InstallState.Queued or InstallState.Running;
 
     public InstallRequest ToPublic()
-        => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail, RequestedBy);
+        => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail, RequestedBy, Engine);
 }
 
 /// <summary>Install history, one row per request, in the database under the data directory.</summary>
@@ -95,6 +95,16 @@ public sealed record InstallFilter(
 public sealed class InstallStore(Database database)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    /// <summary>The agent package for this app, whether or not it also has an Action1 one.</summary>
+    public PackageDefinition? FindAgentPackage(string appId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT definition_json FROM catalog_packages WHERE app_id = @app AND engine = 'agent';";
+        command.Parameters.AddWithValue("@app", appId);
+        return command.ExecuteScalar() is string json ? JsonSerializer.Deserialize<PackageDefinition>(json, Json) : null;
+    }
 
     public PackageDefinition? FindAgentOnlyPackage(string appId)
     {

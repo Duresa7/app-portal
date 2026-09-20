@@ -4,6 +4,7 @@ using AppPortal.Server.Action1;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Options;
+using AppPortal.Server.Settings;
 using AppPortal.Shared;
 
 using Microsoft.Extensions.Options;
@@ -31,7 +32,8 @@ public sealed class InstallService(
     IOptions<PortalOptions> options,
     ILogger<InstallService> logger,
     IEnumerable<IInstallEngine> engines,
-    DeviceSoftwareStore software)
+    DeviceSoftwareStore software,
+    SettingsStore settings)
 {
     private readonly Dictionary<string, IInstallEngine> _engines = engines.ToDictionary(e => e.Name);
 
@@ -72,8 +74,11 @@ public sealed class InstallService(
             throw new InstallRejectedException(InstallRejection.TooManyActive, "Too many installs are already in progress on this device. Wait for one to finish.");
         }
 
-        var definition = device.HasAgent ? store.FindAgentOnlyPackage(app.Id) : null;
-        var engine = _engines[definition is null ? EngineLabel.Action1 : EngineLabel.Agent];
+        var chosen = EngineSelector.Choose(device, app, settings.DefaultEngine)
+                     ?? throw new InstallRejectedException(InstallRejection.PackageVersionNotFound,
+                         $"{app.Name} cannot be installed on this PC.");
+        var definition = chosen == EngineLabel.Agent ? store.FindAgentPackage(app.Id) : null;
+        var engine = _engines[chosen];
 
         var record = new InstallRecord
         {
@@ -86,7 +91,7 @@ public sealed class InstallService(
             RequestedBy = requestedBy,
             RequestedAt = DateTimeOffset.UtcNow,
             State = InstallState.Queued,
-            Engine = definition is null ? EngineLabel.Action1 : EngineLabel.Agent,
+            Engine = chosen,
         };
 
         record.AutomationId = await engine.StartAsync(device, app, definition, record, ct);

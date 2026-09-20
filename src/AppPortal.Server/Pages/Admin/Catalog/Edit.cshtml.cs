@@ -47,6 +47,11 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     [BindProperty]
     public bool Featured { get; set; }
 
+    /// <summary>Empty to follow the server's default, which is what almost every app should do.</summary>
+    [BindProperty]
+    public string EngineOverride { get; set; } = "";
+
+
     [BindProperty]
     public bool Hidden { get; set; }
 
@@ -158,6 +163,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             IconUrl = string.IsNullOrWhiteSpace(IconUrl) ? null : IconUrl.Trim(),
             Featured = Featured,
             Hidden = Hidden,
+            EngineOverride = EmptyToNull(EngineOverride),
             Match = string.IsNullOrWhiteSpace(MatchNameContains) && string.IsNullOrWhiteSpace(MatchNameEquals)
                 ? null
                 : new MatchRule
@@ -289,6 +295,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         IconUrl = entry.IconUrl ?? "";
         Featured = entry.Featured;
         Hidden = entry.Hidden;
+        EngineOverride = entry.EngineOverride ?? "";
         MatchNameContains = entry.Match?.NameContains ?? "";
         MatchNameEquals = entry.Match?.NameEquals ?? "";
         PackageId = entry.Action1.PackageId;

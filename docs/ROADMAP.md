@@ -59,7 +59,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M3-02](plans/M3-02-agent-job-protocol.md) | Agent job protocol with progress | M2-02 | Done |
 | [M3-03](plans/M3-03-winget-executor.md) | winget executor | M3-02 | Done |
 | [M3-04](plans/M3-04-direct-installer-executor.md) | Direct installer executor | M3-02 | Done |
-| [M3-05](plans/M3-05-engine-selection.md) | Engine selection and labels | M3-01, M3-02, M1-07 | Open |
+| [M3-05](plans/M3-05-engine-selection.md) | Engine selection and labels | M3-01, M3-02, M1-07 | Done |
 | [M3-06](plans/M3-06-release-0.5.0.md) | Release 0.5.0 | M3-03, M3-04, M3-05, M3-07, M3-08, M3-09, M3-10, M3-11 | Open |
 | [M3-07](plans/M3-07-user-session-installs.md) | Installs that run as the signed-in person | M3-03, M3-04 | Done |
 | [M3-08](plans/M3-08-app-requirements.md) | Requirements the person reads before installing | M3-01 | Open |

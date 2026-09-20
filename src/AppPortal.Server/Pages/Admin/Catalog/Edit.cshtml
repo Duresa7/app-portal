@@ -97,6 +97,15 @@
     </div>
 
     <div class="card">
+        <h2>Engine</h2>
+        <label for="engine-override">Prefer</label>
+        <select id="engine-override" name="EngineOverride">
+            <option value="" selected="@(string.IsNullOrEmpty(Model.EngineOverride))">The server's default</option>
+            <option value="action1" selected="@(Model.EngineOverride == "action1")">Action1</option>
+            <option value="agent" selected="@(Model.EngineOverride == "agent")">Agent</option>
+        </select>
+        <p class="muted">Only matters on a device that could use either. A device set to prefer an engine still wins over this.</p>
+
         <h2>Agent package</h2>
         <label for="agent-kind">Kind</label>
         <select id="agent-kind" name="AgentKind">

@@ -13,7 +13,8 @@ public sealed class JobRunner(
     IEnumerable<IPackageExecutor> executors,
     ILogger<JobRunner> logger,
     Func<PortalSettings>? loadSettings = null,
-    TimeSpan? renewalInterval = null) : BackgroundService
+    TimeSpan? renewalInterval = null,
+    SoftwareReporter? software = null) : BackgroundService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -93,7 +94,7 @@ public sealed class JobRunner(
         try
         {
             var executor = _executors.GetValueOrDefault(definition.Kind) ?? _fallback;
-            execution = ExecuteAsync(executor, definition, progress, running.Token);
+            execution = ExecuteAsync(executor, id, definition, progress, running.Token);
             var first = await Task.WhenAny(execution, reporting);
             if (first == reporting)
             {
@@ -105,6 +106,12 @@ public sealed class JobRunner(
             await reporting;
             using var completed = await SendAsync(settings, HttpMethod.Post, route + "/complete" + attempt,
                 new AgentJobCompletion(result.Ok, result.Detail, result.ExitCode), ct);
+            if (result.Ok && software is not null)
+            {
+                // After the completion, not before it. The install is finished either way, and the
+                // person waiting on the card should not wait for an inventory sweep to say so.
+                await software.ReportAsync(settings, ct);
+            }
         }
         catch
         {
@@ -148,12 +155,12 @@ public sealed class JobRunner(
         }
     }
 
-    private static async Task<ExecutionResult> ExecuteAsync(IPackageExecutor executor, PackageDefinition definition,
+    private static async Task<ExecutionResult> ExecuteAsync(IPackageExecutor executor, string jobId, PackageDefinition definition,
         IProgress<(int percent, string detail)> progress, CancellationToken ct)
     {
         try
         {
-            return await executor.RunAsync(definition, progress, ct);
+            return await executor.RunAsync(jobId, definition, progress, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

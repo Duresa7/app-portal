@@ -10,6 +10,9 @@ namespace AppPortal.Server.Agent;
 /// </summary>
 public static class AgentEndpoints
 {
+    /// <summary>A bound on one report, so a device cannot fill the database by mistake or on purpose.</summary>
+    private const int MaxSoftwareEntries = 5000;
+
     public static void MapAgentApi(this WebApplication app)
     {
         var group = app.MapGroup(ApiRoutes.Prefix + "/agent");
@@ -51,6 +54,20 @@ public static class AgentEndpoints
                 // Lease has closed its connection: a waiting device must not block another writer.
                 await Task.Delay(remaining < TimeSpan.FromMilliseconds(250) ? remaining : TimeSpan.FromMilliseconds(250), token);
             }
+        });
+
+        group.MapPost("/software", (IReadOnlyList<InstalledSoftware> request, HttpContext context, DeviceSoftwareStore software) =>
+        {
+            // The whole list, every time. A device that had software removed has to be able to say so,
+            // and a merge would leave anything the agent stopped reporting on the record for ever.
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            if (request.Count > MaxSoftwareEntries)
+            {
+                return Results.BadRequest(new ErrorMessage($"A device may report at most {MaxSoftwareEntries} pieces of software."));
+            }
+
+            software.Replace(device.Id, request);
+            return Results.NoContent();
         });
 
         group.MapPost("/jobs/{id}/progress", (string id, int? attempt, AgentJobProgress request, HttpContext context, AgentJobStore jobs) =>

@@ -158,3 +158,9 @@ public sealed record AgentJobProgress(string State, int Percent, string? Detail)
 public sealed record AgentJobCompletion(bool Ok, string? Detail, int? ExitCode);
 
 public sealed record ExecutionResult(bool Ok, string? Detail, int? ExitCode = null);
+
+/// <summary>
+/// One piece of software the agent found on its device. The vendor is absent on purpose: the sources
+/// the agent reads give a display name and a version and nothing dependable beyond that.
+/// </summary>
+public sealed record InstalledSoftware(string Name, string Version);

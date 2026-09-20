@@ -122,13 +122,11 @@ jobs:
       - name: Publish self-contained win-x64
         run: |
           # The version comes from Directory.Build.props; the version job has already checked a tag against it.
-          dotnet publish src/AppPortal.Client  -c Release -r win-x64 --self-contained -o out/client
-          dotnet publish src/AppPortal.Updater -c Release -r win-x64 --self-contained -o out/updater
+          dotnet publish src/AppPortal.Client -c Release -r win-x64 --self-contained -o out/client
           dotnet publish src/AppPortal.Agent -c Release -r win-x64 --self-contained -o out/agent
           mkdir -p out/package/client
           cp -r out/client/. out/package/client/
-          # The updater is one self-contained file that sits beside the client and replaces it.
-          cp out/updater/AppPortal.Updater.exe out/package/client/
+          # The agent sits beside the client and is what replaces both of them from now on.
           cp out/agent/AppPortal.Agent.exe out/package/client/
           cd out/package && zip -qr ../AppPortal-client-win-x64.zip .
           cd .. && sha256sum AppPortal-client-win-x64.zip > SHA256SUMS && cat SHA256SUMS
@@ -163,14 +161,13 @@ jobs:
           $actual = (Get-FileHash package/AppPortal-client-win-x64.zip -Algorithm SHA256).Hash
           if ($expected -ne $actual) { throw "SHA256SUMS says $expected, archive hashes to $actual" }
           "Checksum ok: $actual"
-      - name: Archive has every file the installer and updater need
+      - name: Archive has every file the installer needs
         shell: pwsh
         run: |
           Expand-Archive package/AppPortal-client-win-x64.zip -DestinationPath unpacked
           $required = @(
             'client/AppPortal.exe',
             'client/AppPortal.dll',
-            'client/AppPortal.Updater.exe',
             'client/AppPortal.Agent.exe'
           )
           $missing = $required | Where-Object { -not (Test-Path (Join-Path unpacked $_)) }
@@ -179,9 +176,9 @@ jobs:
       - name: Binaries report the release version
         shell: pwsh
         run: |
-          # The updater compares the installed AppPortal.exe's version with the release tag. A binary that
+          # The agent compares the installed AppPortal.exe's version with the release tag. A binary that
           # reports a different version makes every device either update forever or never update.
-          foreach ($exe in 'client/AppPortal.exe', 'client/AppPortal.Updater.exe', 'client/AppPortal.Agent.exe') {
+          foreach ($exe in 'client/AppPortal.exe', 'client/AppPortal.Agent.exe') {
             $info = (Get-Item (Join-Path unpacked $exe)).VersionInfo
             $product = ($info.ProductVersion -split '[+\- ]')[0]
             "$exe ProductVersion=$($info.ProductVersion) FileVersion=$($info.FileVersion)"
@@ -292,6 +289,13 @@ jobs:
             -p:PublishSingleFile=true -p:AppPortalMsiPath="$msi" -o out/setup
           if ($LASTEXITCODE -ne 0) { throw 'Bootstrapper publish failed.' }
           if (-not (Test-Path out/setup/AppPortalSetup.exe)) { throw 'No AppPortalSetup.exe was produced.' }
+      - name: The release feed still parses
+        shell: pwsh
+        run: |
+          # Every installed agent reads this feed to find its next version. A change in GitHub's answer
+          # should fail a build here, not stop a fleet updating. It downloads nothing.
+          ./out/agent/AppPortal.Agent.exe --check
+          if ($LASTEXITCODE -ne 0) { throw 'The agent could not read the release feed.' }
       - name: Check the package on its own
         shell: pwsh
         run: |

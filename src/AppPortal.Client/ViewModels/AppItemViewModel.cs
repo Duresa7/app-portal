@@ -39,6 +39,13 @@ public sealed partial class AppItemViewModel : ViewModelBase
     public string Description => App.Description;
     public string Category => App.Category;
     public bool Featured => App.Featured;
+    /// <summary>
+    /// Said before the install rather than discovered after it. A per-user install lands in the
+    /// profile of whoever asked, so it is not on the PC for anyone else, and somebody who expects
+    /// otherwise should find that out here.
+    /// </summary>
+    public bool InstallsForYouOnly => App.InstallScope == "user";
+
     public bool HasDownloadSize => App.DownloadSizeBytes is not null;
     public string DownloadSizeText => App.DownloadSizeBytes switch
     {

@@ -118,7 +118,7 @@ public sealed class InstallService(
         return refreshed;
     }
 
-    public async Task<IReadOnlyList<InstalledApp>> InstalledAppsAsync(DeviceRecord device, CancellationToken ct)
+    public async Task<IReadOnlyList<InstalledApp>> InstalledAppsAsync(DeviceRecord device, CancellationToken ct, string? requester = null)
     {
         var entries = catalog.Entries;
         var merged = new Dictionary<string, InstalledApp>(StringComparer.OrdinalIgnoreCase);
@@ -136,7 +136,7 @@ public sealed class InstallService(
 
         // Action1 reports a vendor and the agent cannot, so where both saw the same software the richer
         // row stays and the agent's is dropped rather than overwriting it with a blank.
-        foreach (var item in software.ForDevice(device.Id).Where(item => !merged.ContainsKey(item.Name)))
+        foreach (var item in software.ForDevice(device.Id, requester).Where(item => !merged.ContainsKey(item.Name)))
         {
             merged[item.Name] = new InstalledApp(item.Name, "", item.Version,
                 entries.FirstOrDefault(e => e.MatchesInstalled(item.Name))?.Id);

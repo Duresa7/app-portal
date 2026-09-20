@@ -1,5 +1,6 @@
 using AppPortal.Agent.Downloads;
 using AppPortal.Agent.Jobs;
+using AppPortal.Agent.Sessions;
 using AppPortal.Shared;
 
 namespace AppPortal.Agent.Executors;
@@ -14,6 +15,7 @@ public sealed class DirectInstallerExecutor(
     IProcessRunner processes,
     ILogger<DirectInstallerExecutor> logger,
     string stateDirectory,
+    IUserSessionLauncher sessions,
     TimeSpan? timeout = null) : IPackageExecutor
 {
     private const int RebootRequired = 3010;
@@ -24,7 +26,7 @@ public sealed class DirectInstallerExecutor(
 
     public string Kind => "direct";
 
-    public async Task<ExecutionResult> RunAsync(string jobId, PackageDefinition definition,
+    public async Task<ExecutionResult> RunAsync(JobContext job, PackageDefinition definition,
         IProgress<(int percent, string detail)> progress, CancellationToken ct)
     {
         if (definition is not DirectPackageDefinition direct)
@@ -32,13 +34,12 @@ public sealed class DirectInstallerExecutor(
             return new ExecutionResult(false, "This job is not a direct installer.");
         }
 
-        if (direct.Scope == "user")
+        if (direct.Scope == "user" && string.IsNullOrWhiteSpace(job.Requester))
         {
-            // Same boundary as the winget executor. M3-07 gives the agent a session to run in.
-            return new ExecutionResult(false, "This package installs for one person, and the agent cannot yet run in a user session.");
+            return new ExecutionResult(false, "This package installs for one person, and the install does not say who asked.");
         }
 
-        var log = new JobLog(stateDirectory, jobId);
+        var log = new JobLog(stateDirectory, job.JobId);
         string installer;
         try
         {
@@ -57,13 +58,29 @@ public sealed class DirectInstallerExecutor(
             return new ExecutionResult(false, message);
         }
 
-        progress.Report((100, "Installing"));
-        var (file, arguments) = Command(direct, installer, stateDirectory, jobId);
+        var (file, arguments) = Command(direct, installer, stateDirectory, job.JobId);
         log.Write($"{file} {arguments}");
-        ProcessResult result;
+        ProcessResult? result;
         try
         {
-            result = await processes.RunAsync(file, arguments, log.Write, _timeout, ct);
+            if (direct.Scope == "user")
+            {
+                // The download stayed with the service, which is right: it is the same file for
+                // everyone, it is verified once, and %ProgramData%\AppPortal is readable by users, so
+                // the session can run what SYSTEM fetched without a second copy per person.
+                progress.Report((100, $"Installing for {job.Requester}"));
+                result = await sessions.RunAsAsync(job.Requester!, file, arguments, log.Write, _timeout, ct);
+                if (result is null)
+                {
+                    log.Write($"waiting for {job.Requester} to sign in");
+                    return new ExecutionResult(false, $"Waiting for {job.Requester} to sign in.", null, WaitingForUser: true);
+                }
+            }
+            else
+            {
+                progress.Report((100, "Installing"));
+                result = await processes.RunAsync(file, arguments, log.Write, _timeout, ct);
+            }
         }
         catch (TimeoutException ex)
         {
@@ -86,8 +103,12 @@ public sealed class DirectInstallerExecutor(
             "msi" => ("msiexec.exe",
                 $"/i \"{installer}\" /qn /norestart /l*v \"{Path.Combine(stateDirectory, "jobs", jobId + ".msi.log")}\""
                 + (string.IsNullOrWhiteSpace(direct.SilentArgs) ? "" : " " + direct.SilentArgs.Trim())),
-            // Provisioning adds the package for profiles created later, which is the machine-wide form
-            // of an msix. A per-user install needs Add-AppxPackage inside a session, which is M3-07.
+            // Provisioning adds the package for profiles created later, which is the machine-wide
+            // form. Installing it for somebody who already has a profile is a different command, run
+            // inside their session, and provisioning would not reach them.
+            "msix" when direct.Scope == "user" => ("powershell.exe",
+                "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "
+                + $"\"Add-AppxPackage -Path '{installer}'\""),
             "msix" => ("powershell.exe",
                 "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "
                 + $"\"Add-AppxProvisionedPackage -Online -PackagePath '{installer}' -SkipLicense\""),

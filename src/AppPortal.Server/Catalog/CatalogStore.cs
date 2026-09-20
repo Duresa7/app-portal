@@ -37,7 +37,9 @@ public sealed class CatalogEntry
             (false, true) => ["agent"],
             _ => [],
         },
-        (Agent as DirectPackageDefinition)?.SizeBytes);
+        (Agent as DirectPackageDefinition)?.SizeBytes,
+        // Only an agent package can be per-user; Action1 always installs for the whole device.
+        Agent?.Scope);
 
     [JsonIgnore]
     public bool HasAction1 => !string.IsNullOrWhiteSpace(Action1?.PackageId);

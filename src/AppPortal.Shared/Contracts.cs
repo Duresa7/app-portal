@@ -14,7 +14,8 @@ public sealed record CatalogApp(
     string? IconUrl,
     bool Featured,
     string[] Engines,
-    long? DownloadSizeBytes)
+    long? DownloadSizeBytes,
+    string? InstallScope = null)
 {
     public CatalogApp(string id, string name, string publisher, string description, string category, string? iconUrl, bool featured)
         : this(id, name, publisher, description, category, iconUrl, featured, ["action1"], null)
@@ -124,6 +125,13 @@ public static class ApiHeaders
     public const int RequesterMaxLength = 128;
 
     /// <summary>
+    /// The accounts signed in on the device right now, comma separated, sent by the agent when it asks
+    /// for work. A per-user install waits for the account that asked for it, and this is how the server
+    /// learns that account is there.
+    /// </summary>
+    public const string SignedInAccounts = "X-AppPortal-Sessions";
+
+    /// <summary>
     /// The enrollment key on <c>GET /api/v1/enroll/check</c>. A header rather than a query parameter so
     /// the secret stays out of access logs and browser history.
     /// </summary>
@@ -151,13 +159,22 @@ public sealed record AgentHeartbeatRequest(string AgentVersion, string? ClientVe
 /// </summary>
 public sealed record AgentHeartbeatResponse(DateTimeOffset ServerTime, int HeartbeatSeconds);
 
-public sealed record AgentJob(string Id, string InstallId, PackageDefinition Definition, int Attempt);
+/// <summary>
+/// One install for the agent to carry out. <see cref="Requester"/> is the account that asked; for a
+/// machine-wide install it is a record, and for a per-user one it decides which profile the software
+/// goes into and whose session the installer has to run in.
+/// </summary>
+public sealed record AgentJob(string Id, string InstallId, PackageDefinition Definition, int Attempt, string? Requester = null);
 
 public sealed record AgentJobProgress(string State, int Percent, string? Detail);
 
 public sealed record AgentJobCompletion(bool Ok, string? Detail, int? ExitCode);
 
-public sealed record ExecutionResult(bool Ok, string? Detail, int? ExitCode = null);
+/// <summary>
+/// How an install ended. <see cref="WaitingForUser"/> is neither success nor failure: the package
+/// installs for one person, that person is not signed in, and the job is parked until they are.
+/// </summary>
+public sealed record ExecutionResult(bool Ok, string? Detail, int? ExitCode = null, bool WaitingForUser = false);
 
 /// <summary>
 /// One piece of software the agent found on its device. The vendor is absent on purpose: the sources

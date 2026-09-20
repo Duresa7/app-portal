@@ -34,6 +34,19 @@ public static class AgentEndpoints
             using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.ApplicationStopping);
             var token = stopping.Token;
             var device = DeviceAuthenticationMiddleware.Current(context);
+
+            // Whoever is signed in right now. A per-user install parks until the person who asked for
+            // it is at the PC, and this header is how the agent says they have arrived. Sent on every
+            // poll rather than only on a change, so a missed sign-in cannot strand a job.
+            var signedIn = (context.Request.Headers[ApiHeaders.SignedInAccounts].ToString() ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(account => account.Length <= ApiHeaders.RequesterMaxLength)
+                .ToArray();
+            if (signedIn.Length > 0)
+            {
+                jobs.Resume(device.Id, signedIn);
+            }
+
             var deadline = System.Diagnostics.Stopwatch.StartNew();
             var duration = TimeSpan.FromSeconds(Math.Clamp(wait ?? 0, 0, 25));
             while (true)
@@ -56,7 +69,7 @@ public static class AgentEndpoints
             }
         });
 
-        group.MapPost("/software", (IReadOnlyList<InstalledSoftware> request, HttpContext context, DeviceSoftwareStore software) =>
+        group.MapPost("/software", (IReadOnlyList<InstalledSoftware> request, string? account, HttpContext context, DeviceSoftwareStore software) =>
         {
             // The whole list, every time. A device that had software removed has to be able to say so,
             // and a merge would leave anything the agent stopped reporting on the record for ever.
@@ -66,13 +79,21 @@ public static class AgentEndpoints
                 return Results.BadRequest(new ErrorMessage($"A device may report at most {MaxSoftwareEntries} pieces of software."));
             }
 
-            software.Replace(device.Id, request);
+            if (account is { Length: > ApiHeaders.RequesterMaxLength })
+            {
+                return Results.BadRequest(new ErrorMessage("That account name is too long."));
+            }
+
+            // No account is the machine-wide sweep; an account is one profile's own software. They are
+            // separate lists, so one sweep never erases the other.
+            software.Replace(device.Id, request, account);
             return Results.NoContent();
         });
 
         group.MapPost("/jobs/{id}/progress", (string id, int? attempt, AgentJobProgress request, HttpContext context, AgentJobStore jobs) =>
         {
-            if (request.State is not ("queued" or "downloading" or "installing" or "cancelled") || request.Percent is < 0 or > 100)
+            if (request.State is not ("queued" or "downloading" or "installing" or "waiting_for_user" or "cancelled")
+                || request.Percent is < 0 or > 100)
             {
                 return Results.BadRequest(new ErrorMessage("A valid progress state and percent from 0 to 100 are required."));
             }

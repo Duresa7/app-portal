@@ -26,13 +26,14 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO agent_jobs (id, install_id, device_id, definition_json, state, created_at, updated_at)
-            VALUES (@id, @install, @device, @definition, 'queued', @now, @now);
+            INSERT INTO agent_jobs (id, install_id, device_id, definition_json, state, requester, created_at, updated_at)
+            VALUES (@id, @install, @device, @definition, 'queued', @requester, @now, @now);
             """;
         command.Parameters.AddWithValue("@id", id);
         command.Parameters.AddWithValue("@install", install.Id);
         command.Parameters.AddWithValue("@device", install.DeviceId!);
         command.Parameters.AddWithValue("@definition", JsonSerializer.Serialize(definition, Json));
+        command.Parameters.AddWithValue("@requester", (object?)install.RequestedBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@now", SqlTime.From(_time.GetUtcNow()));
         command.ExecuteNonQuery();
         transaction.Commit();
@@ -63,7 +64,7 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
                         ORDER BY created_at, rowid LIMIT 1)
               AND NOT EXISTS (SELECT 1 FROM agent_jobs WHERE device_id = @device
                               AND state IN ('leased', 'downloading', 'installing'))
-            RETURNING id, install_id, definition_json, attempt;
+            RETURNING id, install_id, definition_json, attempt, requester;
             """;
         command.Parameters.AddWithValue("@device", deviceId);
         command.Parameters.AddWithValue("@until", SqlTime.From(now.AddMinutes(5)));
@@ -74,12 +75,62 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
             if (reader.Read())
             {
                 job = new AgentJob(reader.GetString(0), reader.GetString(1),
-                    JsonSerializer.Deserialize<PackageDefinition>(reader.GetString(2), Json)!, reader.GetInt32(3));
+                    JsonSerializer.Deserialize<PackageDefinition>(reader.GetString(2), Json)!, reader.GetInt32(3),
+                    reader.IsDBNull(4) ? null : reader.GetString(4));
             }
         }
 
         transaction.Commit();
         return job;
+    }
+
+    /// <summary>How many signed-in accounts one call may name, so a device cannot make work without end.</summary>
+    private const int MaxAccounts = 32;
+
+    /// <summary>
+    /// Puts back into the queue any job parked for one of these accounts. A per-user install cannot run
+    /// until the person who asked for it is signed in, and this is how the agent says they now are.
+    /// A parked job holds no lease, so the installs behind it run past it rather than waiting.
+    /// </summary>
+    public int Resume(string deviceId, IReadOnlyList<string> accounts)
+    {
+        if (accounts.Count == 0)
+        {
+            return 0;
+        }
+
+        var now = _time.GetUtcNow();
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        var resumed = new List<string>();
+        foreach (var account in accounts.Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxAccounts))
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            // Windows compares account names without regard to case, so this has to as well.
+            command.CommandText = """
+                UPDATE agent_jobs SET state = 'queued', updated_at = @now
+                WHERE device_id = @device AND state = 'waiting_for_user'
+                  AND requester IS NOT NULL AND requester = @account COLLATE NOCASE
+                RETURNING install_id;
+                """;
+            command.Parameters.AddWithValue("@device", deviceId);
+            command.Parameters.AddWithValue("@account", account);
+            command.Parameters.AddWithValue("@now", SqlTime.From(now));
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                resumed.Add(reader.GetString(0));
+            }
+        }
+
+        foreach (var installId in resumed)
+        {
+            Mirror(connection, transaction, installId, "queued", 0, "Waiting for the agent.", now);
+        }
+
+        transaction.Commit();
+        return resumed.Count;
     }
 
     public bool Progress(string deviceId, string id, AgentJobProgress progress, int? attempt = null)
@@ -98,7 +149,8 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
 
     private bool Update(string deviceId, string id, string state, int? percent, string? detail, int? attempt)
     {
-        if (state is not ("queued" or "downloading" or "installing" or "succeeded" or "failed" or "cancelled")
+        if (state is not ("queued" or "downloading" or "installing" or "waiting_for_user"
+                          or "succeeded" or "failed" or "cancelled")
             || percent is < 0 or > 100)
         {
             return false;
@@ -170,6 +222,40 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
         {
             Mirror(connection, transaction, installId, state, 0,
                 state == "failed" ? "Agent lease expired after three attempts." : "Waiting for the agent to retry.", now);
+        }
+
+        FailAbandoned(connection, transaction, now);
+    }
+
+    /// <summary>
+    /// Gives up on a job whose person never came back. A week is long enough for a holiday and short
+    /// enough that the card does not sit there saying it is waiting for ever. It runs inside the sweep
+    /// above rather than on its own, so it costs no extra connection and no extra transaction.
+    /// </summary>
+    private static void FailAbandoned(SqliteConnection connection, SqliteTransaction transaction, DateTimeOffset now)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE agent_jobs SET state = 'failed', updated_at = @now
+            WHERE state = 'waiting_for_user' AND updated_at <= @cutoff
+            RETURNING install_id, requester;
+            """;
+        command.Parameters.AddWithValue("@now", SqlTime.From(now));
+        command.Parameters.AddWithValue("@cutoff", SqlTime.From(now.AddDays(-7)));
+        var abandoned = new List<(string InstallId, string? Requester)>();
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                abandoned.Add((reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1)));
+            }
+        }
+
+        foreach (var (installId, requester) in abandoned)
+        {
+            var who = string.IsNullOrWhiteSpace(requester) ? "the person who asked" : requester;
+            Mirror(connection, transaction, installId, "failed", 0, $"Nobody signed in as {who} within 7 days.", now);
         }
     }
 

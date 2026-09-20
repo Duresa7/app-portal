@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
 using AppPortal.Agent.Executors;
+using AppPortal.Agent.Sessions;
 using AppPortal.Shared;
 
 namespace AppPortal.Agent.Jobs;
@@ -15,11 +16,19 @@ public sealed class SoftwareReporter(
     HttpClient http,
     IProcessRunner processes,
     ILogger<SoftwareReporter> logger,
+    IUserSessionLauncher? sessions = null,
     WingetLocator? locator = null)
 {
+    private const string ListArguments = "list --accept-source-agreements --disable-interactivity";
+
     private readonly WingetLocator _locator = locator ?? new WingetLocator();
 
-    public async Task ReportAsync(PortalSettings settings, CancellationToken ct)
+    /// <summary>
+    /// What this device carries. With an account, what that person's own profile carries: the sweep
+    /// runs inside their session, because software installed into a profile is invisible from outside
+    /// it, which is the same reason the install had to run there in the first place.
+    /// </summary>
+    public async Task ReportAsync(PortalSettings settings, CancellationToken ct, string? account = null)
     {
         try
         {
@@ -29,8 +38,25 @@ public sealed class SoftwareReporter(
                 return;
             }
 
-            var result = await processes.RunAsync(executable,
-                "list --accept-source-agreements --disable-interactivity", null, TimeSpan.FromMinutes(5), ct);
+            ProcessResult? result;
+            if (account is null)
+            {
+                result = await processes.RunAsync(executable, ListArguments, null, TimeSpan.FromMinutes(5), ct);
+            }
+            else if (sessions is null)
+            {
+                return;
+            }
+            else
+            {
+                result = await sessions.RunAsAsync(account, executable, ListArguments, null, TimeSpan.FromMinutes(5), ct);
+                if (result is null)
+                {
+                    // They signed out between the install and the sweep. Their list keeps what it had.
+                    return;
+                }
+            }
+
             var software = WingetList.Parse(result.Output);
             if (software.Count == 0)
             {
@@ -39,8 +65,11 @@ public sealed class SoftwareReporter(
                 return;
             }
 
+            var route = account is null
+                ? "api/v1/agent/software"
+                : "api/v1/agent/software?account=" + Uri.EscapeDataString(account);
             using var request = new HttpRequestMessage(HttpMethod.Post,
-                new Uri(new Uri(settings.ServerUrl.TrimEnd('/') + "/"), "api/v1/agent/software"));
+                new Uri(new Uri(settings.ServerUrl.TrimEnd('/') + "/"), route));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.DeviceToken);
             request.Content = JsonContent.Create(software);
             using var response = await http.SendAsync(request, ct);

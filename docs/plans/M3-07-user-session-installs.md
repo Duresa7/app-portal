@@ -21,7 +21,7 @@ An agent package marked `scope: "user"` runs in the session of the person who as
 - `IUserSessionLauncher` in the agent: `Task<ProcessResult> StartAsync(string account, string file, string arguments, IProgress<...> p, CancellationToken ct)`. The Windows implementation finds the session whose owner matches `account` through `WTSEnumerateSessions` and `WTSQuerySessionInformation`, takes the token with `WTSQueryUserToken`, duplicates it with `DuplicateTokenEx`, builds the block with `CreateEnvironmentBlock`, and starts the process with `CreateProcessAsUser` on `winsta0\default`. It does not elevate: a per-user installer must not need it, and a per-user installer that asks for elevation is a packaging error the detail should name.
 - Job state `waiting_for_user`, added to the set in M3-02. A user-scope job whose requester is not signed in parks in this state instead of failing, and the agent starts it when that account next signs in. A job parked longer than 7 days fails with "Nobody signed in as DOMAIN\user within 7 days".
 - Executors honour the scope. winget passes `--scope user`. A direct `exe` or `msi` runs through the launcher. A direct `msix` uses `Add-AppxPackage` in the session for user scope and keeps `Add-AppxProvisionedPackage` for machine scope; `silentArgs` is not used for either.
-- Download stays with the service. The agent downloads to `%ProgramData%\AppPortal\downloads` as SYSTEM and grants the target account read access on the verified file, so a large download is not repeated per person and an unprivileged session never writes into the cache.
+- Download stays with the service. The agent downloads to `%ProgramData%\AppPortal\downloads` as SYSTEM, so a large download is not repeated per person and an unprivileged session never writes into the cache. No access has to be granted: the MSI already gives Users read and execute on that tree, so the session runs what SYSTEM fetched without a second copy.
 - Per-user inventory: `device_software` gains `account TEXT` (NULL for machine-wide) through migration 011. `GET /api/v1/device/installed` returns machine-wide software plus the calling requester's own, never another person's.
 - Client shows "Installs for you" under the button on a user-scope app, so the difference is visible before the install rather than discovered after it.
 
@@ -31,6 +31,14 @@ An agent package marked `scope: "user"` runs in the session of the person who as
 ## Interface
 
 `IUserSessionLauncher` above. Job state `waiting_for_user`. `device_software.account`. Install detail strings: "Waiting for DOMAIN\user to sign in", "Installing for DOMAIN\user".
+
+Five things differ from this plan as written, and the code is what shipped:
+
+- The migrations are **012** (`agent_jobs.requester`) and **013** (`device_software.account`), not 011, which the winget executor took. 013 rebuilds the table rather than altering it, because SQLite cannot widen a primary key and the table holds only a cache of what the agent last reported.
+- A parked job is put back by the server when the agent says the account is signed in, through the `X-AppPortal-Sessions` header on the existing job poll. No new route: the agent already asks for work every twenty-five seconds, and sending the list every time means a sign-in it missed while restarting cannot strand a job.
+- Parking holds no lease, so the installs behind it run past it. That is what makes a seven-day wait affordable at all.
+- The job carries the requester, and `IPackageExecutor.RunAsync` takes a `JobContext` of the job id and that account rather than growing another parameter per package.
+- The session launcher captures output through a pipe. The plan did not ask for it, and without it a per-user install would write nothing to its job log, which is the only way a failure on a device nobody can reach is ever diagnosed. It is also what lets the per-user inventory sweep read anything back.
 
 ## Steps
 

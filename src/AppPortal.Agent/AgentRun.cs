@@ -2,6 +2,7 @@ using AppPortal.Agent.Downloads;
 using AppPortal.Agent.Enrollment;
 using AppPortal.Agent.Executors;
 using AppPortal.Agent.Jobs;
+using AppPortal.Agent.Sessions;
 using AppPortal.Shared;
 
 namespace AppPortal.Agent;
@@ -53,7 +54,16 @@ public static class AgentRun
             Path.Combine(stateDirectory, "agent.json"), once, provider.GetRequiredService<EnrollmentService>()));
         builder.Services.AddHostedService(provider => provider.GetRequiredService<HeartbeatWorker>());
         builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
-        builder.Services.AddSingleton<SoftwareReporter>();
+        // Away from Windows there are no sessions to run in, so every per-user install parks rather
+        // than running somewhere it should not.
+        builder.Services.AddSingleton<IUserSessionLauncher>(provider => OperatingSystem.IsWindows()
+            ? new WindowsUserSessions(provider.GetRequiredService<ILogger<WindowsUserSessions>>())
+            : new NoUserSessions());
+        builder.Services.AddSingleton(provider => new SoftwareReporter(
+            provider.GetRequiredService<HttpClient>(),
+            provider.GetRequiredService<IProcessRunner>(),
+            provider.GetRequiredService<ILogger<SoftwareReporter>>(),
+            provider.GetRequiredService<IUserSessionLauncher>()));
         builder.Services.AddSingleton(provider => new InstallerCache(
             Path.Combine(stateDirectory, "downloads"), provider.GetRequiredService<ILogger<InstallerCache>>()));
         builder.Services.AddSingleton(provider => new ResumableDownload(
@@ -65,11 +75,13 @@ public static class AgentRun
             provider.GetRequiredService<ResumableDownload>(),
             provider.GetRequiredService<IProcessRunner>(),
             provider.GetRequiredService<ILogger<DirectInstallerExecutor>>(),
-            stateDirectory));
+            stateDirectory,
+            provider.GetRequiredService<IUserSessionLauncher>()));
         builder.Services.AddSingleton<IPackageExecutor>(provider => new WingetExecutor(
             provider.GetRequiredService<IProcessRunner>(),
             provider.GetRequiredService<ILogger<WingetExecutor>>(),
-            stateDirectory));
+            stateDirectory,
+            provider.GetRequiredService<IUserSessionLauncher>()));
         if (!once)
         {
             // Not in a single-shot run: the job loop long-polls for twenty-five seconds, and a run whose
@@ -78,7 +90,8 @@ public static class AgentRun
                 provider.GetRequiredService<HttpClient>(),
                 provider.GetServices<IPackageExecutor>(),
                 provider.GetRequiredService<ILogger<JobRunner>>(),
-                software: provider.GetRequiredService<SoftwareReporter>()));
+                software: provider.GetRequiredService<SoftwareReporter>(),
+                sessions: provider.GetRequiredService<IUserSessionLauncher>()));
         }
         using var host = builder.Build();
         // Take the worker before the run. RunAsync disposes the host on shutdown, so asking the provider

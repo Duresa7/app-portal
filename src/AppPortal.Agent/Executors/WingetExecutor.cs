@@ -1,4 +1,5 @@
 using AppPortal.Agent.Jobs;
+using AppPortal.Agent.Sessions;
 using AppPortal.Shared;
 
 namespace AppPortal.Agent.Executors;
@@ -12,6 +13,7 @@ public sealed class WingetExecutor(
     IProcessRunner processes,
     ILogger<WingetExecutor> logger,
     string stateDirectory,
+    IUserSessionLauncher sessions,
     WingetLocator? locator = null,
     TimeSpan? timeout = null) : IPackageExecutor
 {
@@ -31,7 +33,7 @@ public sealed class WingetExecutor(
 
     public string Kind => "winget";
 
-    public async Task<ExecutionResult> RunAsync(string jobId, PackageDefinition definition,
+    public async Task<ExecutionResult> RunAsync(JobContext job, PackageDefinition definition,
         IProgress<(int percent, string detail)> progress, CancellationToken ct)
     {
         if (definition is not WingetPackageDefinition winget)
@@ -39,11 +41,11 @@ public sealed class WingetExecutor(
             return new ExecutionResult(false, "This job is not a winget package.");
         }
 
-        if (winget.Scope == "user")
+        if (winget.Scope == "user" && string.IsNullOrWhiteSpace(job.Requester))
         {
-            // M3-07 runs an installer inside the session of the person who asked. Until it does, saying
-            // so plainly beats installing into the service account's profile and reporting success.
-            return new ExecutionResult(false, "This package installs for one person, and the agent cannot yet run in a user session.");
+            // Without an account there is no profile to install into, and guessing at one would put
+            // somebody else's software on their desktop.
+            return new ExecutionResult(false, "This package installs for one person, and the install does not say who asked.");
         }
 
         var executable = _locator.Find();
@@ -52,16 +54,31 @@ public sealed class WingetExecutor(
             return new ExecutionResult(false, "winget is not installed on this PC. Install the App Installer from the Microsoft Store.");
         }
 
-        var log = new JobLog(stateDirectory, jobId);
+        var log = new JobLog(stateDirectory, job.JobId);
         await UpdateSourcesAsync(executable, log, ct);
 
-        progress.Report((0, "Installing"));
         var arguments = Arguments(winget);
         log.Write($"winget {arguments}");
-        ProcessResult result;
+        ProcessResult? result;
         try
         {
-            result = await processes.RunAsync(executable, arguments, line => Report(line, log, progress), _timeout, ct);
+            if (winget.Scope == "user")
+            {
+                progress.Report((0, $"Installing for {job.Requester}"));
+                result = await sessions.RunAsAsync(job.Requester!, executable, arguments, log.Write, _timeout, ct);
+                if (result is null)
+                {
+                    // Not a failure. The person who asked is simply not at the PC yet, and the server
+                    // parks the job until they are.
+                    log.Write($"waiting for {job.Requester} to sign in");
+                    return new ExecutionResult(false, $"Waiting for {job.Requester} to sign in.", null, WaitingForUser: true);
+                }
+            }
+            else
+            {
+                progress.Report((0, "Installing"));
+                result = await processes.RunAsync(executable, arguments, line => Report(line, log, progress), _timeout, ct);
+            }
         }
         catch (TimeoutException ex)
         {

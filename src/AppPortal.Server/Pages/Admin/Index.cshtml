@@ -1,0 +1,28 @@
+@page "/admin"
+@model IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+    ViewData["Nav"] = "dashboard";
+}
+<div class="tiles">
+    <div class="card tile">
+        <div class="value">@Model.Devices</div>
+        <div class="label">Devices</div>
+    </div>
+    <div class="card tile">
+        <div class="value">@Model.InstallsToday</div>
+        <div class="label">Installs today</div>
+    </div>
+    <div class="card tile">
+        <div class="value">@Model.PendingRequests</div>
+        <div class="label">Pending requests</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Getting started</h2>
+    <p class="muted">
+        The pages for installs, catalog, requests, devices and enrollment keys arrive with the packages
+        that own them. Administrators can be managed now.
+    </p>
+</div>

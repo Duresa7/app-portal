@@ -1,4 +1,5 @@
 using AppPortal.Server.Action1;
+using AppPortal.Server.Admin;
 using AppPortal.Server.Api;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Cli;
@@ -33,6 +34,8 @@ builder.Services.AddOptions<Action1Options>().Bind(builder.Configuration.GetSect
 builder.Services.AddOptions<PortalOptions>().Bind(builder.Configuration.GetSection(PortalOptions.Section));
 
 builder.Services.AddSingleton<Database>();
+builder.Services.AddSingleton<AdminStore>();
+builder.Services.AddSingleton<AdminSessionStore>();
 builder.Services.AddSingleton<LegacyImport>();
 builder.Services.AddSingleton<CatalogStore>();
 builder.Services.AddSingleton<DeviceStore>();
@@ -53,6 +56,9 @@ else
         client.DefaultRequestHeaders.UserAgent.ParseAdd("AppPortal.Server/0.1");
     });
 }
+
+builder.Services.AddRazorPages();
+builder.Services.AddAdminAuthentication();
 
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
@@ -81,6 +87,11 @@ if (args.Length > 0 && args[0] == "device")
     return DeviceCli.Run(args, app.Services.GetRequiredService<DeviceStore>(), Console.Out);
 }
 
+if (args.Length > 0 && args[0] == "admin")
+{
+    return AdminCli.Run(args, app.Services.GetRequiredService<AdminStore>(), app.Services.GetRequiredService<AdminSessionStore>(), Console.Out);
+}
+
 if (args.Length > 0 && args[0] is "catalog" or "packages")
 {
     return await CatalogCli.RunAsync(args, app.Services.GetRequiredService<CatalogStore>(), app.Services.GetRequiredService<IAction1Client>(), Console.Out, CancellationToken.None);
@@ -90,12 +101,30 @@ var options = app.Services.GetRequiredService<IOptions<Action1Options>>().Value;
 app.Logger.LogInformation("Action1 mode: {Mode}; base URL {BaseUrl}; organization {Org}",
     options.IsFake ? "Fake" : "Live", options.BaseUrl, string.IsNullOrEmpty(options.OrgId) ? "(not set)" : "(set)");
 
+if (app.Services.GetRequiredService<AdminStore>().None())
+{
+    app.Logger.LogWarning(
+        "No administrator exists yet, so /admin cannot be signed in to. Create one with: " +
+        "dotnet AppPortal.Server.dll admin add --username <name>");
+}
+
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 
-app.UseWhen(context => context.Request.Path.StartsWithSegments(ApiRoutes.Prefix), branch =>
-    branch.UseMiddleware<DeviceAuthenticationMiddleware>());
+// The device bearer middleware guards the device API only. Admin JSON routes sit under the same
+// /api/v1 prefix but authenticate with an apa_ token against the session table, so they are excluded
+// here and guarded by the Admin policy instead.
+app.UseWhen(
+    context => context.Request.Path.StartsWithSegments(ApiRoutes.Prefix)
+               && !context.Request.Path.StartsWithSegments(AdminSessionApi.Prefix),
+    branch => branch.UseMiddleware<DeviceAuthenticationMiddleware>());
+
+app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapPortalApi();
+app.MapAdminSessionApi();
+app.MapRazorPages();
 
 app.Run();
 return 0;

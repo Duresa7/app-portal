@@ -1,0 +1,53 @@
+@inject IAdminContext Admin
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@{
+    var token = Antiforgery.GetAndStoreTokens(Context).RequestToken;
+    var nav = ViewData["Nav"] as string ?? "";
+    string On(string key) => nav == key ? "nav-item current" : "nav-item";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@(ViewData["Title"] ?? "App Portal")</title>
+    <link rel="stylesheet" href="~/admin/site.css" />
+    <script src="~/admin/htmx-2.0.4.min.js" defer></script>
+</head>
+@* Every htmx request inherits the token from here, so no form has to remember it. *@
+<body hx-headers='@($"{{\"RequestVerificationToken\": \"{token}\"}}")'>
+@if (Admin.IsSignedIn)
+{
+    <div class="shell">
+        <nav class="pane">
+            <div class="brand">App Portal</div>
+            <a class="@On("dashboard")" href="/admin">Dashboard</a>
+            <a class="@On("installs")" href="/admin/installs">Installs</a>
+            <a class="@On("catalog")" href="/admin/catalog">Catalog</a>
+            <a class="@On("requests")" href="/admin/requests">Requests</a>
+            <a class="@On("devices")" href="/admin/devices">Devices</a>
+            <a class="@On("keys")" href="/admin/keys">Enrollment keys</a>
+            <a class="@On("admins")" href="/admin/admins">Admins</a>
+            <div class="spacer"></div>
+            <div class="signed-in">
+                <span class="who">@Admin.Username</span>
+                <form method="post" action="/admin/logout">
+                    @Html.AntiForgeryToken()
+                    <button class="link" type="submit">Sign out</button>
+                </form>
+            </div>
+        </nav>
+        <main class="content">
+            <h1>@(ViewData["Title"] ?? "")</h1>
+            @RenderBody()
+        </main>
+    </div>
+}
+else
+{
+    <main class="centred">
+        @RenderBody()
+    </main>
+}
+</body>
+</html>

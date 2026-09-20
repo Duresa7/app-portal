@@ -60,16 +60,19 @@ var app = builder.Build();
 
 // Before anything reads a store, and before the CLI branches below: the database is the only place
 // catalog, devices and history live, so a file that cannot be opened or migrated is fatal rather than
-// something to serve around with empty data.
-var database = app.Services.GetRequiredService<Database>();
+// something to serve around with empty data. Resolving the service happens inside the try because the
+// constructor creates the data directory, and an unwritable volume refuses there before any migration.
+Database? database = null;
 try
 {
+    database = app.Services.GetRequiredService<Database>();
     database.Migrate();
     app.Services.GetRequiredService<LegacyImport>().Run();
 }
 catch (Exception ex)
 {
-    app.Logger.LogCritical(ex, "The database at {Path} could not be opened or migrated", database.Path);
+    app.Logger.LogCritical(ex, "The database at {Path} could not be opened or migrated",
+        database?.Path ?? "the configured data directory");
     return 1;
 }
 

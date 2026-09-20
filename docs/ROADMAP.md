@@ -42,7 +42,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M1-07](plans/M1-07-install-history-pages.md) | Install history pages | M1-02, M1-03 | Done |
 | [M1-08](plans/M1-08-enrollment-key-pages.md) | Enrollment key management | M1-03 | Done |
 | [M1-09](plans/M1-09-device-admin-pages.md) | Device management pages | M1-03 | Done |
-| [M1-10](plans/M1-10-release-0.3.0.md) | Release 0.3.0 | M1-04, M1-05, M1-06, M1-07, M1-08, M1-09 | In review |
+| [M1-10](plans/M1-10-release-0.3.0.md) | Release 0.3.0 | M1-04, M1-05, M1-06, M1-07, M1-08, M1-09 | Done |
 | [M2-01](plans/M2-01-enrollment-api.md) | Enrollment API | M1-08, M1-09 | Open |
 | [M2-02](plans/M2-02-agent-service.md) | Agent service skeleton and heartbeat | M1-09 | Open |
 | [M2-03](plans/M2-03-msi-packaging.md) | MSI packaging of client and agent | M2-02 | Open |
@@ -63,7 +63,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M4-05](plans/M4-05-client-devices-keys-admins.md) | Client admin: devices, keys, admins | M4-02 | Open |
 | [M4-06](plans/M4-06-release-0.6.0.md) | Release 0.6.0 | M4-03, M4-04, M4-05 | Open |
 
-M1-10 remains In review until a human pushes `v0.3.0` and the release run, downloadable assets and public server image are verified. Merging its preparation PR does not publish the release.
+Milestone 1 shipped as [v0.3.0](https://github.com/Duresa7/app-portal/releases/tag/v0.3.0). The [release gate](https://github.com/Duresa7/app-portal/actions/runs/35485822532) passed, the downloaded client archive matched `SHA256SUMS`, and `ghcr.io/duresa7/app-portal-server:0.3.0` was pulled without registry credentials. The upgrade check used a copied 0.2.1 fake-mode data volume; validate a copy of production data before upgrading a live deployment.
 
 ## Dependency graph
 

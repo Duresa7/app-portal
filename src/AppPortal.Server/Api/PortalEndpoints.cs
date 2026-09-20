@@ -39,7 +39,8 @@ public static class PortalEndpoints
             var device = DeviceAuthenticationMiddleware.Current(context);
             try
             {
-                return Results.Ok(await installs.InstalledAppsAsync(device, ct));
+                // Their own per-user software as well as the device's, and nobody else's.
+                return Results.Ok(await installs.InstalledAppsAsync(device, ct, DeviceAuthenticationMiddleware.RequestedBy(context)));
             }
             catch (Action1Exception ex)
             {

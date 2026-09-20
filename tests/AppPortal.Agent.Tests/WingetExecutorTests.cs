@@ -1,5 +1,6 @@
 using AppPortal.Agent.Executors;
 using AppPortal.Agent.Jobs;
+using AppPortal.Agent.Sessions;
 using AppPortal.Shared;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,7 +25,7 @@ public sealed class WingetExecutorTests : IDisposable
             return new ProcessResult(0, "Successfully installed");
         }));
 
-        var result = await executor.RunAsync("job-1", Package, new Progress(), CancellationToken.None);
+        var result = await executor.RunAsync(new JobContext("job-1", null), Package, new Progress(), CancellationToken.None);
 
         Assert.True(result.Ok);
         Assert.NotNull(command);
@@ -55,7 +56,7 @@ public sealed class WingetExecutorTests : IDisposable
     public async Task Exit_codes_that_mean_nothing_to_do_are_not_failures(int exitCode, bool ok, string detail)
     {
         var result = await Executor(new FakeProcesses((_, _) => new ProcessResult(exitCode, "")))
-            .RunAsync("job-1", Package, new Progress(), CancellationToken.None);
+            .RunAsync(new JobContext("job-1", null), Package, new Progress(), CancellationToken.None);
 
         Assert.Equal(ok, result.Ok);
         Assert.Equal(detail, result.Detail);
@@ -68,7 +69,7 @@ public sealed class WingetExecutorTests : IDisposable
         // This is what a per-user package answers a machine-scope install, and the raw code tells the
         // administrator nothing about what to change.
         var result = await Executor(new FakeProcesses((_, _) => new ProcessResult(unchecked((int)0x8A15002B), "")))
-            .RunAsync("job-1", Package, new Progress(), CancellationToken.None);
+            .RunAsync(new JobContext("job-1", null), Package, new Progress(), CancellationToken.None);
 
         Assert.False(result.Ok);
         Assert.Equal("No installer for Valve.Steam matches this PC at machine scope.", result.Detail);
@@ -78,7 +79,7 @@ public sealed class WingetExecutorTests : IDisposable
     public async Task An_unknown_failure_carries_the_end_of_the_output()
     {
         var result = await Executor(new FakeProcesses((_, _) => new ProcessResult(1, "resolving\nInstaller hash does not match")))
-            .RunAsync("job-1", Package, new Progress(), CancellationToken.None);
+            .RunAsync(new JobContext("job-1", null), Package, new Progress(), CancellationToken.None);
 
         Assert.False(result.Ok);
         Assert.Contains("exit code 1", result.Detail);
@@ -86,28 +87,59 @@ public sealed class WingetExecutorTests : IDisposable
     }
 
     [Fact]
-    public async Task A_per_user_package_is_refused_in_words_rather_than_installed_for_nobody()
+    public async Task A_per_user_package_runs_in_the_session_of_the_person_who_asked()
     {
-        var ran = false;
-        var result = await Executor(new FakeProcesses((_, _) =>
+        var asService = new List<string>();
+        var sessions = new FakeSessions(@"CONTOSO\\ada");
+        var result = await Executor(new FakeProcesses((_, arguments) =>
             {
-                ran = true;
+                asService.Add(arguments);
                 return new ProcessResult(0, "");
-            }))
-            .RunAsync("job-1", Package with { Scope = "user" }, new Progress(), CancellationToken.None);
+            }), sessions)
+            .RunAsync(new JobContext("job-1", @"CONTOSO\\ada"), Package with { Scope = "user" }, new Progress(), CancellationToken.None);
+
+        Assert.True(result.Ok);
+        // As her, never as the service account, whose profile she would never find the software in.
+        // Refreshing the package index still runs as the service, which is right; installing does not.
+        Assert.DoesNotContain(asService, arguments => arguments.StartsWith("install"));
+        var started = Assert.Single(sessions.Started);
+        Assert.Equal(@"CONTOSO\\ada", started.Account);
+        Assert.Contains("--scope user", started.Arguments);
+    }
+
+    [Fact]
+    public async Task A_per_user_package_parks_when_the_person_who_asked_is_not_signed_in()
+    {
+        // Somebody else being at the PC is not good enough: the software would land in their profile.
+        var sessions = new FakeSessions(@"CONTOSO\\bob");
+
+        var result = await Executor(new FakeProcesses((_, _) => new ProcessResult(0, "")), sessions)
+            .RunAsync(new JobContext("job-1", @"CONTOSO\\ada"), Package with { Scope = "user" }, new Progress(), CancellationToken.None);
+
+        Assert.True(result.WaitingForUser);
+        Assert.False(result.Ok);
+        Assert.Equal(@"Waiting for CONTOSO\\ada to sign in.", result.Detail);
+        Assert.Empty(sessions.Started);
+    }
+
+    [Fact]
+    public async Task A_per_user_package_with_nobody_named_says_so_rather_than_guessing()
+    {
+        var result = await Executor(new FakeProcesses((_, _) => new ProcessResult(0, "")), new FakeSessions(@"CONTOSO\\ada"))
+            .RunAsync(new JobContext("job-1", null), Package with { Scope = "user" }, new Progress(), CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.Contains("cannot yet run in a user session", result.Detail);
-        Assert.False(ran);
+        Assert.False(result.WaitingForUser);
+        Assert.Contains("does not say who asked", result.Detail);
     }
 
     [Fact]
     public async Task A_missing_winget_says_so_instead_of_failing_obscurely()
     {
         var executor = new WingetExecutor(new FakeProcesses((_, _) => new ProcessResult(0, "")),
-            NullLogger<WingetExecutor>.Instance, _root, new WingetLocator(Path.Combine(_root, "absent")));
+            NullLogger<WingetExecutor>.Instance, _root, new FakeSessions(), new WingetLocator(Path.Combine(_root, "absent")));
 
-        var result = await executor.RunAsync("job-1", Package, new Progress(), CancellationToken.None);
+        var result = await executor.RunAsync(new JobContext("job-1", null), Package, new Progress(), CancellationToken.None);
 
         Assert.False(result.Ok);
         Assert.Contains("winget is not installed", result.Detail);
@@ -128,12 +160,12 @@ public sealed class WingetExecutorTests : IDisposable
         });
 
         var executor = Executor(processes);
-        await executor.RunAsync("job-1", Package, new Progress(), CancellationToken.None);
-        await executor.RunAsync("job-2", Package, new Progress(), CancellationToken.None);
+        await executor.RunAsync(new JobContext("job-1", null), Package, new Progress(), CancellationToken.None);
+        await executor.RunAsync(new JobContext("job-2", null), Package, new Progress(), CancellationToken.None);
         Assert.Equal(1, updates);
 
         File.SetLastWriteTimeUtc(Path.Combine(_root, "winget-source-updated"), DateTime.UtcNow.AddDays(-2));
-        await executor.RunAsync("job-3", Package, new Progress(), CancellationToken.None);
+        await executor.RunAsync(new JobContext("job-3", null), Package, new Progress(), CancellationToken.None);
         Assert.Equal(2, updates);
     }
 
@@ -141,7 +173,7 @@ public sealed class WingetExecutorTests : IDisposable
     public async Task Everything_the_run_printed_is_kept_beside_the_job_id()
     {
         await Executor(new FakeProcesses((_, _) => new ProcessResult(0, ""), "Downloading 40%"))
-            .RunAsync("job-42", Package, new Progress(), CancellationToken.None);
+            .RunAsync(new JobContext("job-42", null), Package, new Progress(), CancellationToken.None);
 
         var log = File.ReadAllText(Path.Combine(_root, "jobs", "job-42.log"));
         Assert.Contains("Downloading 40%", log);
@@ -155,20 +187,20 @@ public sealed class WingetExecutorTests : IDisposable
         var progress = new Progress(reports.Add);
 
         await Executor(new FakeProcesses((_, _) => new ProcessResult(0, ""), "Downloading  43.0%", "Starting package install..."))
-            .RunAsync("job-1", Package, progress, CancellationToken.None);
+            .RunAsync(new JobContext("job-1", null), Package, progress, CancellationToken.None);
 
         Assert.Contains((43, "Downloading 43%"), reports);
         Assert.Contains(reports, r => r.detail == "Installing");
     }
 
-    private WingetExecutor Executor(IProcessRunner processes)
+    private WingetExecutor Executor(IProcessRunner processes, IUserSessionLauncher? sessions = null)
     {
         // A directory shaped like the real WindowsApps, so the locator has something to find.
         var apps = Path.Combine(_root, "WindowsApps", "Microsoft.DesktopAppInstaller_1.22.0.0_x64__8wekyb3d8bbwe");
         Directory.CreateDirectory(apps);
         File.WriteAllText(Path.Combine(apps, "winget.exe"), "");
         return new WingetExecutor(processes, NullLogger<WingetExecutor>.Instance, _root,
-            new WingetLocator(Path.Combine(_root, "WindowsApps")));
+            sessions ?? new FakeSessions(), new WingetLocator(Path.Combine(_root, "WindowsApps")));
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);

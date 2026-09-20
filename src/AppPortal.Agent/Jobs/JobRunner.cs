@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Channels;
 
+using AppPortal.Agent.Sessions;
 using AppPortal.Shared;
 
 namespace AppPortal.Agent.Jobs;
@@ -14,7 +15,8 @@ public sealed class JobRunner(
     ILogger<JobRunner> logger,
     Func<PortalSettings>? loadSettings = null,
     TimeSpan? renewalInterval = null,
-    SoftwareReporter? software = null) : BackgroundService
+    SoftwareReporter? software = null,
+    IUserSessionLauncher? sessions = null) : BackgroundService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -52,7 +54,7 @@ public sealed class JobRunner(
 
     public async Task RunOnceAsync(PortalSettings settings, CancellationToken ct)
     {
-        using var response = await SendAsync(settings, HttpMethod.Get, "jobs?wait=25", null, ct);
+        using var response = await SendAsync(settings, HttpMethod.Get, "jobs?wait=25", null, ct, SignedIn());
         if (response.StatusCode == HttpStatusCode.NoContent)
         {
             return;
@@ -68,6 +70,9 @@ public sealed class JobRunner(
 
         var route = $"jobs/{Uri.EscapeDataString(id)}";
         var attempt = $"?attempt={(root.TryGetProperty("attempt", out var a) ? a.GetInt32() : 0)}";
+        var requester = root.TryGetProperty("requester", out var r) && r.ValueKind == JsonValueKind.String
+            ? r.GetString()
+            : null;
 
         // The definition is read apart from the rest of the job on purpose. A server newer than this
         // agent can describe a kind this build has no type for, and deserialising the whole job would
@@ -94,7 +99,7 @@ public sealed class JobRunner(
         try
         {
             var executor = _executors.GetValueOrDefault(definition.Kind) ?? _fallback;
-            execution = ExecuteAsync(executor, id, definition, progress, running.Token);
+            execution = ExecuteAsync(executor, new JobContext(id, requester), definition, progress, running.Token);
             var first = await Task.WhenAny(execution, reporting);
             if (first == reporting)
             {
@@ -104,13 +109,25 @@ public sealed class JobRunner(
             var result = await execution;
             progress.Updates.Writer.TryComplete();
             await reporting;
+            if (result.WaitingForUser)
+            {
+                // Parked, not finished. The job leaves this device's queue without a completion, and
+                // the server puts it back when the account that asked for it signs in.
+                using var parked = await SendAsync(settings, HttpMethod.Post, route + "/progress" + attempt,
+                    new AgentJobProgress("waiting_for_user", 0, result.Detail), ct);
+                return;
+            }
+
             using var completed = await SendAsync(settings, HttpMethod.Post, route + "/complete" + attempt,
                 new AgentJobCompletion(result.Ok, result.Detail, result.ExitCode), ct);
             if (result.Ok && software is not null)
             {
                 // After the completion, not before it. The install is finished either way, and the
                 // person waiting on the card should not wait for an inventory sweep to say so.
-                await software.ReportAsync(settings, ct);
+                // A per-user install is swept inside that person's session, because what it put in
+                // their profile cannot be seen from outside it.
+                var perUser = definition.Scope == "user" ? requester : null;
+                await software.ReportAsync(settings, ct, perUser);
             }
         }
         catch
@@ -155,12 +172,12 @@ public sealed class JobRunner(
         }
     }
 
-    private static async Task<ExecutionResult> ExecuteAsync(IPackageExecutor executor, string jobId, PackageDefinition definition,
+    private static async Task<ExecutionResult> ExecuteAsync(IPackageExecutor executor, JobContext job, PackageDefinition definition,
         IProgress<(int percent, string detail)> progress, CancellationToken ct)
     {
         try
         {
-            return await executor.RunAsync(jobId, definition, progress, ct);
+            return await executor.RunAsync(job, definition, progress, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -201,7 +218,26 @@ public sealed class JobRunner(
         }
     }
 
-    private async Task<HttpResponseMessage> SendAsync(PortalSettings settings, HttpMethod method, string route, object? body, CancellationToken ct)
+    /// <summary>
+    /// Who is at the PC now. Sent on every poll rather than only when it changes, so a sign-in the
+    /// agent missed because it was restarting cannot leave a job parked for ever.
+    /// </summary>
+    private string? SignedIn()
+    {
+        try
+        {
+            var accounts = sessions?.SignedInAccounts() ?? [];
+            return accounts.Count == 0 ? null : string.Join(',', accounts);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Could not read the signed-in accounts ({Reason})", ex.GetType().Name);
+            return null;
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(PortalSettings settings, HttpMethod method, string route,
+        object? body, CancellationToken ct, string? signedIn = null)
     {
         if (!settings.IsConfigured)
         {
@@ -210,6 +246,11 @@ public sealed class JobRunner(
 
         using var request = new HttpRequestMessage(method, new Uri(new Uri(settings.ServerUrl.TrimEnd('/') + "/"), "api/v1/agent/" + route));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.DeviceToken);
+        if (signedIn is not null)
+        {
+            request.Headers.TryAddWithoutValidation(ApiHeaders.SignedInAccounts, signedIn);
+        }
+
         if (body is not null)
         {
             request.Content = JsonContent.Create(body);

@@ -9,12 +9,21 @@ namespace AppPortal.Server.Devices;
 /// </summary>
 public sealed class DeviceSoftwareStore(Database database)
 {
-    public IReadOnlyList<InstalledSoftware> ForDevice(string deviceId)
+    /// <summary>
+    /// What this device carries for everyone, plus what it carries for one account. Another person's
+    /// per-user software is never returned: it is theirs, and the person asking did not install it.
+    /// </summary>
+    public IReadOnlyList<InstalledSoftware> ForDevice(string deviceId, string? account = null)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT name, version FROM device_software WHERE device_id = @device ORDER BY name;";
+        command.CommandText = """
+            SELECT name, version FROM device_software
+            WHERE device_id = @device AND (account = '' OR account = @account COLLATE NOCASE)
+            ORDER BY name;
+            """;
         command.Parameters.AddWithValue("@device", deviceId);
+        command.Parameters.AddWithValue("@account", (object?)account ?? "");
         using var reader = command.ExecuteReader();
         var found = new List<InstalledSoftware>();
         while (reader.Read())
@@ -25,14 +34,19 @@ public sealed class DeviceSoftwareStore(Database database)
         return found;
     }
 
-    public void Replace(string deviceId, IReadOnlyList<InstalledSoftware> software)
+    /// <summary>
+    /// Replaces what this device reports for one scope. Machine-wide and each account are separate
+    /// lists: a sweep of one must not erase the others, which were gathered by a different run.
+    /// </summary>
+    public void Replace(string deviceId, IReadOnlyList<InstalledSoftware> software, string? account = null)
     {
         using var connection = database.Open();
         using var transaction = connection.BeginTransaction();
         using (var clear = connection.CreateCommand())
         {
-            clear.CommandText = "DELETE FROM device_software WHERE device_id = @device;";
+            clear.CommandText = "DELETE FROM device_software WHERE device_id = @device AND account = @account;";
             clear.Parameters.AddWithValue("@device", deviceId);
+            clear.Parameters.AddWithValue("@account", (object?)account ?? "");
             clear.ExecuteNonQuery();
         }
 
@@ -50,10 +64,13 @@ public sealed class DeviceSoftwareStore(Database database)
         {
             using var insert = connection.CreateCommand();
             insert.CommandText = """
-                INSERT INTO device_software (device_id, name, version, seen_at) VALUES (@device, @name, @version, @seen)
-                ON CONFLICT (device_id, name) DO UPDATE SET version = excluded.version, seen_at = excluded.seen_at;
+                INSERT INTO device_software (device_id, account, name, version, seen_at)
+                VALUES (@device, @account, @name, @version, @seen)
+                ON CONFLICT (device_id, account, name)
+                DO UPDATE SET version = excluded.version, seen_at = excluded.seen_at;
                 """;
             insert.Parameters.AddWithValue("@device", deviceId);
+            insert.Parameters.AddWithValue("@account", (object?)account ?? "");
             insert.Parameters.AddWithValue("@name", item.Name);
             insert.Parameters.AddWithValue("@version", item.Version);
             insert.Parameters.AddWithValue("@seen", seenAt);

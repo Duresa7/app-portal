@@ -239,7 +239,7 @@ public sealed class JobRunnerTests
     private sealed class Executor(Func<IProgress<(int percent, string detail)>, CancellationToken, Task<ExecutionResult>> run) : IPackageExecutor
     {
         public string Kind => "direct";
-        public Task<ExecutionResult> RunAsync(string jobId, PackageDefinition d, IProgress<(int percent, string detail)> p, CancellationToken ct) => run(p, ct);
+        public Task<ExecutionResult> RunAsync(JobContext job, PackageDefinition d, IProgress<(int percent, string detail)> p, CancellationToken ct) => run(p, ct);
     }
 
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handle) : HttpMessageHandler

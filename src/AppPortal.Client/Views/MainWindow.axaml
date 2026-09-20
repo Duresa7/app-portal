@@ -188,6 +188,7 @@
                                                         <TextBlock Text="{Binding Publisher}" Classes="caption" TextTrimming="CharacterEllipsis" />
                                                         <TextBlock Text="{Binding Category}" Classes="caption" />
                                                         <TextBlock Text="{Binding DownloadSizeText}" IsVisible="{Binding HasDownloadSize}" Classes="caption" />
+                                                        <TextBlock Text="Installs for you only" IsVisible="{Binding InstallsForYouOnly}" Classes="caption" />
                                                     </StackPanel>
                                                 </Grid>
                                                 <TextBlock Grid.Row="1" Text="{Binding Description}" Classes="secondary" TextWrapping="Wrap" Margin="0,14,0,14" MaxLines="2" TextTrimming="CharacterEllipsis" MinHeight="40" />

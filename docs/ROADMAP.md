@@ -33,7 +33,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 
 | Package | Title | Depends on | Status |
 |---|---|---|---|
-| [M1-01](plans/M1-01-sqlite-storage.md) | SQLite storage layer | none | In review |
+| [M1-01](plans/M1-01-sqlite-storage.md) | SQLite storage layer | none | Done |
 | [M1-02](plans/M1-02-requester-identity.md) | Requester identity on installs | M1-01 | Open |
 | [M1-03](plans/M1-03-admin-accounts-and-web-shell.md) | Admin accounts and web shell | M1-01 | Open |
 | [M1-04](plans/M1-04-app-requests.md) | App requests: API and client | M1-02 | Open |

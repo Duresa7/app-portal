@@ -18,6 +18,18 @@ public sealed class PortalApiException(string message, HttpStatusCode? status = 
     public HttpStatusCode? Status { get; } = status;
 }
 
+/// <summary>The Windows account the client is running as, in the form the server records.</summary>
+public static class WindowsAccount
+{
+    /// <summary>
+    /// <c>DOMAIN\user</c> on a domain-joined PC, <c>MACHINE\user</c> otherwise, which is what a
+    /// workgroup machine or a developer box on Linux produces. Either is fine: it is a label, not a
+    /// credential, and the device token is what the server actually trusts.
+    /// </summary>
+    public static string Current()
+        => $"{Environment.UserDomainName}\\{Environment.UserName}";
+}
+
 public interface IPortalApiClient
 {
     Task<IReadOnlyList<CatalogApp>> GetCatalogAsync(CancellationToken ct);
@@ -45,6 +57,9 @@ public sealed class PortalApiClient : IPortalApiClient
         };
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.DeviceToken);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("AppPortal.Client/0.1");
+        // Set once: every call the client makes carries the account, and the server records it against
+        // installs and requests. A server from before this header existed ignores it.
+        _http.DefaultRequestHeaders.Add(ApiHeaders.Requester, WindowsAccount.Current());
     }
 
     public Task<IReadOnlyList<CatalogApp>> GetCatalogAsync(CancellationToken ct)

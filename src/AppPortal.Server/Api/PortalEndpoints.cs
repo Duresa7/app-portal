@@ -74,7 +74,7 @@ public static class PortalEndpoints
 
             try
             {
-                var record = await installs.CreateAsync(device, body.AppId, ct);
+                var record = await installs.CreateAsync(device, body.AppId, DeviceAuthenticationMiddleware.RequestedBy(context), ct);
                 return Results.Accepted($"{ApiRoutes.Installs}/{record.Id}", record.ToPublic());
             }
             catch (InstallRejectedException ex)

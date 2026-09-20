@@ -147,13 +147,6 @@ jobs:
             -p:PublishSingleFile=true -p:AppPortalMsiPath="$msi" -o out/setup
           if ($LASTEXITCODE -ne 0) { throw 'Bootstrapper publish failed.' }
           if (-not (Test-Path out/setup/AppPortalSetup.exe)) { throw 'No AppPortalSetup.exe was produced.' }
-      - name: The release feed still parses
-        shell: pwsh
-        run: |
-          # Every installed agent reads this feed to find its next version. A change in GitHub's answer
-          # should fail a build here, not stop a fleet updating. It downloads nothing.
-          ./out/agent/AppPortal.Agent.exe --check
-          if ($LASTEXITCODE -ne 0) { throw 'The agent could not read the release feed.' }
       - name: Check the package on its own
         shell: pwsh
         run: |
@@ -179,6 +172,17 @@ jobs:
           $previous = Get-ChildItem previous/*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($previous) { $arguments.PreviousMsi = $previous.FullName }
           ./deploy/windows/ci-installer-test.ps1 @arguments
+      - name: The release feed still parses
+        shell: pwsh
+        env:
+          # A device asks anonymously. This runner shares its address with every other runner on it, so
+          # the anonymous allowance is long spent and GitHub answers 403 instead of the feed.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # Every installed agent reads this feed to find its next version. A change in GitHub's answer
+          # should fail a build here, not stop a fleet updating. It downloads nothing.
+          ./out/agent/AppPortal.Agent.exe --check
+          if ($LASTEXITCODE -ne 0) { throw 'The agent could not read the release feed.' }
       - uses: actions/upload-artifact@v7
         with:
           name: AppPortal-msi

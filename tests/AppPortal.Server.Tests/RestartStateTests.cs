@@ -109,6 +109,50 @@ public sealed class RestartStateTests : IDisposable
     }
 
     [Fact]
+    public async Task A_restart_finishes_a_per_user_install_that_only_that_person_can_see()
+    {
+        // Software installed into somebody's profile is reported under their account, not against the
+        // device. Looking only at the machine-wide list finds nothing and calls a perfectly good
+        // install a failure, which is exactly what the person was told would not happen.
+        new CatalogStore(_test.Database, "").Upsert(new CatalogEntry
+        {
+            Id = "profile-app",
+            Name = "Profile App",
+            Agent = new WingetPackageDefinition("Vendor.Profile", "user"),
+        });
+        using var client = Client(Requester);
+        await Complete(client, await Start(client, "profile-app"), needsRestart: true);
+        _software.Replace(_device.Id, [new InstalledSoftware("Something Machine Wide", "1.0")]);
+        _software.Replace(_device.Id, [new InstalledSoftware("Profile App", "1.0")], Requester);
+
+        await Heartbeat(client, bootedAgo: TimeSpan.Zero);
+
+        var install = Assert.Single(_installs.All());
+        Assert.Equal(InstallState.Succeeded, install.State);
+        Assert.Equal(RebootState.Confirmed, install.RebootState);
+    }
+
+    [Fact]
+    public async Task A_per_user_install_whose_software_is_gone_after_the_restart_still_fails()
+    {
+        new CatalogStore(_test.Database, "").Upsert(new CatalogEntry
+        {
+            Id = "profile-app",
+            Name = "Profile App",
+            Agent = new WingetPackageDefinition("Vendor.Profile", "user"),
+        });
+        using var client = Client(Requester);
+        await Complete(client, await Start(client, "profile-app"), needsRestart: true);
+        _software.Replace(_device.Id, [new InstalledSoftware("Something Else", "1.0")], Requester);
+
+        await Heartbeat(client, bootedAgo: TimeSpan.Zero);
+
+        var install = Assert.Single(_installs.All());
+        Assert.Equal(InstallState.Failed, install.State);
+        Assert.Equal("The software was not there after the restart.", install.Detail);
+    }
+
+    [Fact]
     public async Task A_device_that_cannot_read_its_own_software_is_given_the_benefit_of_the_doubt()
     {
         // Reporting nothing is not the same as reporting the software is gone, and a history rewritten
@@ -148,9 +192,9 @@ public sealed class RestartStateTests : IDisposable
         Assert.Single(everything.Rows);
     }
 
-    private async Task<AgentJob> Start(HttpClient client)
+    private static async Task<AgentJob> Start(HttpClient client, string appId = "driver")
     {
-        var created = await client.PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest("driver"));
+        var created = await client.PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest(appId));
         Assert.Equal(HttpStatusCode.Accepted, created.StatusCode);
         return (await client.GetFromJsonAsync<AgentJob>("/api/v1/agent/jobs?wait=0"))!;
     }
@@ -169,10 +213,18 @@ public sealed class RestartStateTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    private HttpClient Client()
+    /// <summary>The account a per-user install is made for, as the client sends it.</summary>
+    private const string Requester = @"CONTOSO\ada";
+
+    private HttpClient Client(string? requester = null)
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+        if (requester is not null)
+        {
+            client.DefaultRequestHeaders.Add(ApiHeaders.Requester, requester);
+        }
+
         return client;
     }
 

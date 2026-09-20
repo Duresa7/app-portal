@@ -11,6 +11,7 @@ using AppPortal.Shared;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -149,20 +150,56 @@ public sealed class AgentJobsTests : IDisposable
     [InlineData(true)]
     public async Task Waiting_fetch_honours_request_cancellation_and_host_shutdown(bool stopHost)
     {
-        using var client = Client();
-        using var cancellation = new CancellationTokenSource();
-        var pending = client.GetAsync("/api/v1/agent/jobs?wait=25", cancellation.Token);
-        await Task.Delay(100);
-        if (stopHost)
+        // StopApplication does not only raise ApplicationStopping here. The factory lets the entry
+        // point's app.Run() run, so stopping runs the whole shutdown and ends by disposing the root
+        // service provider. The waiting fetch has to unwind before that: a request still in the
+        // pipeline when the provider goes fails with ObjectDisposedException instead of the
+        // cancellation this is about. The gate holds the teardown at its first hosted service until
+        // the fetch has answered, so the two are ordered rather than racing.
+        var gate = new ShutdownGate();
+        using var gated = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services => services.AddSingleton<IHostedService>(gate)));
+        try
         {
-            _factory.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
-        }
-        else
-        {
-            cancellation.Cancel();
-        }
+            using var client = Client(factory: gated);
+            using var cancellation = new CancellationTokenSource();
+            var pending = client.GetAsync("/api/v1/agent/jobs?wait=25", cancellation.Token);
+            // A head start, so the fetch is inside its wait rather than still being routed. Nothing
+            // depends on the length of it: a token already cancelled ends the wait just as well.
+            await Task.Delay(100);
+            if (stopHost)
+            {
+                gated.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
+            }
+            else
+            {
+                cancellation.Cancel();
+            }
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await pending.WaitAsync(TimeSpan.FromSeconds(3)));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await pending.WaitAsync(TimeSpan.FromSeconds(3)));
+        }
+        finally
+        {
+            gate.Open();
+        }
+    }
+
+    /// <summary>
+    /// Holds a host's shutdown at its first step. Registered through <c>ConfigureTestServices</c>, so it
+    /// is the last hosted service added and therefore the first one stopped: while it waits, nothing
+    /// else has been torn down and the service provider is still there.
+    /// </summary>
+    private sealed class ShutdownGate : IHostedService
+    {
+        private readonly TaskCompletionSource _open = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Open() => _open.TrySetResult();
+
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        // Bounded by the shutdown timeout as well, so a test that never opens the gate fails rather
+        // than hanging.
+        public Task StopAsync(CancellationToken cancellationToken) => _open.Task.WaitAsync(cancellationToken);
     }
 
     [Theory]
@@ -245,9 +282,9 @@ public sealed class AgentJobsTests : IDisposable
         State = InstallState.Queued,
     }, new DirectPackageDefinition("https://vendor.example/app.exe", new string('a', 64), "exe", "/S", 3_000_000_000L));
 
-    private HttpClient Client(string? token = null)
+    private HttpClient Client(string? token = null, WebApplicationFactory<Program>? factory = null)
     {
-        var client = _factory.CreateClient();
+        var client = (factory ?? _factory).CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token ?? _token);
         return client;
     }

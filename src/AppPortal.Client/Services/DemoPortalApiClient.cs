@@ -20,7 +20,12 @@ public sealed class DemoPortalApiClient : IPortalApiClient
     [
         new("google-chrome", "Google Chrome", "Google LLC", "Web browser. Installs the current stable release from the Software Repository.", "Browsers", null, true),
         new("mozilla-firefox", "Mozilla Firefox", "Mozilla", "Web browser, 64-bit English (US) build.", "Browsers", null, false),
-        new("7-zip", "7-Zip", "Igor Pavlov", "File archiver for zip, 7z, tar and other formats.", "Utilities", null, false),
+        // Removable, and already in the inventory below, so the Remove button on a card can be seen
+        // and pressed without a server. Nothing else in the demo offers one.
+        new("7-zip", "7-Zip", "Igor Pavlov", "File archiver for zip, 7z, tar and other formats.", "Utilities", null, false)
+        {
+            UserRemovable = true,
+        },
         new("vlc", "VLC media player", "VideoLAN", "Plays most audio and video formats without extra codecs.", "Media", null, false),
         new("vscode", "Visual Studio Code", "Microsoft Corporation", "Source code editor. System-wide install for all users.", "Developer tools", null, true),
         new("notepadpp", "Notepad++", "Don Ho", "Plain text and source editor with tabs and syntax highlighting.", "Developer tools", null, false),
@@ -107,24 +112,28 @@ public sealed class DemoPortalApiClient : IPortalApiClient
     }
 
     public Task<InstallRequest> RequestUninstallAsync(string appId, CancellationToken ct)
-        => RequestInstallAsync(appId, ct);
+        => Task.FromResult(Raise(appId, InstallKind.Uninstall));
 
     public Task<InstallRequest> RequestInstallAsync(string appId, CancellationToken ct)
+        => Task.FromResult(Raise(appId, InstallKind.Install));
+
+    private InstallRequest Raise(string appId, string kind)
     {
         var app = Catalog.FirstOrDefault(a => a.Id == appId)
                   ?? throw new PortalApiException($"'{appId}' is not in the catalog.");
 
         var request = new InstallRequest(Guid.NewGuid().ToString("N"), app.Id, app.Name, Environment.MachineName,
-            DateTimeOffset.Now, null, InstallState.Queued, 0, "Sent to the management service.", WindowsAccount.Current());
+            DateTimeOffset.Now, null, InstallState.Queued, 0, "Sent to the management service.", WindowsAccount.Current(),
+            Kind: kind);
         lock (_gate)
         {
             _installs.Add(request);
         }
 
-        return Task.FromResult(request);
+        return request;
     }
 
-    /// <summary>Moves one request along by elapsed time: queued for 3 s, installing for 9 s, then done.</summary>
+    /// <summary>Moves one request along by elapsed time: queued for 3 s, working for 9 s, then done.</summary>
     private InstallRequest Advance(InstallRequest request)
     {
         if (request.State is not (InstallState.Queued or InstallState.Running))
@@ -132,6 +141,7 @@ public sealed class DemoPortalApiClient : IPortalApiClient
             return request;
         }
 
+        var removal = request.Kind == InstallKind.Uninstall;
         var age = DateTimeOffset.Now - request.RequestedAt;
         if (age < TimeSpan.FromSeconds(3))
         {
@@ -141,10 +151,19 @@ public sealed class DemoPortalApiClient : IPortalApiClient
         if (age < TimeSpan.FromSeconds(12))
         {
             var percent = (int)Math.Clamp((age.TotalSeconds - 3) / 9 * 100, 5, 95);
-            return request with { State = InstallState.Running, PercentComplete = percent, Detail = "Downloading and installing the package." };
+            return request with
+            {
+                State = InstallState.Running,
+                PercentComplete = percent,
+                Detail = removal ? "Taking the package off." : "Downloading and installing the package.",
+            };
         }
 
-        if (!_installed.Any(a => a.CatalogAppId == request.AppId))
+        if (removal)
+        {
+            _installed.RemoveAll(a => a.CatalogAppId == request.AppId);
+        }
+        else if (!_installed.Any(a => a.CatalogAppId == request.AppId))
         {
             var app = Catalog.First(a => a.Id == request.AppId);
             _installed.Add(new InstalledApp(app.Name, app.Publisher, "1.0.0", app.Id));
@@ -155,7 +174,7 @@ public sealed class DemoPortalApiClient : IPortalApiClient
             State = InstallState.Succeeded,
             PercentComplete = 100,
             CompletedAt = DateTimeOffset.Now,
-            Detail = "The packages have been installed successfully.",
+            Detail = removal ? "The packages have been removed successfully." : "The packages have been installed successfully.",
         };
     }
 }

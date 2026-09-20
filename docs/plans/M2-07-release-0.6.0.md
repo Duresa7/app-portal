@@ -14,11 +14,11 @@ Ship the agent, the MSI, and the wizard through the gate, with a migration path 
 - README: "Client deployment" becomes "Install on PCs" with three paths: the wizard for a tech, the MSI with properties for Group Policy, Intune and RMMs, and silent `AppPortalSetup.exe`. "Updates" describes the agent. Remove every mention of the PowerShell scripts and the scheduled task. Repository layout table updated for the new projects.
 - Migration from zip installs: document that the last zip-based release's updater will not install an MSI; 0.3.x devices are moved by deploying the 0.6.0 MSI once through the same channel the zip went through. The MSI removes the scheduled task and reuses `client.json`.
 - Zip artifact retired from the release; the gate's file checks updated.
-- Screenshots: wizard pages, devices page with agent versions.
 - Bump to 0.6.0, tag after green.
 
 ### Out
 - Feature work.
+- Screenshots of the wizard. They were in this package's scope and are dropped: they need somebody at a Windows machine to run the wizard and look at it, and nothing in the release depends on them.
 
 ## Acceptance criteria
 

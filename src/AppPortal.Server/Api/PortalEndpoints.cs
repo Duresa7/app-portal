@@ -58,7 +58,7 @@ public static class PortalEndpoints
         {
             var device = DeviceAuthenticationMiddleware.Current(context);
             var record = store.Find(id);
-            if (record is null || !string.Equals(record.DeviceName, device.Name, StringComparison.OrdinalIgnoreCase))
+            if (record is null || !string.Equals(record.DeviceId, device.Id, StringComparison.Ordinal))
             {
                 return Results.NotFound(new ErrorMessage("No such install request."));
             }
@@ -100,7 +100,7 @@ public static class PortalEndpoints
         api.MapGet("/requests", (HttpContext context, AppRequestStore requests) =>
         {
             var device = DeviceAuthenticationMiddleware.Current(context);
-            return Results.Ok(requests.ListForDevice(device.Name).Select(r => r.ToPublic()).ToList());
+            return Results.Ok(requests.ListForDeviceId(device.Id).Select(r => r.ToPublic()).ToList());
         });
 
         api.MapPost("/requests", (HttpContext context, CreateAppRequest body, AppRequestStore requests, ILoggerFactory loggers) =>
@@ -108,7 +108,7 @@ public static class PortalEndpoints
             var device = DeviceAuthenticationMiddleware.Current(context);
             try
             {
-                var record = requests.Create(device.Name, DeviceAuthenticationMiddleware.RequestedBy(context), body?.Text ?? "");
+                var record = requests.CreateForDeviceId(device.Id, DeviceAuthenticationMiddleware.RequestedBy(context), body?.Text ?? "");
                 loggers.CreateLogger("AppPortal.Server.Requests")
                     .LogInformation("Device {Device} asked for {Text}", device.Name, record.Text);
                 return Results.Created($"{ApiRoutes.Requests}/{record.Id}", record.ToPublic());

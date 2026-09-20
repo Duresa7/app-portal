@@ -8,6 +8,7 @@ namespace AppPortal.Server.Installs;
 public sealed class InstallRecord
 {
     public string Id { get; set; } = "";
+    public string? DeviceId { get; set; }
     public string DeviceName { get; set; } = "";
     public string EndpointId { get; set; } = "";
     public string AppId { get; set; } = "";
@@ -75,7 +76,7 @@ public sealed class InstallStore(Database database)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = Select + " WHERE d.name = @name COLLATE NOCASE ORDER BY i.requested_at DESC;";
+        command.CommandText = Select + " WHERE COALESCE(NULLIF(i.device_name, ''), d.name) = @name COLLATE NOCASE ORDER BY i.requested_at DESC;";
         command.Parameters.AddWithValue("@name", deviceName);
         return Read(command);
     }
@@ -99,7 +100,7 @@ public sealed class InstallStore(Database database)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM installs i JOIN devices d ON d.id = i.device_id" + Where(command, filter) + ";";
+        command.CommandText = "SELECT COUNT(*) FROM installs i LEFT JOIN devices d ON d.id = i.device_id" + Where(command, filter) + ";";
         return Convert.ToInt32(command.ExecuteScalar());
     }
 
@@ -141,7 +142,7 @@ public sealed class InstallStore(Database database)
 
         if (!string.IsNullOrWhiteSpace(filter.Device))
         {
-            clauses.Add("d.name = @device COLLATE NOCASE");
+            clauses.Add("COALESCE(NULLIF(i.device_name, ''), d.name) = @device COLLATE NOCASE");
             command.Parameters.AddWithValue("@device", filter.Device.Trim());
         }
 
@@ -183,6 +184,15 @@ public sealed class InstallStore(Database database)
     private static string Escape(string term)
         => term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
+    public IReadOnlyList<InstallRecord> ForDeviceId(string deviceId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE i.device_id = @device ORDER BY i.requested_at DESC;";
+        command.Parameters.AddWithValue("@device", deviceId);
+        return Read(command);
+    }
+
     public InstallRecord? Find(string id)
     {
         using var connection = database.Open();
@@ -208,16 +218,18 @@ public sealed class InstallStore(Database database)
 
         string? storedState = null;
         string? storedChecked = null;
+        string? storedDeviceId = null;
         using (var stored = connection.CreateCommand())
         {
             stored.Transaction = transaction;
-            stored.CommandText = "SELECT state, last_checked_at FROM installs WHERE id = @id;";
+            stored.CommandText = "SELECT state, last_checked_at, device_id FROM installs WHERE id = @id;";
             stored.Parameters.AddWithValue("@id", record.Id);
             using var reader = stored.ExecuteReader();
             if (reader.Read())
             {
                 storedState = reader.GetString(0);
                 storedChecked = reader.GetString(1);
+                storedDeviceId = reader.IsDBNull(2) ? null : reader.GetString(2);
             }
         }
 
@@ -239,9 +251,9 @@ public sealed class InstallStore(Database database)
         {
             write.Transaction = transaction;
             write.CommandText = """
-                INSERT INTO installs (id, device_id, app_id, app_name, requested_by, engine, external_ref,
+                INSERT INTO installs (id, device_id, device_name, app_id, app_name, requested_by, engine, external_ref,
                                       state, percent, detail, requested_at, completed_at, last_checked_at)
-                VALUES (@id, @device, @appId, @appName, @requestedBy, 'action1', @external,
+                VALUES (@id, @device, @deviceName, @appId, @appName, @requestedBy, 'action1', @external,
                         @state, @percent, @detail, @requested, @completed, @checked)
                 ON CONFLICT(id) DO UPDATE SET
                     app_name = excluded.app_name, external_ref = excluded.external_ref, state = excluded.state,
@@ -249,8 +261,13 @@ public sealed class InstallStore(Database database)
                     last_checked_at = excluded.last_checked_at;
                 """;
             write.Parameters.AddWithValue("@id", record.Id);
-            // Always supplied: the column is not null, and SQLite checks that before it decides the row conflicts.
-            write.Parameters.AddWithValue("@device", DeviceId(connection, transaction, record.DeviceName));
+            // Updates retain their original owner even if the device was renamed or removed.
+            var deviceId = storedState is not null
+                ? storedDeviceId
+                : record.DeviceId ?? DeviceId(connection, transaction, record.DeviceName);
+            write.Parameters.AddWithValue("@device", (object?)deviceId ?? DBNull.Value);
+            // Denormalised on purpose: this is what the history shows once the device itself is gone.
+            write.Parameters.AddWithValue("@deviceName", record.DeviceName);
             write.Parameters.AddWithValue("@appId", record.AppId);
             write.Parameters.AddWithValue("@appName", record.AppName);
             // Left out of the ON CONFLICT update on purpose: who asked is settled when the install is made,
@@ -271,12 +288,15 @@ public sealed class InstallStore(Database database)
         return true;
     }
 
+    // LEFT JOIN, and the name off the install rather than the device: a removed device leaves its
+    // history behind, and an inner join would have quietly deleted that history from every page.
     private const string Select = """
-        SELECT i.id, d.name, d.action1_endpoint_id, i.app_id, i.app_name, i.external_ref,
+        SELECT i.id, COALESCE(NULLIF(i.device_name, ''), d.name, '') AS device_name, d.action1_endpoint_id,
+               i.app_id, i.app_name, i.external_ref,
                i.state, i.percent, i.detail, i.requested_at, i.completed_at, i.last_checked_at,
-               i.requested_by, i.engine
+               i.requested_by, i.engine, i.device_id
         FROM installs i
-        JOIN devices d ON d.id = i.device_id
+        LEFT JOIN devices d ON d.id = i.device_id
         """;
 
     private static List<InstallRecord> Read(SqliteCommand command)
@@ -301,6 +321,7 @@ public sealed class InstallStore(Database database)
                 LastCheckedAt = SqlTime.Parse(reader.GetString(11)),
                 RequestedBy = reader.IsDBNull(12) ? null : reader.GetString(12),
                 Engine = reader.IsDBNull(13) ? EngineLabel.Action1 : reader.GetString(13),
+                DeviceId = reader.IsDBNull(14) ? null : reader.GetString(14),
             });
         }
 

@@ -1,0 +1,109 @@
+@page "/admin/devices"
+@model AppPortal.Server.Pages.Admin.Devices.IndexModel
+@{
+    ViewData["Title"] = "Devices";
+    ViewData["Nav"] = "devices";
+}
+@if (Model.Error is not null)
+{
+    <div class="message error">@Model.Error</div>
+}
+@if (Model.Notice is not null)
+{
+    <div class="message ok">@Model.Notice</div>
+}
+@if (Model.IssuedToken is not null)
+{
+    <div class="card token-panel">
+        <h2>Token for @Model.IssuedFor</h2>
+        <p class="muted">
+            This is shown once and is not stored. Put it in the device's <code>client.json</code> now;
+            if it is lost, rotate the token from the device's page.
+        </p>
+        <code class="secret">@Model.IssuedToken</code>
+    </div>
+}
+
+<div class="card">
+    <div class="toolbar">
+        <form method="get" class="inline">
+            <input type="search" name="Search" value="@Model.Search" placeholder="Search devices" aria-label="Search devices" />
+            <button type="submit" class="secondary">Search</button>
+        </form>
+    </div>
+    <table>
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Engines</th>
+            <th>Agent version</th>
+            <th>Last seen</th>
+            <th>Status</th>
+            <th>Enrolled with</th>
+            <th class="right">Installs</th>
+        </tr>
+        </thead>
+        <tbody>
+        @if (Model.Devices.Count == 0)
+        {
+            <tr>
+                <td colspan="7" class="muted">No devices match.</td>
+            </tr>
+        }
+        @foreach (var device in Model.Devices)
+        {
+            <tr>
+                <td><a href="/admin/devices/@device.Id">@device.Name</a></td>
+                <td>
+                    @if (device.HasAction1)
+                    {
+                        <span class="pill">Action1</span>
+                    }
+                    @if (device.HasAgent)
+                    {
+                        <span class="pill">Agent</span>
+                    }
+                    @if (!device.HasAction1 && !device.HasAgent)
+                    {
+                        <span class="muted">none</span>
+                    }
+                </td>
+                <td class="muted">@(device.AgentVersion ?? "—")</td>
+                <td class="muted">@(device.LastSeenAt is { } seen ? seen.ToLocalTime().ToString("u") : "never")</td>
+                <td>
+                    @if (device.Enabled)
+                    {
+                        <span class="pill">Enabled</span>
+                    }
+                    else
+                    {
+                        <span class="pill off">Disabled</span>
+                    }
+                </td>
+                <td class="muted">@Model.EnrollmentKeyFor(device)</td>
+                <td class="right">@Model.InstallsFor(device)</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Add a device</h2>
+    <p class="muted">
+        The same registration <code>device add</code> performs. The token is shown once, here, and then
+        never again.
+    </p>
+    <form method="post" hx-boost="true" hx-history="false" asp-page-handler="Add">
+        <label for="new-name">Name</label>
+        <input id="new-name" name="NewName" type="text" value="@Model.NewName" autocomplete="off" />
+
+        <label for="new-endpoint">Action1 endpoint id</label>
+        <input id="new-endpoint" name="NewEndpointId" type="text" value="@Model.NewEndpointId" autocomplete="off" />
+        <p class="muted">Leave empty for a device that will be driven by the agent alone.</p>
+
+        <div class="actions">
+            <button type="submit">Add device</button>
+        </div>
+    </form>
+</div>

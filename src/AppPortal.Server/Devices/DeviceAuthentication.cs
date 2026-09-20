@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 using AppPortal.Shared;
 
 namespace AppPortal.Server.Devices;
@@ -7,6 +9,19 @@ public sealed class DeviceAuthenticationMiddleware(RequestDelegate next, DeviceS
 {
     private const string ItemKey = "AppPortal.Device";
     private const string RequestedByKey = "RequestedBy";
+
+    /// <summary>
+    /// How stale "last seen" is allowed to get. A client polls every few seconds, and writing on every
+    /// call would mean a database write per request for a column nobody reads to the second.
+    /// </summary>
+    private static readonly TimeSpan TouchInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// When each device was last written, so the write happens about once a minute per device rather
+    /// than once per request. One instance of this middleware serves the whole application, so this is
+    /// per server rather than static; losing it on a restart costs one extra write per device.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastTouched = new(StringComparer.Ordinal);
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -33,7 +48,35 @@ public sealed class DeviceAuthenticationMiddleware(RequestDelegate next, DeviceS
         }
 
         context.Items[RequestedByKey] = requestedBy;
+        TouchLastSeen(device);
         await next(context);
+    }
+
+    private void TouchLastSeen(DeviceRecord device)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var previous = _lastTouched.GetOrAdd(device.Id, DateTimeOffset.MinValue);
+        if (now - previous < TouchInterval)
+        {
+            return;
+        }
+
+        // Whoever wins this swap does the write; the others carry on and try again after the interval.
+        if (!_lastTouched.TryUpdate(device.Id, now, previous))
+        {
+            return;
+        }
+
+        try
+        {
+            devices.TouchLastSeen(device.Id);
+            device.LastSeenAt = now;
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex)
+        {
+            // A heartbeat is not worth failing a request the device actually asked for.
+            logger.LogWarning(ex, "Could not record last seen for device {Device}", device.Name);
+        }
     }
 
     /// <summary>

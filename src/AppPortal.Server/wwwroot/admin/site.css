@@ -234,3 +234,16 @@ a.card.tile:hover { border-color: var(--accent); }
 dl.detail { display: grid; grid-template-columns: 200px 1fr; gap: 8px 16px; margin: 0; }
 dl.detail dt { color: var(--text-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; padding-top: 2px; }
 dl.detail dd { margin: 0; overflow-wrap: anywhere; }
+
+/* A secret shown once: easy to select, obviously not body text. */
+.token-panel { border-color: var(--accent); }
+code.secret {
+    display: block;
+    padding: 12px 14px;
+    margin-top: 8px;
+    background: var(--layer);
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-control);
+    user-select: all;
+    overflow-wrap: anywhere;
+}

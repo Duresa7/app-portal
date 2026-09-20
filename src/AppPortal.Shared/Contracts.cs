@@ -16,7 +16,8 @@ public sealed record CatalogApp(
     string[] Engines,
     long? DownloadSizeBytes,
     string? InstallScope = null,
-    string? Engine = null)
+    string? Engine = null,
+    string? Requirements = null)
 {
     public CatalogApp(string id, string name, string publisher, string description, string category, string? iconUrl, bool featured)
         : this(id, name, publisher, description, category, iconUrl, featured, ["action1"], null)
@@ -105,6 +106,15 @@ public sealed record EnrollResponse(
     IReadOnlyList<string> Engines);
 
 public sealed record ErrorMessage(string Message);
+
+public static class CatalogLimits
+{
+    /// <summary>
+    /// The longest requirements note an app may carry. Long enough for a sentence or two that somebody
+    /// will actually read, short enough that it cannot become a second description.
+    /// </summary>
+    public const int MaxRequirementsLength = 500;
+}
 
 public static class AppRequestLimits
 {

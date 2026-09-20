@@ -17,7 +17,7 @@ A catalog app can state what it needs in plain words, and the person reads it be
 ## Scope
 
 ### In
-- Migration 012: `catalog_apps` gains `requirements TEXT`, plain text, at most 500 characters. Empty for most apps.
+- Migration 015 (012 through 014 were taken while this package was open): `catalog_apps` gains `requirements TEXT`, plain text, at most 500 characters. The length is enforced on the page rather than in the store, so that an import of an older catalog cannot fail on one and nobody's words are silently cut. Empty for most apps.
 - Catalog edit page: a Requirements box, with help text saying what belongs there. Examples in the placeholder: "Needs Secure Boot and TPM 2.0 turned on", "Needs a Steam account", "Windows 11 only".
 - `CatalogApp` gains `Requirements: string?`.
 - Client: an app with requirements shows them on the card, and the install button opens a short confirmation carrying the same words with Install and Cancel. One extra click, only on the apps that need it, so the text is read rather than scrolled past.

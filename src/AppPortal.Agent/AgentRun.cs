@@ -3,6 +3,7 @@ using AppPortal.Agent.Enrollment;
 using AppPortal.Agent.Executors;
 using AppPortal.Agent.Jobs;
 using AppPortal.Agent.Sessions;
+using AppPortal.Agent.Update;
 using AppPortal.Shared;
 
 namespace AppPortal.Agent;
@@ -10,8 +11,8 @@ namespace AppPortal.Agent;
 /// <summary>
 /// How the agent starts, whichever way it was started. Windows runs it as a service; a developer runs
 /// it with <c>--console</c>, and CI with <c>--console --once</c> so a single heartbeat decides the exit
-/// code. The service host is only added on Windows, so the project still builds and its tests still run
-/// on the Linux half of the build matrix.
+/// code and with <c>--check</c> to prove the release feed still parses. The service host is only added
+/// on Windows, so the project still builds and its tests still run on the Linux half of the build matrix.
 /// </summary>
 public static class AgentRun
 {
@@ -28,6 +29,11 @@ public static class AgentRun
             }
 
             return await ServiceRegistration.RunAsync(install);
+        }
+
+        if (args.Contains("--check", StringComparer.OrdinalIgnoreCase))
+        {
+            return await UpdateCheck.RunAsync(CancellationToken.None);
         }
 
         var once = args.Contains("--once", StringComparer.OrdinalIgnoreCase);
@@ -96,6 +102,32 @@ public static class AgentRun
                 provider.GetRequiredService<ILogger<JobRunner>>(),
                 software: provider.GetRequiredService<SoftwareReporter>(),
                 sessions: provider.GetRequiredService<IUserSessionLauncher>()));
+            // Same reason: the update loop starts by asking GitHub what the newest release is, and a
+            // run whose only purpose is one heartbeat has no business downloading anything.
+            builder.Services.AddHostedService(provider =>
+            {
+                var updatePaths = new UpdatePaths(AppContext.BaseDirectory, stateDirectory);
+                var feed = new GitHubReleaseFeed(
+                    provider.GetRequiredService<HttpClient>(),
+                    UpdateRepository.Resolve(PortalSettings.Load().UpdateRepository));
+                var downloads = new HttpUpdateDownloader(
+                    // A release MSI over an office connection outlasts the thirty seconds an API call gets.
+                    new HttpClient { Timeout = TimeSpan.FromMinutes(30) },
+                    updatePaths,
+                    provider.GetRequiredService<ILogger<HttpUpdateDownloader>>());
+                var update = new SelfUpdate(
+                    feed,
+                    downloads,
+                    provider.GetRequiredService<IProcessRunner>(),
+                    new InstalledClientPresence(updatePaths.InstallDir),
+                    updatePaths,
+                    provider.GetRequiredService<ILogger<SelfUpdate>>());
+                return new UpdateWorker(
+                    update,
+                    updatePaths,
+                    provider.GetRequiredService<IProcessRunner>(),
+                    provider.GetRequiredService<ILogger<UpdateWorker>>());
+            });
         }
         using var host = builder.Build();
         // Take the worker before the run. RunAsync disposes the host on shutdown, so asking the provider

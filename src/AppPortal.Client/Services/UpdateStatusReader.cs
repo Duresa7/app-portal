@@ -1,6 +1,4 @@
 using System;
-using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -11,14 +9,12 @@ using AppPortal.Shared;
 namespace AppPortal.Client.Services;
 
 /// <summary>
-/// The client's side of updating. It reads what the updater last wrote and can ask the updater's
-/// scheduled task to run. It never downloads anything itself, so nothing a signed-in user controls
-/// can put a build on the machine.
+/// The client's side of updating. It reads what the agent last wrote and can leave the agent a
+/// request. It never downloads or installs anything itself, so nothing a signed-in user controls can
+/// put a build on the machine: all the request says is that somebody would like the agent to look.
 /// </summary>
 public static class UpdateStatusReader
 {
-    public const string TaskName = "App Portal Updater";
-
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() },
@@ -26,7 +22,12 @@ public static class UpdateStatusReader
 
     public static string RunningVersion { get; } = ReadRunningVersion();
 
-    public static string StatusPath => Path.Combine(Path.GetDirectoryName(ClientSettings.DefaultPath) ?? ".", "update.json");
+    public static string StateDirectory => Path.GetDirectoryName(ClientSettings.DefaultPath) ?? ".";
+
+    public static string StatusPath => Path.Combine(StateDirectory, "update.json");
+
+    /// <summary>The file the agent watches for, in the folder it made writable for exactly this.</summary>
+    public static string RequestPath => Path.Combine(StateDirectory, "update.request");
 
     public static UpdateStatus? Read()
     {
@@ -42,34 +43,24 @@ public static class UpdateStatusReader
     }
 
     /// <summary>
-    /// Starts the updater's scheduled task. Its security descriptor lets any signed-in user run it and
-    /// nothing more; the task itself runs as SYSTEM, which is the only account that can write to Program Files.
+    /// Leaves update.request for the agent, which picks it up within ten seconds and does the work as
+    /// SYSTEM. A request already waiting counts as asked: the folder only lets a user add a file, not
+    /// rewrite one, and a second request would say nothing the first has not.
     /// </summary>
     public static bool RequestUpdate()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return false;
-        }
-
         try
         {
-            using var process = Process.Start(new ProcessStartInfo("schtasks.exe", $"/Run /TN \"{TaskName}\"")
+            if (File.Exists(RequestPath))
             {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-            if (process is null)
-            {
-                return false;
+                return true;
             }
 
-            process.WaitForExit(10_000);
-            return process.HasExited && process.ExitCode == 0;
+            Directory.CreateDirectory(StateDirectory);
+            File.WriteAllText(RequestPath, DateTimeOffset.UtcNow.ToString("O"));
+            return true;
         }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             return false;
         }

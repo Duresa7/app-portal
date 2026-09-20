@@ -74,11 +74,10 @@ Demo mode fills the whole interface with sample data held in memory. Installs ad
 | `src/AppPortal.Shared` | API contracts shared by client and server |
 | `src/AppPortal.Server` | ASP.NET Core minimal API, Action1 client, SQLite storage and migrations, CLI |
 | `src/AppPortal.Client` | Avalonia desktop client (Windows target; runs on Linux for development) |
-| `src/AppPortal.Updater` | Self-contained updater run by a SYSTEM scheduled task; replaces the client from GitHub releases |
 | `tests/AppPortal.Server.Tests` | xUnit tests against an in-memory Action1 stand-in |
 | `tests/AppPortal.Client.Tests` | Client catalog refresh regression tests |
-| `tests/AppPortal.Updater.Tests` | xUnit tests for version parsing, checksum parsing and the file swap |
-| `src/AppPortal.Agent` | SYSTEM service for enrollment and heartbeats |
+| `tests/AppPortal.Agent.Tests` | xUnit tests for enrollment, heartbeats, the install engines and self-update |
+| `src/AppPortal.Agent` | SYSTEM service for enrollment, heartbeats, installs and self-update from GitHub releases |
 | `src/AppPortal.Installer` | WiX v5 MSI, built and verified on Windows |
 | `deploy/` | Dockerfile, compose file, environment template and server smoke test |
 | `docs/` | Screenshots and design notes |
@@ -216,9 +215,15 @@ The client's **Requests** section accepts up to 500 characters describing the so
 
 ## Updates
 
-MSI installations upgrade through the MSI as described above. Automatic MSI updates are added in M2-04.
+The agent keeps the whole installation current, itself included. It asks GitHub for the newest release when the service starts, once a day at a random second in the noon hour, and within ten seconds of a client asking. The random second keeps a site's worth of machines from arriving together. A release newer than what is installed is downloaded as `AppPortal-<version>-x64.msi`, checked against that release's `SHA256SUMS`, and kept under `%ProgramData%\AppPortal\updates`. Anything that does not match its published hash is discarded.
 
-Legacy zip installations still use `AppPortal.Updater.exe` and the **App Portal Updater** SYSTEM task. That updater downloads the release zip, verifies `SHA256SUMS`, and replaces the client when it is closed. The zip remains available for one transition release. Do not run that updater against an MSI installation.
+Applying it needs the client closed, because Windows Installer cannot replace files a running process holds open. With nothing open the agent runs `msiexec /i <msi> /qn /norestart /l*v update-<version>.log` as SYSTEM straight away. With a client open it waits, and that client shows **Restart to update**. Older MSIs are deleted after a successful install; a failure keeps the log beside the MSI and is reported rather than retried differently.
+
+`%ProgramData%\AppPortal\update.json` is what the client's banners read: the installed version, the newest published one, the one waiting to be applied, and a result of `UpToDate`, `Available`, `Installed`, `Offline` or `Failed`. The client never reaches the release feed itself. All it can do is leave `update.request` in the same folder, which the agent takes and deletes within ten seconds; the download and the install are the agent's, as SYSTEM. So that a signed-in user can leave that file, the agent grants the Users group the right to add a file to that one folder and nothing else, which leaves `client.json` and `enroll.json` as they were.
+
+An `"updateRepository": "owner/name"` in `client.json` points a test fleet at a fork. `AppPortal.Agent.exe --check` prints what that repository publishes and downloads nothing.
+
+A PC upgraded from a zip installation still carries the **App Portal Updater** scheduled task. The agent deletes it on its first start, so the retired updater cannot replace files Windows Installer now owns.
 
 ## Development
 
@@ -246,7 +251,20 @@ Before pushing, `dotnet format` puts the code in the shape CI checks for, and `d
 
 ## Releasing
 
-Every push runs the format check, build and tests on Linux and Windows, publishes the MSI and client zip and verifies them on Windows (checksum, file list, binaries report the props version, the client starts in demo mode and renders), and builds the server image and exercises it in fake mode. A release is cut by tagging:
+CI runs in two shapes, because Windows minutes bill at several times the Linux rate and the Windows jobs are most of the cost of the workflow.
+
+- **Every push and pull request:** the format check, build and tests on Linux, and the server image built and exercised in fake mode.
+- **Before a release:** the same plus everything on Windows. A `v*` tag runs it automatically; at any other time start it from the Actions tab with the *Run the Windows jobs as well* box ticked. Treat a red result there as blocking the tag.
+
+The Windows half is what proves the thing a PC actually receives. `installer-verify` publishes the client and the agent, builds the MSI and the bootstrapper, and then runs [`deploy/windows/ci-installer-test.ps1`](deploy/windows/ci-installer-test.ps1) against a fake-mode server started in the job: the MSI must report the props version and the unchanging upgrade code, `AppPortalSetup.exe /quiet` must return 0, the service must come up as SYSTEM, the device must enroll and appear on `/admin/devices` with a heartbeat, the installed client must render, the uninstall must leave nothing behind, and an install of the previous release must upgrade in place without losing its device token. The script takes the same arguments by hand, so a failure that only reproduces on a virtual machine can be chased there:
+
+```powershell
+./deploy/windows/ci-installer-test.ps1 -Msi out/installer/AppPortal-0.5.0-x64.msi -Version 0.5.0 -Setup out/setup/AppPortalSetup.exe
+```
+
+It installs and uninstalls software and writes to `%ProgramData%`, so run it on a throwaway machine.
+
+A release is cut by tagging:
 
 ```bash
 # Directory.Build.props already says 0.3.0 and that commit is on main

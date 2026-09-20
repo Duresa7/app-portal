@@ -5,6 +5,7 @@ using AppPortal.Server.Catalog;
 using AppPortal.Server.Cli;
 using AppPortal.Server.Data;
 using AppPortal.Server.Devices;
+using AppPortal.Server.Enrollment;
 using AppPortal.Server.Installs;
 using AppPortal.Server.Options;
 using AppPortal.Shared;
@@ -39,6 +40,7 @@ builder.Services.AddSingleton<AdminSessionStore>();
 builder.Services.AddSingleton<LegacyImport>();
 builder.Services.AddSingleton<CatalogStore>();
 builder.Services.AddSingleton<DeviceStore>();
+builder.Services.AddSingleton<EnrollmentKeyStore>();
 builder.Services.AddSingleton<InstallStore>();
 builder.Services.AddSingleton<InstallService>();
 builder.Services.AddHostedService<InstallStatusPoller>();
@@ -90,6 +92,11 @@ if (args.Length > 0 && args[0] == "device")
 if (args.Length > 0 && args[0] == "admin")
 {
     return AdminCli.Run(args, app.Services.GetRequiredService<AdminStore>(), app.Services.GetRequiredService<AdminSessionStore>(), Console.Out);
+}
+
+if (args.Length > 0 && args[0] == "key")
+{
+    return KeyCli.Run(args, app.Services.GetRequiredService<EnrollmentKeyStore>(), Console.Out);
 }
 
 if (args.Length > 0 && args[0] is "catalog" or "packages")

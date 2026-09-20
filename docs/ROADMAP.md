@@ -40,7 +40,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M1-05](plans/M1-05-requests-admin-pages.md) | Requests admin pages | M1-03, M1-04 | Open |
 | [M1-06](plans/M1-06-catalog-admin-pages.md) | Catalog management pages | M1-03 | Open |
 | [M1-07](plans/M1-07-install-history-pages.md) | Install history pages | M1-02, M1-03 | Open |
-| [M1-08](plans/M1-08-enrollment-key-pages.md) | Enrollment key management | M1-03 | Open |
+| [M1-08](plans/M1-08-enrollment-key-pages.md) | Enrollment key management | M1-03 | In review |
 | [M1-09](plans/M1-09-device-admin-pages.md) | Device management pages | M1-03 | Open |
 | [M1-10](plans/M1-10-release-0.3.0.md) | Release 0.3.0 | M1-04, M1-05, M1-06, M1-07, M1-08, M1-09 | Open |
 | [M2-01](plans/M2-01-enrollment-api.md) | Enrollment API | M1-08, M1-09 | Open |

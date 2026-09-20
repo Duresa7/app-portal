@@ -1,0 +1,102 @@
+@page "/admin/catalog/{id}"
+@model AppPortal.Server.Pages.Admin.Catalog.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "New app" : Model.Name;
+    ViewData["Nav"] = "catalog";
+}
+@if (Model.Error is not null)
+{
+    <div class="message error">@Model.Error</div>
+}
+@if (Model.Saved)
+{
+    <div class="message ok">Saved. Devices pick this up on their next refresh.</div>
+}
+
+<form method="post">
+    <div class="card">
+        <h2>App</h2>
+        @if (Model.IsNew)
+        {
+            <label for="id">Id</label>
+            <input id="id" name="Id" type="text" value="@Model.Id" autocomplete="off" />
+            <p class="muted">Lower case, no spaces, for example <code>google-chrome</code>. It cannot be changed later.</p>
+        }
+        else
+        {
+            <label>Id</label>
+            <p class="muted">@Model.Id</p>
+        }
+
+        <label for="name">Name</label>
+        <input id="name" name="Name" type="text" value="@Model.Name" autocomplete="off" />
+
+        <label for="publisher">Publisher</label>
+        <input id="publisher" name="Publisher" type="text" value="@Model.Publisher" autocomplete="off" />
+
+        <label for="description">Description</label>
+        <input id="description" name="Description" type="text" value="@Model.Description" autocomplete="off" />
+
+        <label for="category">Category</label>
+        <input id="category" name="Category" type="text" value="@Model.Category" autocomplete="off" />
+
+        <label for="icon">Icon URL</label>
+        <input id="icon" name="IconUrl" type="text" value="@Model.IconUrl" autocomplete="off" />
+
+        <label class="check">
+            <input name="Featured" type="checkbox" value="true" checked="@Model.Featured" />
+            Featured, which sorts it to the front of the client's list
+        </label>
+        <label class="check">
+            <input name="Hidden" type="checkbox" value="true" checked="@Model.Hidden" />
+            Hidden, which keeps the app and its history but stops offering it to devices
+        </label>
+    </div>
+
+    <div class="card">
+        <h2>Inventory match</h2>
+        <p class="muted">
+            How the client decides this app is already installed. Left empty, the app name is used.
+        </p>
+        <label for="match">Installed name contains</label>
+        <input id="match" name="MatchNameContains" type="text" value="@Model.MatchNameContains" autocomplete="off" />
+    </div>
+
+    <div class="card">
+        <h2>Action1 package</h2>
+        <label for="package-id">Package id</label>
+        <input id="package-id" name="PackageId" type="text" value="@Model.PackageId" autocomplete="off" />
+
+        <label for="version">Version</label>
+        <input id="version" name="Version" type="text" value="@Model.Version" autocomplete="off" />
+        <p class="muted"><code>latest</code>, or an exact version published in the Software Repository.</p>
+
+        <div class="actions">
+            <button type="button" class="secondary"
+                    hx-get="/admin/catalog/@(Model.IsNew ? AppPortal.Server.Pages.Admin.Catalog.EditModel.NewId : Model.Id)?handler=Search"
+                    hx-vals='js:{term: document.getElementById("package-id").value || document.getElementById("name").value}'
+                    hx-target="#package-search"
+                    hx-swap="outerHTML">Search the repository</button>
+            <button type="button" class="secondary"
+                    hx-get="/admin/catalog/@(Model.IsNew ? AppPortal.Server.Pages.Admin.Catalog.EditModel.NewId : Model.Id)?handler=Verify"
+                    hx-vals='js:{packageId: document.getElementById("package-id").value, version: document.getElementById("version").value}'
+                    hx-target="#package-verify"
+                    hx-swap="outerHTML">Verify</button>
+        </div>
+
+        <div id="package-verify"></div>
+        <div id="package-search"></div>
+    </div>
+
+    <div class="card">
+        <h2>Agent package</h2>
+        <p class="muted">Available in 0.5.0.</p>
+        <label for="agent-package">Package definition</label>
+        <input id="agent-package" type="text" disabled placeholder="Available in 0.5.0" />
+    </div>
+
+    <div class="actions">
+        <button type="submit">Save</button>
+        <a class="button secondary" href="/admin/catalog">Back to the catalog</a>
+    </div>
+</form>

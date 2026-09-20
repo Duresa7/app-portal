@@ -12,8 +12,10 @@ public static class PortalEndpoints
     {
         var api = app.MapGroup(ApiRoutes.Prefix);
 
+        // Hidden apps are withheld here rather than deleted, so a device stops being offered an app
+        // the moment an administrator hides it while its install history stays intact.
         api.MapGet("/catalog", (CatalogStore catalog) =>
-            Results.Ok(catalog.Entries.Select(e => e.ToPublic()).ToList()));
+            Results.Ok(catalog.VisibleEntries.Select(e => e.ToPublic()).ToList()));
 
         api.MapGet("/device", async (HttpContext context, IAction1Client action1, CancellationToken ct) =>
         {

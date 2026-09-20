@@ -38,7 +38,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M1-03](plans/M1-03-admin-accounts-and-web-shell.md) | Admin accounts and web shell | M1-01 | Done |
 | [M1-04](plans/M1-04-app-requests.md) | App requests: API and client | M1-02 | Open |
 | [M1-05](plans/M1-05-requests-admin-pages.md) | Requests admin pages | M1-03, M1-04 | Open |
-| [M1-06](plans/M1-06-catalog-admin-pages.md) | Catalog management pages | M1-03 | Open |
+| [M1-06](plans/M1-06-catalog-admin-pages.md) | Catalog management pages | M1-03 | In review |
 | [M1-07](plans/M1-07-install-history-pages.md) | Install history pages | M1-02, M1-03 | Open |
 | [M1-08](plans/M1-08-enrollment-key-pages.md) | Enrollment key management | M1-03 | Open |
 | [M1-09](plans/M1-09-device-admin-pages.md) | Device management pages | M1-03 | Open |

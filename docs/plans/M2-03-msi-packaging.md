@@ -1,6 +1,6 @@
 # M2-03: MSI packaging of client and agent
 
-**Milestone:** 2 (0.4.0)
+**Milestone:** 2 (0.6.0)
 **Depends on:** M2-02
 **Unlocks:** M2-04, M2-05, M2-06
 

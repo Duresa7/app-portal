@@ -59,13 +59,15 @@ Action1 announced a Self-Service App Portal in October 2025 and lists it as an u
 
 ## Try it without a server
 
-Download `AppPortal-client-win-x64.zip` from the [latest release](https://github.com/Duresa7/app-portal/releases/latest), unzip it, and run:
+Demo mode fills the whole interface with sample data held in memory. Installs advance through queued, installing and installed over about twelve seconds, then appear under Installed. Nothing is installed on the machine and nothing leaves it.
 
-```
-AppPortal.exe --demo
+From a clone, with the .NET SDK and nothing else:
+
+```bash
+dotnet run --project src/AppPortal.Client -- --demo
 ```
 
-Demo mode fills the whole interface with sample data held in memory. Installs advance through queued, installing and installed over about twelve seconds, then appear under Installed. Nothing is installed on the machine and nothing leaves it. The build is self-contained, so no .NET runtime is needed, and it is unsigned, so Windows SmartScreen will ask before running it the first time.
+An installed client does the same with `"%ProgramFiles%\App Portal\AppPortal.exe" --demo`, which is how the release gate proves the packaged build renders on Windows.
 
 ## Repository layout
 
@@ -79,7 +81,9 @@ Demo mode fills the whole interface with sample data held in memory. Installs ad
 | `tests/AppPortal.Agent.Tests` | xUnit tests for enrollment, heartbeats, the install engines and self-update |
 | `src/AppPortal.Agent` | SYSTEM service for enrollment, heartbeats, installs and self-update from GitHub releases |
 | `src/AppPortal.Installer` | WiX v5 MSI, built and verified on Windows |
-| `deploy/` | Dockerfile, compose file, environment template and server smoke test |
+| `src/AppPortal.Setup` | `AppPortalSetup.exe`: the wizard and silent installer that carries the MSI |
+| `tests/AppPortal.Setup.Tests` | xUnit tests for the wizard's arguments, exit codes and enrollment wait |
+| `deploy/` | Dockerfile, compose file, environment template, server smoke test and the Windows installer test |
 | `docs/` | Screenshots and design notes |
 
 ## Server setup
@@ -170,7 +174,7 @@ The upgrade was checked using a copy of a data volume written by the 0.2.1 serve
 
 ## Install one PC with Setup.exe
 
-`AppPortalSetup.exe` is the whole product in one file: the MSI, the .NET runtime and a four-page wizard. Carry it to a machine, double-click it, answer two questions, and the PC is enrolled. Releases from the next one onwards attach it beside the MSI; until then, build it with `dotnet publish src/AppPortal.Setup -c Release -r win-x64 --self-contained -p:AppPortalMsiPath=<path to the .msi>`.
+`AppPortalSetup.exe` is the whole product in one file: the MSI, the .NET runtime and a four-page wizard. Carry it to a machine, double-click it, answer two questions, and the PC is enrolled. Every release attaches it beside the MSI.
 
 It asks for the server address and an enrollment key, checks both against the server before it installs anything, and asks for an Action1 endpoint id only when the key enrolls devices through Action1. It then runs the MSI, waits up to a minute for the agent to enroll and report in, and names the device as the server recorded it. Enter moves to the next page and Escape cancels, so the whole path works from the keyboard.
 
@@ -198,7 +202,7 @@ AppPortalSetup.exe /quiet /server https://portal.example.internal /key ape_... [
 The MSI is what a fleet rollout uses; `AppPortalSetup.exe` above wraps this same package for one machine at a time. Download `AppPortal-<version>-x64.msi` from the [latest release](https://github.com/Duresa7/app-portal/releases/latest). Run it elevated or as SYSTEM through Group Policy, Intune or your RMM:
 
 ```powershell
-msiexec /i AppPortal-0.4.0-x64.msi /qn SERVERURL=https://portal.example.internal ENROLLMENTKEY=ape_...
+msiexec /i AppPortal-0.6.0-x64.msi /qn SERVERURL=https://portal.example.internal ENROLLMENTKEY=ape_...
 ```
 
 Use the filename matching the release version. `ACTION1ENDPOINTID=<endpoint-id>` is optional. Pass the key through the deployment system's secret parameter. Property values must not contain quotes, backslashes, tabs or line breaks; percent-encode special characters in the URL.
@@ -207,7 +211,7 @@ The MSI installs the client and agent to `%ProgramFiles%\App Portal`, registers 
 
 Upgrade silently with `msiexec /i AppPortal-<new-version>-x64.msi /qn`; no enrollment properties are needed. The token and local data survive, and the service restarts. Uninstall with `msiexec /x AppPortal-<version>-x64.msi /qn`. Data under `%ProgramData%\AppPortal` stays unless you also pass `REMOVEDATA=1`.
 
-`AppPortal-client-win-x64.zip` is deprecated and continues shipping for one transition release for demos and existing zip deployments. The PowerShell installer scripts have been removed. MSI deployments do not register the old updater task; until the agent's MSI self-update package lands, deploy newer MSIs through your management system. When migrating a script installation, retire its **App Portal Updater** task before installing the MSI so the old updater cannot replace MSI-owned files.
+`AppPortal-client-win-x64.zip` is gone from 0.6.0 onwards, and the PowerShell installer scripts with it. A PC put on from one of those zips cannot reach this release by itself: the updater it carries replaces files by renaming them, which is not how an MSI arrives. Move those machines once by deploying `AppPortal-0.6.0-x64.msi` through whatever channel the zip went through. The MSI reuses the existing `client.json`, so the device keeps its token and does not enroll twice, and the agent deletes the leftover **App Portal Updater** scheduled task the first time it starts. From there the agent keeps the machine current on its own.
 
 The client's **Requests** section accepts up to 500 characters describing the software needed. Each device can have 20 pending requests. The newest request appears immediately after submission; status and administrator reasons refresh with the rest of the client.
 
@@ -241,7 +245,7 @@ cd src/AppPortal.Client
 APPPORTAL_SERVER_URL=http://127.0.0.1:5080 APPPORTAL_DEVICE_TOKEN=<token> dotnet run
 ```
 
-The version every project carries is in `Directory.Build.props`; a release build gets the tag's version from CI through `-p:Version=`, and the updater compares that with the installed file version, so tag `v0.3.0` must ship binaries that report 0.3.0.
+The version every project carries is in `Directory.Build.props`; a release build gets the tag's version from CI through `-p:Version=`, and the agent compares that with the installed file version, so tag `v0.6.0` must ship binaries that report 0.6.0.
 
 `dotnet run -- --screenshot out.png 2 --theme dark` renders a section (0 apps, 1 installed, 2 activity, 3 requests) in the chosen theme to a PNG and exits, which is how the images in `docs/` were produced under Xvfb.
 
@@ -267,11 +271,11 @@ It installs and uninstalls software and writes to `%ProgramData%`, so run it on 
 A release is cut by tagging:
 
 ```bash
-# Directory.Build.props already says 0.3.0 and that commit is on main
-git tag v0.3.0 && git push origin v0.3.0
+# Directory.Build.props already says 0.6.0 and that commit is on main
+git tag v0.6.0 && git push origin v0.6.0
 ```
 
-The tag run repeats all of the above, then a final job pushes `ghcr.io/duresa7/app-portal-server:0.3.0` and `:latest` and creates the GitHub release with the MSI, deprecated zip and `SHA256SUMS`. Nothing a device or a server host can pull exists before that job, so a failure anywhere leaves no release. The run refuses a tag whose version differs from `Directory.Build.props` or whose commit is not on main. A repository ruleset lets only administrators create, move or delete `v*` tags.
+The tag run repeats all of the above, then a final job pushes `ghcr.io/duresa7/app-portal-server:0.6.0` and `:latest` and creates the GitHub release with the MSI, `AppPortalSetup.exe` and `SHA256SUMS`. Nothing a device or a server host can pull exists before that job, so a failure anywhere leaves no release. The run refuses a tag whose version differs from `Directory.Build.props` or whose commit is not on main. A repository ruleset lets only administrators create, move or delete `v*` tags.
 
 Two things CI cannot do:
 

@@ -208,15 +208,20 @@ public static class AdminAuthExtensions
 }
 
 /// <summary>
-/// The two session endpoints the Windows client's admin mode signs in with. M4-01 adds the rest of the
-/// admin JSON API behind the same policy; these two are here because the session they issue is defined here.
+/// The session endpoints the Windows client's admin mode signs in with. The rest of the admin JSON API
+/// sits behind the same policy in <c>Admin/Api</c>; these are here because the session is defined here.
 /// </summary>
 public static class AdminSessionApi
 {
     /// <summary>Admin JSON routes, which the device bearer middleware must not guard.</summary>
-    public const string Prefix = "/api/v1/admin";
+    public const string Prefix = AppPortal.Shared.AdminApiRoutes.Prefix;
 
-    public sealed record SignInRequest(string Username, string Password);
+    /// <summary>
+    /// <c>deviceName</c> is what the client calls the PC it is signing in from. It is a label for the
+    /// sessions list and nothing more: the password is what authenticates, and a name nobody checked
+    /// cannot be allowed to matter.
+    /// </summary>
+    public sealed record SignInRequest(string Username, string Password, string? DeviceName = null);
 
     public sealed record SignInResponse(string Token, DateTimeOffset ExpiresAt);
 
@@ -252,8 +257,10 @@ public static class AdminSessionApi
             }
 
             throttle.Clear(username);
-            var token = sessions.Create(admin.Id, AdminSessionKind.Api);
+            var token = sessions.Create(admin.Id, AdminSessionKind.Api, body?.DeviceName);
             admins.RecordLogin(admin.Id);
+            // Not the device name: it comes out of the body, nobody checked it, and a name carrying a
+            // newline would write a log line of its own. It is shown in the sessions list instead.
             logger.LogInformation("Administrator {Username} took an API token", admin.Username);
             return Results.Ok(new SignInResponse(token, DateTimeOffset.UtcNow + AdminSessionStore.ApiLifetime));
         });

@@ -250,17 +250,52 @@ code=$(curl -sS -o "$scratch/request.json" -w '%{http_code}' \
 [[ "$code" == 201 ]] || { echo "Expected 201 for a new request, got $code"; exit 1; }
 request_id=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["status"]=="Pending"; assert r["requestedBy"]==r"SMOKE\operator"; print(r["id"])' "$scratch/request.json")
 
-step "The administrator approves it and the device sees the decision"
+step "The admin API is closed to a device token"
+# The most numerous credential in the system must be worth nothing on a route that runs the fleet.
+code=$(curl -s -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/v1/admin/dashboard")
+[[ "$code" == 401 ]] || { echo "A device token reached the admin API, got $code"; exit 1; }
+code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/api/v1/admin/dashboard")
+[[ "$code" == 401 ]] || { echo "Expected 401 without a token, got $code"; exit 1; }
+echo "401 for a device token and for no token"
+
+step "The admin API lists the request the page shows"
 curl -fsS -b "$jar" "http://127.0.0.1:$port/admin/requests" > "$scratch/requests.html"
 grep -q "$request_id" "$scratch/requests.html" || { echo "Request missing from admin page"; exit 1; }
-curl -fsS -b "$jar" -o /dev/null \
-    --data-urlencode "id=$request_id" \
-    --data-urlencode "reason=Approved for the smoke test" \
-    --data-urlencode "__RequestVerificationToken=$verification" \
-    "http://127.0.0.1:$port/admin/requests?handler=Approve"
+curl -fsS -H "Authorization: Bearer $admin_token" \
+    "http://127.0.0.1:$port/api/v1/admin/requests?status=pending" > "$scratch/admin-requests.json"
+python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert any(r["id"]==sys.argv[2] for r in p["items"]), p; assert p["limit"] <= 200, p' \
+    "$scratch/admin-requests.json" "$request_id"
+echo "the page and the API agree"
+
+step "The administrator approves it through the API and the device sees the decision"
+code=$(curl -s -o "$scratch/approved.json" -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $admin_token" -H 'Content-Type: application/json' \
+    -d '{"reason":"Approved for the smoke test"}' \
+    "http://127.0.0.1:$port/api/v1/admin/requests/$request_id/approve")
+[[ "$code" == 200 ]] || { cat "$scratch/approved.json"; echo "Expected 200 from approve, got $code"; exit 1; }
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["status"]=="Approved", r; assert r["decidedBy"]=="smokeadmin", r' "$scratch/approved.json"
 curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/v1/requests" \
     | python3 -c 'import json,sys; r=next(r for r in json.load(sys.stdin) if r["id"]==sys.argv[1]); assert r["status"]=="Approved"; assert r["reason"]=="Approved for the smoke test"' "$request_id"
 echo "approval and reason reached the device"
+
+step "A second decision on the same request is refused"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $admin_token" -H 'Content-Type: application/json' \
+    -d '{"reason":"Changed my mind"}' \
+    "http://127.0.0.1:$port/api/v1/admin/requests/$request_id/deny")
+[[ "$code" == 409 ]] || { echo "Expected 409 for a second decision, got $code"; exit 1; }
+echo "409 as expected"
+
+step "An enrollment key created through the admin API stays out of the log"
+api_key=$(curl -fsS -X POST -H "Authorization: Bearer $admin_token" -H 'Content-Type: application/json' \
+    -d '{"name":"smoke-api-key","engine":"agent"}' "http://127.0.0.1:$port/api/v1/admin/keys" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["plaintext"])')
+[[ "$api_key" == ape_* ]] || { echo "No enrollment key in the API reply"; exit 1; }
+docker logs "$name" 2>&1 | grep -q "$api_key" && { echo "The enrollment key leaked into the log"; exit 1; }
+docker logs "$name" 2>&1 | grep -q "smokeadmin called POST /api/v1/admin/keys" \
+    || { echo "The admin API call was not logged"; exit 1; }
+echo "the call is logged and the key is not"
 
 step "The administrator can read fleet install history"
 code=$(curl -sS -b "$jar" -o "$scratch/installs.html" -w '%{http_code}' "http://127.0.0.1:$port/admin/installs")

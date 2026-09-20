@@ -30,6 +30,11 @@ The agent downloads an installer from a URL, verifies its SHA-256, runs it silen
 
 None new beyond the folders and the reuse of `POST /api/v1/agent/software`.
 
+One thing differs from this plan as written. The installed-software report needs nothing of its own
+here: `winget list` already lists what is under the Uninstall key, whatever put it there, so the
+reporter M3-03 built covers a direct install too. Reading the registry key a second time would only
+produce a second answer to the same question.
+
 ## Steps
 
 1. Resumable downloader with tests against a local Kestrel test server that drops the connection mid-stream and honours `Range`.

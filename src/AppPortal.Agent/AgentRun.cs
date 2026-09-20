@@ -1,7 +1,7 @@
+using AppPortal.Agent.Downloads;
 using AppPortal.Agent.Enrollment;
 using AppPortal.Agent.Executors;
 using AppPortal.Agent.Jobs;
-
 using AppPortal.Shared;
 
 namespace AppPortal.Agent;
@@ -54,6 +54,18 @@ public static class AgentRun
         builder.Services.AddHostedService(provider => provider.GetRequiredService<HeartbeatWorker>());
         builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
         builder.Services.AddSingleton<SoftwareReporter>();
+        builder.Services.AddSingleton(provider => new InstallerCache(
+            Path.Combine(stateDirectory, "downloads"), provider.GetRequiredService<ILogger<InstallerCache>>()));
+        builder.Services.AddSingleton(provider => new ResumableDownload(
+            // No timeout: a several-gigabyte download over an office connection outlasts any sensible one.
+            new HttpClient { Timeout = Timeout.InfiniteTimeSpan },
+            provider.GetRequiredService<InstallerCache>(),
+            provider.GetRequiredService<ILogger<ResumableDownload>>()));
+        builder.Services.AddSingleton<IPackageExecutor>(provider => new DirectInstallerExecutor(
+            provider.GetRequiredService<ResumableDownload>(),
+            provider.GetRequiredService<IProcessRunner>(),
+            provider.GetRequiredService<ILogger<DirectInstallerExecutor>>(),
+            stateDirectory));
         builder.Services.AddSingleton<IPackageExecutor>(provider => new WingetExecutor(
             provider.GetRequiredService<IProcessRunner>(),
             provider.GetRequiredService<ILogger<WingetExecutor>>(),

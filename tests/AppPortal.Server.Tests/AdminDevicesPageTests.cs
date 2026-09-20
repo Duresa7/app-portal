@@ -1,10 +1,13 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 
 using AppPortal.Server.Admin;
 using AppPortal.Server.Devices;
+using AppPortal.Server.Enrollment;
 using AppPortal.Server.Installs;
+using AppPortal.Server.Requests;
 using AppPortal.Shared;
 
 using Microsoft.AspNetCore.Hosting;
@@ -361,6 +364,90 @@ public sealed class AdminDevicesPageTests : IDisposable
         Assert.Empty(_installs.ForDeviceId(_devices.FindByName("testpc")!.Id));
         Assert.Equal(previous.Id, Assert.Single(_installs.ForDevice("TESTPC")).Id);
         Assert.Equal(previous.Id, Assert.Single(_installs.All()).Id);
+    }
+
+    [Fact]
+    public async Task Removing_a_device_keeps_pending_and_decided_requests_for_admins_only()
+    {
+        var requests = new AppRequestStore(_test.Database);
+        var pending = requests.Create("TESTPC", @"CONTOSO\alice", "retained pending request");
+        var approved = requests.Create("TESTPC", @"CONTOSO\bob", "retained approved request");
+        Assert.True(requests.Decide(approved.Id, AppRequestStatus.Approved, "Approved for work.", "admin"));
+        var device = _devices.FindByName("TESTPC")!;
+        device.Name = "RENAMED-PC";
+        _devices.Update(device);
+        var admin = await SignedIn();
+
+        var response = await Post(admin, $"/admin/devices/{device.Id}?handler=Remove", $"/admin/devices/{device.Id}", new());
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var history = requests.ListByStatus(null, 50, 0);
+        Assert.Equal(2, history.Count);
+        Assert.All(history, request => Assert.Equal("RENAMED-PC", request.DeviceName));
+        Assert.Equal(AppRequestStatus.Pending, requests.Find(pending.Id)!.Status);
+        Assert.Equal("Approved for work.", requests.Find(approved.Id)!.Reason);
+        var html = await admin.GetStringAsync("/admin/requests?tab=all");
+        Assert.Contains("retained pending request", html);
+        Assert.Contains("retained approved request", html);
+        Assert.Contains("RENAMED-PC", html);
+
+        var replacementToken = _devices.Add("RENAMED-PC", "replacement-endpoint");
+        var replacement = Device(replacementToken);
+        Assert.Empty((await replacement.GetFromJsonAsync<AppRequest[]>(ApiRoutes.Requests))!);
+        var replacementId = _devices.FindByName("RENAMED-PC")!.Id;
+        Assert.DoesNotContain("retained pending request", await admin.GetStringAsync($"/admin/devices/{replacementId}"));
+        Assert.Equal(HttpStatusCode.Created,
+            (await replacement.PostAsJsonAsync(ApiRoutes.Requests, new CreateAppRequest("replacement request"))).StatusCode);
+        Assert.Single(requests.ListForDeviceId(replacementId));
+        Assert.Equal(3, requests.ListByStatus(null, 50, 0).Count);
+    }
+
+    [Fact]
+    public async Task Device_details_show_recent_requests_for_that_device()
+    {
+        var requests = new AppRequestStore(_test.Database);
+        var request = requests.Create("TESTPC", @"CONTOSO\alice", "A drawing application");
+        requests.Decide(request.Id, AppRequestStatus.Approved, null, "admin");
+        _devices.Add("OTHERPC", "other-endpoint");
+        requests.Create("OTHERPC", null, "Other device request");
+        var device = _devices.FindByName("TESTPC")!;
+        var admin = await SignedIn();
+
+        var html = await admin.GetStringAsync($"/admin/devices/{device.Id}");
+
+        Assert.Contains("Recent requests", html);
+        Assert.Contains("A drawing application", html);
+        Assert.Contains(@"CONTOSO\alice", html);
+        Assert.Contains("Approved", html);
+        Assert.Contains(request.CreatedAt.ToLocalTime().ToString("u"), html);
+        Assert.DoesNotContain("Other device request", html);
+    }
+
+    [Fact]
+    public async Task The_device_list_identifies_enrollment_keys_without_exposing_the_secret()
+    {
+        var key = new EnrollmentKeyStore(_test.Database).Create("Office enrollment", EnrollmentEngine.Action1, null, null, "admin");
+        using (var connection = _test.Database.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE devices SET enrolled_with_key_id = @key WHERE name = 'TESTPC';";
+            command.Parameters.AddWithValue("@key", key.Key.Id);
+            command.ExecuteNonQuery();
+        }
+
+        var admin = await SignedIn();
+        var html = await admin.GetStringAsync("/admin/devices");
+        Assert.Contains("Office enrollment", html);
+        Assert.DoesNotContain(key.Plaintext, html);
+
+        using (var connection = _test.Database.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE devices SET enrolled_with_key_id = 'missing-key-id' WHERE name = 'TESTPC';";
+            command.ExecuteNonQuery();
+        }
+
+        Assert.Contains("missing-key-id", await admin.GetStringAsync("/admin/devices"));
     }
 
     public void Dispose()

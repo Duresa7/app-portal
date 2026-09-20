@@ -80,7 +80,7 @@
                         <span class="pill off">Disabled</span>
                     }
                 </td>
-                <td class="muted">@(device.EnrolledWithKeyId is null ? "added by hand" : "a key")</td>
+                <td class="muted">@Model.EnrollmentKeyFor(device)</td>
                 <td class="right">@Model.InstallsFor(device)</td>
             </tr>
         }

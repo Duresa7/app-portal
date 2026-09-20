@@ -39,6 +39,12 @@ public sealed class AppRequestRejectedException(AppRequestRejection reason, stri
 public sealed class AppRequestStore(Database database)
 {
     public AppRequestRecord Create(string deviceName, string? requestedBy, string text)
+        => CreateCore(deviceName, byId: false, requestedBy, text);
+
+    public AppRequestRecord CreateForDeviceId(string deviceId, string? requestedBy, string text)
+        => CreateCore(deviceId, byId: true, requestedBy, text);
+
+    private AppRequestRecord CreateCore(string identity, bool byId, string? requestedBy, string text)
     {
         var trimmed = (text ?? "").Trim();
         if (trimmed.Length == 0)
@@ -56,7 +62,7 @@ public sealed class AppRequestStore(Database database)
         using var connection = database.Open();
         using var transaction = connection.BeginTransaction();
 
-        var deviceId = DeviceId(connection, transaction, deviceName);
+        var (deviceId, deviceName) = Device(connection, transaction, identity, byId);
 
         using (var count = connection.CreateCommand())
         {
@@ -85,11 +91,12 @@ public sealed class AppRequestStore(Database database)
         {
             write.Transaction = transaction;
             write.CommandText = """
-                INSERT INTO app_requests (id, device_id, requested_by, text, status, reason, decided_by, decided_at, created_at)
-                VALUES (@id, @device, @by, @text, 'pending', NULL, NULL, NULL, @created);
+                INSERT INTO app_requests (id, device_id, device_name, requested_by, text, status, reason, decided_by, decided_at, created_at)
+                VALUES (@id, @device, @deviceName, @by, @text, 'pending', NULL, NULL, NULL, @created);
                 """;
             write.Parameters.AddWithValue("@id", record.Id);
             write.Parameters.AddWithValue("@device", deviceId);
+            write.Parameters.AddWithValue("@deviceName", deviceName);
             write.Parameters.AddWithValue("@by", (object?)record.RequestedBy ?? DBNull.Value);
             write.Parameters.AddWithValue("@text", record.Text);
             write.Parameters.AddWithValue("@created", SqlTime.From(record.CreatedAt));
@@ -106,6 +113,15 @@ public sealed class AppRequestStore(Database database)
         using var command = connection.CreateCommand();
         command.CommandText = Select + " WHERE d.name = @name COLLATE NOCASE ORDER BY r.created_at DESC;";
         command.Parameters.AddWithValue("@name", deviceName);
+        return Read(command);
+    }
+
+    public IReadOnlyList<AppRequestRecord> ListForDeviceId(string deviceId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE r.device_id = @device ORDER BY r.created_at DESC;";
+        command.Parameters.AddWithValue("@device", deviceId);
         return Read(command);
     }
 
@@ -169,20 +185,24 @@ public sealed class AppRequestStore(Database database)
 
     private static string Name(AppRequestStatus status) => status.ToString().ToLowerInvariant();
 
-    private static string DeviceId(SqliteConnection connection, SqliteTransaction transaction, string deviceName)
+    private static (string Id, string Name) Device(SqliteConnection connection, SqliteTransaction transaction, string identity, bool byId)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT id FROM devices WHERE name = @name COLLATE NOCASE;";
-        command.Parameters.AddWithValue("@name", deviceName);
-        return command.ExecuteScalar() as string
-               ?? throw new InvalidOperationException($"No device named '{deviceName}' is registered, so its request cannot be recorded.");
+        command.CommandText = byId
+            ? "SELECT id, name FROM devices WHERE id = @identity;"
+            : "SELECT id, name FROM devices WHERE name = @identity COLLATE NOCASE;";
+        command.Parameters.AddWithValue("@identity", identity);
+        using var reader = command.ExecuteReader();
+        return reader.Read()
+            ? (reader.GetString(0), reader.GetString(1))
+            : throw new InvalidOperationException($"No device '{identity}' is registered, so its request cannot be recorded.");
     }
 
     private const string Select = """
-        SELECT r.id, d.name, r.requested_by, r.text, r.status, r.reason, r.decided_by, r.decided_at, r.created_at
+        SELECT r.id, COALESCE(d.name, r.device_name), r.requested_by, r.text, r.status, r.reason, r.decided_by, r.decided_at, r.created_at
         FROM app_requests r
-        JOIN devices d ON d.id = r.device_id
+        LEFT JOIN devices d ON d.id = r.device_id
         """;
 
     private static List<AppRequestRecord> Read(SqliteCommand command)

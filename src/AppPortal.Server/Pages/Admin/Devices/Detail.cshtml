@@ -123,10 +123,41 @@
 </div>
 
 <div class="card">
+    <h2>Recent requests</h2>
+    @if (Model.RecentRequests.Count == 0)
+    {
+        <p class="muted">No software has been requested on this device yet.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+            <tr>
+                <th>Requested</th>
+                <th>Request</th>
+                <th>Requested by</th>
+                <th>Status</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var request in Model.RecentRequests)
+            {
+                <tr>
+                    <td>@request.CreatedAt.ToLocalTime().ToString("u")</td>
+                    <td>@request.Text</td>
+                    <td>@(string.IsNullOrWhiteSpace(request.RequestedBy) ? "—" : request.RequestedBy)</td>
+                    <td><span class="pill">@request.Status</span></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="card">
     <h2>Remove</h2>
     <p class="muted">
-        Removing takes the device off the portal and stops its token. Its install history stays on the
-        installs page under this name. A device with an install still running cannot be removed.
+        Removing takes the device off the portal and stops its token. Its install and request history stays available to administrators under this name. A device with an install still running cannot be removed.
     </p>
     <form method="post" hx-boost="true" hx-history="false" asp-page-handler="Remove">
         <div class="actions">

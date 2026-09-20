@@ -234,6 +234,30 @@ public sealed class AdminInstallsPageTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Removed_devices_keep_their_history_count_filter_and_pagination()
+    {
+        var now = DateTimeOffset.UtcNow;
+        for (var i = 0; i < 101; i++)
+        {
+            Seed("PC-A", $"retired-{i}", InstallState.Succeeded, now.AddMinutes(-i));
+        }
+
+        Seed("PC-B", "other-device", InstallState.Succeeded, now);
+        Assert.True(new DeviceStore(_test.Database).Remove("PC-A"));
+        var admin = await SignedIn();
+
+        var all = await admin.GetStringAsync("/admin/installs");
+        Assert.Contains("of 102", all);
+        var first = await admin.GetStringAsync("/admin/installs?Device=PC-A");
+        Assert.Contains("Showing 1 to 100 of 101", first);
+        Assert.Contains("Older", first);
+        Assert.DoesNotContain("OTHER-DEVICE", first);
+        var last = await admin.GetStringAsync("/admin/installs?Device=PC-A&Skip=100");
+        Assert.Contains("Showing 101 to 101 of 101", last);
+        Assert.Contains("RETIRED-100", last);
+    }
+
     public void Dispose()
     {
         _factory.Dispose();

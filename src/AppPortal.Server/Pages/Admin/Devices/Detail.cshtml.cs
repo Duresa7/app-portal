@@ -1,6 +1,7 @@
 using AppPortal.Server.Admin;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Installs;
+using AppPortal.Server.Requests;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +10,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace AppPortal.Server.Pages.Admin.Devices;
 
 [Authorize(Policy = AdminAuth.Policy)]
-public sealed class DetailModel(DeviceStore devices, InstallStore installs) : PageModel
+public sealed class DetailModel(DeviceStore devices, InstallStore installs, AppRequestStore requests) : PageModel
 {
     /// <summary>What the engine preference dropdown offers. Empty means follow the server.</summary>
     public static readonly string[] EnginePreferences = ["", "action1", "agent"];
@@ -17,6 +18,8 @@ public sealed class DetailModel(DeviceStore devices, InstallStore installs) : Pa
     public DeviceRecord Device { get; private set; } = null!;
 
     public IReadOnlyList<InstallRecord> RecentInstalls { get; private set; } = [];
+
+    public IReadOnlyList<AppRequestRecord> RecentRequests { get; private set; } = [];
 
     public string? Error { get; private set; }
 
@@ -127,6 +130,7 @@ public sealed class DetailModel(DeviceStore devices, InstallStore installs) : Pa
 
         Device = record;
         RecentInstalls = [.. installs.ForDeviceId(record.Id).Take(20)];
+        RecentRequests = [.. requests.ListForDeviceId(record.Id).Take(20)];
         return true;
     }
 

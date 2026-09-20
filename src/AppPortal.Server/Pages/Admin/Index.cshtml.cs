@@ -1,6 +1,7 @@
 using AppPortal.Server.Admin;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Installs;
+using AppPortal.Server.Requests;
 using AppPortal.Shared;
 
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +10,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace AppPortal.Server.Pages.Admin;
 
 [Authorize(Policy = AdminAuth.Policy)]
-public sealed class IndexModel(DeviceStore devices, InstallStore installs) : PageModel
+public sealed class IndexModel(DeviceStore devices, InstallStore installs, AppRequestStore requests) : PageModel
 {
     public int Devices { get; private set; }
 
@@ -19,8 +20,7 @@ public sealed class IndexModel(DeviceStore devices, InstallStore installs) : Pag
 
     public int ActiveNow { get; private set; }
 
-    /// <summary>Always zero until M1-04 creates requests; the tile exists so the layout does not move.</summary>
-    public int PendingRequests => 0;
+    public int PendingRequests { get; private set; }
 
     /// <summary>
     /// Midnight where the server is, not where UTC is. Every time on these pages is rendered local, so
@@ -34,5 +34,6 @@ public sealed class IndexModel(DeviceStore devices, InstallStore installs) : Pag
         InstallsToday = installs.CountBy(null, TodayStarted);
         FailuresThisWeek = installs.CountBy(InstallState.Failed, DateTimeOffset.Now.AddDays(-7));
         ActiveNow = installs.CountActive();
+        PendingRequests = requests.PendingCount();
     }
 }

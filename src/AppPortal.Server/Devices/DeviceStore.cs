@@ -274,6 +274,14 @@ public sealed class DeviceStore(Database database)
             stamp.ExecuteNonQuery();
         }
 
+        using (var requests = connection.CreateCommand())
+        {
+            requests.Transaction = transaction;
+            requests.CommandText = "UPDATE app_requests SET device_name = (SELECT name FROM devices WHERE id = @id) WHERE device_id = @id;";
+            requests.Parameters.AddWithValue("@id", id);
+            requests.ExecuteNonQuery();
+        }
+
         using (var delete = connection.CreateCommand())
         {
             delete.Transaction = transaction;

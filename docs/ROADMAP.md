@@ -43,6 +43,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M1-08](plans/M1-08-enrollment-key-pages.md) | Enrollment key management | M1-03 | Done |
 | [M1-09](plans/M1-09-device-admin-pages.md) | Device management pages | M1-03 | Done |
 | [M1-10](plans/M1-10-release-0.3.0.md) | Release 0.3.0 | M1-04, M1-05, M1-06, M1-07, M1-08, M1-09 | Done |
+| [M1-12](plans/M1-12-admin-list-module.md) | Administration list queries in one module | M1-05, M1-06, M1-07, M1-08, M1-09 | Open |
 | [M2-01](plans/M2-01-enrollment-api.md) | Enrollment API | M1-08, M1-09 | Open |
 | [M2-02](plans/M2-02-agent-service.md) | Agent service skeleton and heartbeat | M1-09 | Open |
 | [M2-03](plans/M2-03-msi-packaging.md) | MSI packaging of client and agent | M2-02 | Open |
@@ -56,7 +57,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M3-04](plans/M3-04-direct-installer-executor.md) | Direct installer executor | M3-02 | Open |
 | [M3-05](plans/M3-05-engine-selection.md) | Engine selection and labels | M3-01, M3-02, M1-07 | Open |
 | [M3-06](plans/M3-06-release-0.5.0.md) | Release 0.5.0 | M3-03, M3-04, M3-05 | Open |
-| [M4-01](plans/M4-01-admin-json-api.md) | Admin JSON API and client admin sessions | M1-10 | Open |
+| [M4-01](plans/M4-01-admin-json-api.md) | Admin JSON API and client admin sessions | M1-10, M1-12 | Open |
 | [M4-02](plans/M4-02-client-admin-shell.md) | Client admin sign-in and navigation | M4-01 | Open |
 | [M4-03](plans/M4-03-client-installs-and-requests.md) | Client admin: installs and requests | M4-02 | Open |
 | [M4-04](plans/M4-04-client-catalog.md) | Client admin: catalog | M4-02 | Open |
@@ -87,7 +88,8 @@ graph LR
   M3-02 --> M3-04
   M3-01 & M3-02 & M1-07 --> M3-05
   M3-03 & M3-04 & M3-05 --> M3-06
-  M1-10 --> M4-01 --> M4-02 --> M4-03
+  M1-05 & M1-06 & M1-07 & M1-08 & M1-09 --> M1-12
+  M1-10 & M1-12 --> M4-01 --> M4-02 --> M4-03
   M4-02 --> M4-04
   M4-02 --> M4-05
   M4-03 & M4-04 & M4-05 --> M4-06

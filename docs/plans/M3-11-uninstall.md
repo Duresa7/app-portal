@@ -34,6 +34,14 @@ Software the agent installed can be removed through the agent, by the person who
 
 `catalog_apps.user_removable`, `installs.kind`. Route `POST /api/v1/uninstalls` with body `{appId}`. `IPackageExecutor.UninstallAsync(PackageDefinition d, IProgress<...> p, CancellationToken ct)`. `InstallRequest.Kind: string`.
 
+Three things differ from this plan as written:
+
+- The migration is **018**, and `agent_jobs` gains a `kind` too, so the agent is told which way round it is working without having to read the install row.
+- `UninstallAsync` takes the `JobContext` the install path already takes, because a per-user removal has to run in that person's session and so needs to know whose.
+- **A removal only goes through the agent.** Action1 owns what Action1 deployed, and reaching around it would leave the two disagreeing about what is on the device. An app whose engine on this device is Action1 is refused with that reason rather than half-removed.
+
+An exe whose uninstall entry offers only an interactive command is refused in words. Running it from a service would open a window on somebody's screen and wait for them, which is worse than an honest failure.
+
 ## Steps
 
 1. Migration, permission rule and its tests, covering each of owner, other person, machine-wide and administrator.

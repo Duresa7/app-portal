@@ -46,6 +46,13 @@ public sealed class CatalogEntry
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<string> Requires { get; set; } = [];
 
+    /// <summary>
+    /// Whether the person who installed this may take it off again. Off unless an administrator says
+    /// otherwise: the safe answer for anything nobody has thought about is that only they can.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool UserRemovable { get; set; }
+
     public Action1PackageRef Action1 { get; set; } = new();
     public PackageDefinition? Agent { get; set; }
     public MatchRule? Match { get; set; }
@@ -65,7 +72,8 @@ public sealed class CatalogEntry
         // Only an agent package can be per-user; Action1 always installs for the whole device.
         Agent?.Scope,
         null,
-        Requirements);
+        Requirements,
+        UserRemovable);
 
     [JsonIgnore]
     public bool HasAction1 => !string.IsNullOrWhiteSpace(Action1?.PackageId);
@@ -238,18 +246,21 @@ public sealed class CatalogStore
             {
                 app.Transaction = transaction;
                 app.CommandText = """
-                    INSERT INTO catalog_apps (id, name, publisher, description, category, icon_url, featured, hidden, match_json, engine_override, requirements, created_at, updated_at)
-                    VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, @engine, @requirements, @now, @now)
+                    INSERT INTO catalog_apps (id, name, publisher, description, category, icon_url, featured, hidden, match_json, engine_override, requirements, user_removable, created_at, updated_at)
+                    VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, @engine, @requirements, @removable, @now, @now)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name, publisher = excluded.publisher, description = excluded.description,
                         category = excluded.category, icon_url = excluded.icon_url, featured = excluded.featured,
                         hidden = excluded.hidden, match_json = excluded.match_json,
                         engine_override = excluded.engine_override, requirements = excluded.requirements,
+                    user_removable = excluded.user_removable,
+                        user_removable = excluded.user_removable,
                         updated_at = excluded.updated_at;
                     """;
                 app.Parameters.AddWithValue("@id", entry.Id.Trim());
                 app.Parameters.AddWithValue("@engine", (object?)entry.EngineOverride ?? DBNull.Value);
                 app.Parameters.AddWithValue("@requirements", (object?)entry.Requirements ?? DBNull.Value);
+                app.Parameters.AddWithValue("@removable", entry.UserRemovable ? 1 : 0);
                 app.Parameters.AddWithValue("@name", entry.Name);
                 app.Parameters.AddWithValue("@publisher", entry.Publisher ?? "");
                 app.Parameters.AddWithValue("@description", entry.Description ?? "");
@@ -282,8 +293,8 @@ public sealed class CatalogStore
         {
             app.Transaction = transaction;
             app.CommandText = """
-                INSERT INTO catalog_apps (id, name, publisher, description, category, icon_url, featured, hidden, match_json, engine_override, requirements, created_at, updated_at)
-                VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, @engine, @requirements, @now, @now)
+                INSERT INTO catalog_apps (id, name, publisher, description, category, icon_url, featured, hidden, match_json, engine_override, requirements, user_removable, created_at, updated_at)
+                VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, @engine, @requirements, @removable, @now, @now)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name, publisher = excluded.publisher, description = excluded.description,
                     category = excluded.category, icon_url = excluded.icon_url, featured = excluded.featured,
@@ -294,6 +305,7 @@ public sealed class CatalogStore
             app.Parameters.AddWithValue("@id", entry.Id.Trim());
             app.Parameters.AddWithValue("@engine", (object?)entry.EngineOverride ?? DBNull.Value);
             app.Parameters.AddWithValue("@requirements", (object?)entry.Requirements ?? DBNull.Value);
+            app.Parameters.AddWithValue("@removable", entry.UserRemovable ? 1 : 0);
             app.Parameters.AddWithValue("@name", entry.Name.Trim());
             app.Parameters.AddWithValue("@publisher", entry.Publisher ?? "");
             app.Parameters.AddWithValue("@description", entry.Description ?? "");
@@ -422,7 +434,7 @@ public sealed class CatalogStore
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT a.id, a.name, a.publisher, a.description, a.category, a.icon_url, a.featured, a.match_json, p.definition_json, a.hidden, agent.definition_json, a.engine_override, a.requirements
+            SELECT a.id, a.name, a.publisher, a.description, a.category, a.icon_url, a.featured, a.match_json, p.definition_json, a.hidden, agent.definition_json, a.engine_override, a.requirements, a.user_removable
             FROM catalog_apps a
             LEFT JOIN catalog_packages p ON p.app_id = a.id AND p.engine = 'action1'
             LEFT JOIN catalog_packages agent ON agent.app_id = a.id AND agent.engine = 'agent'
@@ -454,6 +466,7 @@ public sealed class CatalogStore
                 Agent = reader.IsDBNull(10) ? null : JsonSerializer.Deserialize<PackageDefinition>(reader.GetString(10), Json),
                 EngineOverride = reader.IsDBNull(11) ? null : reader.GetString(11),
                 Requirements = reader.IsDBNull(12) ? null : reader.GetString(12),
+                UserRemovable = !reader.IsDBNull(13) && reader.GetInt64(13) != 0,
             });
         }
 

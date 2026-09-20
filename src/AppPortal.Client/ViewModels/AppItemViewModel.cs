@@ -23,10 +23,13 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
     private readonly Func<AppItemViewModel, Task> _install;
 
-    public AppItemViewModel(CatalogApp app, Func<AppItemViewModel, Task> install)
+    private readonly Func<AppItemViewModel, Task> _remove;
+
+    public AppItemViewModel(CatalogApp app, Func<AppItemViewModel, Task> install, Func<AppItemViewModel, Task>? remove = null)
     {
         _app = app;
         _install = install;
+        _remove = remove ?? (_ => Task.CompletedTask);
         TileBrush = new SolidColorBrush(Color.Parse(TilePalette[StableIndex(app.Id, TilePalette.Length)]));
     }
 
@@ -62,6 +65,12 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
     public string RestartText => $"Restart this PC to finish installing {App.Name}.";
 
+    /// <summary>
+    /// Offered only on what is actually on the PC, and only when the administrator has said this app
+    /// may be taken off by the person who put it there.
+    /// </summary>
+    public bool CanRemove => App.UserRemovable && IsInstalled && !IsBusy && !IsConfirming;
+
     public bool HasRequirements => !string.IsNullOrWhiteSpace(App.Requirements);
 
     public string RequirementsText => App.Requirements ?? "";
@@ -84,8 +93,8 @@ public sealed partial class AppItemViewModel : ViewModelBase
     private Bitmap? _icon;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText), nameof(CanInstall), nameof(IsBusy))]
-    [NotifyCanExecuteChangedFor(nameof(InstallCommand))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(CanInstall), nameof(IsBusy), nameof(CanRemove))]
+    [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(RemoveCommand))]
     private bool _isInstalled;
 
     [ObservableProperty]
@@ -195,6 +204,9 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
     [RelayCommand]
     private void CancelInstall() => IsConfirming = false;
+
+    [RelayCommand(CanExecute = nameof(CanRemove))]
+    private Task RemoveAsync() => _remove(this);
 
     /// <summary>
     /// Asks Windows to restart, with a minute's notice and a reason on screen. Nothing here forces it:

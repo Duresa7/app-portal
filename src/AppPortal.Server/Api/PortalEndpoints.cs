@@ -80,6 +80,39 @@ public static class PortalEndpoints
             return Results.Ok(record.ToPublic());
         });
 
+        api.MapPost("/uninstalls", async (HttpContext context, CreateUninstallRequest body, InstallService installs, CancellationToken ct) =>
+        {
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            if (string.IsNullOrWhiteSpace(body.AppId))
+            {
+                return Results.BadRequest(new ErrorMessage("appId is required."));
+            }
+
+            try
+            {
+                // From a device, never as an administrator: the device token says which PC is calling
+                // and nothing more, and a person at that PC is not an administrator by being there.
+                var record = await installs.UninstallAsync(device, body.AppId,
+                    DeviceAuthenticationMiddleware.RequestedBy(context), asAdministrator: false, ct);
+                return Results.Accepted($"{ApiRoutes.Installs}/{record.Id}", record.ToPublic());
+            }
+            catch (InstallRejectedException ex)
+            {
+                var status = ex.Reason switch
+                {
+                    InstallRejection.UnknownApp => StatusCodes.Status404NotFound,
+                    InstallRejection.AlreadyInProgress => StatusCodes.Status409Conflict,
+                    InstallRejection.NotAllowed => StatusCodes.Status403Forbidden,
+                    _ => StatusCodes.Status422UnprocessableEntity,
+                };
+                return Results.Json(new ErrorMessage(ex.Message), statusCode: status);
+            }
+            catch (Action1Exception ex)
+            {
+                return Results.Json(new ErrorMessage(ex.Message), statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
         api.MapPost("/installs", async (HttpContext context, CreateInstallRequest body, InstallService installs, CancellationToken ct) =>
         {
             var device = DeviceAuthenticationMiddleware.Current(context);

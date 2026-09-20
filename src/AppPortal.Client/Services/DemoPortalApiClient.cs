@@ -106,6 +106,9 @@ public sealed class DemoPortalApiClient : IPortalApiClient
         }
     }
 
+    public Task<InstallRequest> RequestUninstallAsync(string appId, CancellationToken ct)
+        => RequestInstallAsync(appId, ct);
+
     public Task<InstallRequest> RequestInstallAsync(string appId, CancellationToken ct)
     {
         var app = Catalog.FirstOrDefault(a => a.Id == appId)

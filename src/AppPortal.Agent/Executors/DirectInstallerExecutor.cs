@@ -16,6 +16,7 @@ public sealed class DirectInstallerExecutor(
     ILogger<DirectInstallerExecutor> logger,
     string stateDirectory,
     IUserSessionLauncher sessions,
+    IUninstallRegistry registry,
     TimeSpan? timeout = null) : IPackageExecutor
 {
     private const int RebootRequired = 3010;
@@ -90,6 +91,106 @@ public sealed class DirectInstallerExecutor(
 
         log.Write($"exit {result.ExitCode}");
         return Interpret(result);
+    }
+
+    public async Task<ExecutionResult> UninstallAsync(JobContext job, PackageDefinition definition,
+        IProgress<(int percent, string detail)> progress, CancellationToken ct)
+    {
+        if (definition is not DirectPackageDefinition direct)
+        {
+            return new ExecutionResult(false, "This job is not a direct installer.");
+        }
+
+        var log = new JobLog(stateDirectory, job.JobId);
+        var command = UninstallCommand(direct, registry);
+        if (command is null)
+        {
+            // An exe whose uninstall entry offers only an interactive command is a dead end from a
+            // service: running it would open a window on somebody's screen and wait for them.
+            return new ExecutionResult(false,
+                "This app does not offer a silent way to remove it. Remove it from Settings on the PC.");
+        }
+
+        progress.Report((0, "Removing"));
+        log.Write($"{command.Value.File} {command.Value.Arguments}");
+        ProcessResult? result;
+        if (direct.Scope == "user")
+        {
+            if (string.IsNullOrWhiteSpace(job.Requester))
+            {
+                return new ExecutionResult(false, "This package belongs to one person, and the removal does not say who.");
+            }
+
+            result = await sessions.RunAsAsync(job.Requester, command.Value.File, command.Value.Arguments, log.Write, _timeout, ct);
+            if (result is null)
+            {
+                return new ExecutionResult(false, $"Waiting for {job.Requester} to sign in.", null, WaitingForUser: true);
+            }
+        }
+        else
+        {
+            result = await processes.RunAsync(command.Value.File, command.Value.Arguments, log.Write, _timeout, ct);
+        }
+
+        log.Write($"exit {result.ExitCode}");
+        return result.ExitCode switch
+        {
+            0 => new ExecutionResult(true, "Removed.", 0),
+            RebootRequired or RebootInitiated => Restart(result.ExitCode) with { Detail = "Removed. This PC has to restart to finish." },
+            _ => new ExecutionResult(false, $"The app could not be removed (exit code {result.ExitCode}).", result.ExitCode),
+        };
+    }
+
+    /// <summary>
+    /// How to take this package off, or null when there is no way to do it without somebody watching.
+    /// An msix is removed by name; an msi by its product code; an exe by whatever quiet command its
+    /// own uninstall entry documents, which not every vendor bothers to write.
+    /// </summary>
+    internal static (string File, string Arguments)? UninstallCommand(DirectPackageDefinition direct, IUninstallRegistry registry)
+    {
+        if (direct.InstallerType == "msix")
+        {
+            if (string.IsNullOrWhiteSpace(direct.UninstallKey))
+            {
+                return null;
+            }
+
+            var remove = direct.Scope == "user" ? "Remove-AppxPackage" : "Remove-AppxProvisionedPackage -Online -AllUsers";
+            return ("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "
+                                      + $"\"{remove} -PackageName '{direct.UninstallKey}'\"");
+        }
+
+        if (string.IsNullOrWhiteSpace(direct.UninstallKey))
+        {
+            return null;
+        }
+
+        if (direct.InstallerType == "msi")
+        {
+            return ("msiexec.exe", $"/x {direct.UninstallKey} /qn /norestart");
+        }
+
+        var quiet = registry.QuietUninstallString(direct.UninstallKey);
+        if (string.IsNullOrWhiteSpace(quiet))
+        {
+            return null;
+        }
+
+        return Split(quiet);
+    }
+
+    /// <summary>Splits a command line into the file and the rest, honouring a quoted path.</summary>
+    private static (string File, string Arguments) Split(string command)
+    {
+        var text = command.Trim();
+        if (text.StartsWith('"'))
+        {
+            var end = text.IndexOf('"', 1);
+            return end < 0 ? (text.Trim('"'), "") : (text[1..end], text[(end + 1)..].Trim());
+        }
+
+        var space = text.IndexOf(' ');
+        return space < 0 ? (text, "") : (text[..space], text[(space + 1)..].Trim());
     }
 
     /// <summary>

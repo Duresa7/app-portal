@@ -62,6 +62,9 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     [BindProperty]
     public string Requires { get; set; } = "";
 
+    [BindProperty]
+    public bool UserRemovable { get; set; }
+
 
     [BindProperty]
     public bool Hidden { get; set; }
@@ -177,6 +180,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             EngineOverride = EmptyToNull(EngineOverride),
             Requirements = EmptyToNull(Requirements),
             Requires = [.. SplitLines(Requires)],
+            UserRemovable = UserRemovable,
             Match = string.IsNullOrWhiteSpace(MatchNameContains) && string.IsNullOrWhiteSpace(MatchNameEquals)
                 ? null
                 : new MatchRule
@@ -324,6 +328,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         EngineOverride = entry.EngineOverride ?? "";
         Requirements = entry.Requirements ?? "";
         Requires = string.Join('\n', entry.Requires);
+        UserRemovable = entry.UserRemovable;
         MatchNameContains = entry.Match?.NameContains ?? "";
         MatchNameEquals = entry.Match?.NameEquals ?? "";
         PackageId = entry.Action1.PackageId;

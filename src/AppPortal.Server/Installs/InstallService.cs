@@ -17,6 +17,9 @@ public enum InstallRejection
     AlreadyInProgress,
     TooManyActive,
     PackageVersionNotFound,
+
+    /// <summary>The caller may not do this, whatever the state of the device.</summary>
+    NotAllowed,
 }
 
 public sealed class InstallRejectedException(InstallRejection reason, string message) : Exception(message)
@@ -59,6 +62,76 @@ public sealed class InstallService(
         {
             gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Takes software off a device. Allowed for the person who asked for it when the administrator has
+    /// said the app may be removed, and for an administrator whatever the app says.
+    /// </summary>
+    public async Task<InstallRecord> UninstallAsync(DeviceRecord device, string appId, string? requestedBy,
+        bool asAdministrator, CancellationToken ct)
+    {
+        var app = catalog.Find(appId)
+                  ?? throw new InstallRejectedException(InstallRejection.UnknownApp, $"'{appId}' is not in the catalog.");
+        if (!asAdministrator && !app.UserRemovable)
+        {
+            throw new InstallRejectedException(InstallRejection.NotAllowed,
+                $"{app.Name} can only be removed by an administrator.");
+        }
+
+        var history = store.ForDeviceId(device.Id);
+        if (history.Any(r => r.IsActive && string.Equals(r.AppId, app.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InstallRejectedException(InstallRejection.AlreadyInProgress, $"{app.Name} is already being worked on for this device.");
+        }
+
+        if (!asAdministrator)
+        {
+            // Somebody may remove what they installed, and a machine-wide install is everybody's.
+            var theirs = history.Any(r => !r.IsUninstall
+                                          && string.Equals(r.AppId, app.Id, StringComparison.OrdinalIgnoreCase)
+                                          && r.State == InstallState.Succeeded
+                                          && (r.RequestedBy is null
+                                              || string.Equals(r.RequestedBy, requestedBy, StringComparison.OrdinalIgnoreCase)
+                                              || app.Agent?.Scope != "user"));
+            if (!theirs)
+            {
+                throw new InstallRejectedException(InstallRejection.NotAllowed,
+                    $"{app.Name} was installed for somebody else on this PC.");
+            }
+        }
+
+        var chosen = EngineSelector.Choose(device, app, settings.DefaultEngine)
+                     ?? throw new InstallRejectedException(InstallRejection.PackageVersionNotFound,
+                         $"{app.Name} cannot be removed from this PC.");
+        if (chosen != EngineLabel.Agent)
+        {
+            // Action1 owns what Action1 deployed, and reaching around it would leave the two disagreeing.
+            throw new InstallRejectedException(InstallRejection.NotAllowed,
+                $"{app.Name} is managed by Action1 on this PC and has to be removed there.");
+        }
+
+        var record = new InstallRecord
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            DeviceId = device.Id,
+            DeviceName = device.Name,
+            EndpointId = device.EndpointId,
+            AppId = app.Id,
+            AppName = app.Name,
+            RequestedBy = requestedBy,
+            RequestedAt = DateTimeOffset.UtcNow,
+            State = InstallState.Queued,
+            Engine = chosen,
+            Kind = InstallKind.Uninstall,
+            StepName = app.Name,
+            StepNumber = 1,
+            StepCount = 1,
+        };
+
+        record.AutomationId = await StartStepAsync(device, record, app, chosen, 0, ct);
+        logger.LogInformation("Device {Device} asked to remove {App} for {User}", device.Name, app.Name, requestedBy ?? "an unnamed account");
+        return record;
     }
 
     private async Task<InstallRecord> CreateCoreAsync(DeviceRecord device, string appId, string? requestedBy, CancellationToken ct)

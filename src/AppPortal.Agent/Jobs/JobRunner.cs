@@ -73,6 +73,9 @@ public sealed class JobRunner(
         var requester = root.TryGetProperty("requester", out var r) && r.ValueKind == JsonValueKind.String
             ? r.GetString()
             : null;
+        var kind = root.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.String
+            ? k.GetString() ?? InstallKind.Install
+            : InstallKind.Install;
 
         // The definition is read apart from the rest of the job on purpose. A server newer than this
         // agent can describe a kind this build has no type for, and deserialising the whole job would
@@ -99,7 +102,7 @@ public sealed class JobRunner(
         try
         {
             var executor = _executors.GetValueOrDefault(definition.Kind) ?? _fallback;
-            execution = ExecuteAsync(executor, new JobContext(id, requester), definition, progress, running.Token);
+            execution = ExecuteAsync(executor, new JobContext(id, requester, kind), definition, progress, running.Token);
             var first = await Task.WhenAny(execution, reporting);
             if (first == reporting)
             {
@@ -181,7 +184,9 @@ public sealed class JobRunner(
     {
         try
         {
-            return await executor.RunAsync(job, definition, progress, ct);
+            return job.Kind == InstallKind.Uninstall
+                ? await executor.UninstallAsync(job, definition, progress, ct)
+                : await executor.RunAsync(job, definition, progress, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

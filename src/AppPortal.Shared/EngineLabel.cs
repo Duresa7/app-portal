@@ -4,6 +4,16 @@ namespace AppPortal.Shared;
 /// Whether an install is waiting for a restart. Said the same way in the database, the JSON and on
 /// screen, where it is always "restart" and never "reboot": one of those is a word people use.
 /// </summary>
+/// <summary>
+/// Whether a row is software going on or coming off. One word in the database, the JSON and on
+/// screen, because the history shows both in the same list.
+/// </summary>
+public static class InstallKind
+{
+    public const string Install = "install";
+    public const string Uninstall = "uninstall";
+}
+
 public static class RebootState
 {
     public const string Pending = "pending";

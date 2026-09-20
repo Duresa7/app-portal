@@ -72,6 +72,7 @@ public sealed class CatalogRefreshTests
         public Task<IReadOnlyList<InstallRequest>> GetInstallsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<InstallRequest>>([]);
         public Task<IReadOnlyList<AppRequest>> GetRequestsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<AppRequest>>([]);
         public Task<InstallRequest> RequestInstallAsync(string appId, CancellationToken ct) => throw new NotSupportedException();
+        public Task<InstallRequest> RequestUninstallAsync(string appId, CancellationToken ct) => throw new NotSupportedException();
         public Task<AppRequest> CreateRequestAsync(string text, CancellationToken ct) => throw new NotSupportedException();
     }
 }

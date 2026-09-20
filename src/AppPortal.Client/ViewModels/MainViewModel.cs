@@ -19,6 +19,10 @@ namespace AppPortal.Client.ViewModels;
 
 public sealed partial class MainViewModel : ViewModelBase
 {
+    /// <summary>Shown when the request file cannot be left. Nothing a person at this PC can fix alone.</summary>
+    private const string AgentUnreachable =
+        "The update could not be requested. An administrator can check that the App Portal Agent service is running on this PC.";
+
     private readonly IPortalApiClient? _api;
     private readonly DispatcherTimer _timer;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
@@ -59,7 +63,7 @@ public sealed partial class MainViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(UpdateReady), nameof(UpdateAvailable), nameof(UpdateText))]
     private UpdateStatus? _updateStatus;
 
-    /// <summary>Set after the user asks for an update, so the banner can show progress until the updater reports back.</summary>
+    /// <summary>Set after the user asks for an update, so the banner can show progress until the agent reports back.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UpdateAvailable), nameof(UpdateText))]
     private bool _updateRequested;
@@ -261,23 +265,37 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Asks the agent to look for an update. It downloads and installs; this app only asks.</summary>
     [RelayCommand]
     private void UpdateNow()
     {
+        if (IsDemo)
+        {
+            return;
+        }
+
         UpdateRequested = UpdateStatusReader.RequestUpdate();
         if (!UpdateRequested)
         {
-            ErrorMessage = "The updater could not be started. An administrator can run the \"App Portal Updater\" task in Task Scheduler.";
+            ErrorMessage = AgentUnreachable;
         }
     }
 
-    /// <summary>Asks the updater to run and then exits, since the swap waits for this process to be gone.</summary>
+    /// <summary>
+    /// Asks the agent to update and then exits, because Windows Installer cannot replace files this
+    /// process holds open.
+    /// </summary>
     [RelayCommand]
     private async Task RestartToUpdateAsync()
     {
+        if (IsDemo)
+        {
+            return;
+        }
+
         if (!UpdateStatusReader.RequestUpdate())
         {
-            ErrorMessage = "The updater could not be started. An administrator can run the \"App Portal Updater\" task in Task Scheduler.";
+            ErrorMessage = AgentUnreachable;
             return;
         }
 

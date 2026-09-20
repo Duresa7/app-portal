@@ -17,6 +17,21 @@ public sealed class DeviceRecord
     public string TokenSha256 { get; set; } = "";
     public bool Enabled { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>True once an agent has enrolled on this PC. Written by M2-01; shown here now.</summary>
+    public bool HasAgent { get; set; }
+
+    /// <summary>'action1', 'agent', or null to follow the server's preference. Used from M3-05.</summary>
+    public string? EnginePreference { get; set; }
+
+    public string? AgentVersion { get; set; }
+
+    public string? EnrolledWithKeyId { get; set; }
+
+    public DateTimeOffset? LastSeenAt { get; set; }
+
+    /// <summary>True when the device has an Action1 endpoint to deploy through.</summary>
+    public bool HasAction1 => !string.IsNullOrWhiteSpace(EndpointId);
 }
 
 public sealed class DevicesFile
@@ -99,39 +114,151 @@ public sealed class DeviceStore(Database database)
         return token;
     }
 
+    public DeviceRecord? Find(string id)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE id = @id;";
+        command.Parameters.AddWithValue("@id", id);
+        return Read(command).FirstOrDefault();
+    }
+
+    public DeviceRecord? FindByName(string name)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE name = @name COLLATE NOCASE;";
+        command.Parameters.AddWithValue("@name", name);
+        return Read(command).FirstOrDefault();
+    }
+
+    /// <summary>Devices whose name contains the term. An empty term is every device.</summary>
+    public IReadOnlyList<DeviceRecord> Search(string? term)
+    {
+        var needle = (term ?? "").Trim();
+        return needle.Length == 0
+            ? All()
+            : [.. All().Where(d => d.Name.Contains(needle, StringComparison.OrdinalIgnoreCase))];
+    }
+
     /// <summary>
-    /// Removes a device. False means there was no such device. A device with install history cannot be
-    /// removed: the history points at it, and until M1-09 stores the device name alongside each install,
-    /// removing the device would take the history with it.
+    /// Writes the fields an administrator can change. The token is not among them: rotating is its own
+    /// operation because it hands back a secret that is shown once.
     /// </summary>
-    public bool Remove(string name)
+    public void Update(DeviceRecord device)
+    {
+        var name = (device.Name ?? "").Trim();
+        if (name.Length == 0)
+        {
+            throw new DeviceRejectedException("A device needs a name.");
+        }
+
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+
+        using (var clash = connection.CreateCommand())
+        {
+            clash.Transaction = transaction;
+            clash.CommandText = "SELECT EXISTS(SELECT 1 FROM devices WHERE name = @name COLLATE NOCASE AND id <> @id);";
+            clash.Parameters.AddWithValue("@name", name);
+            clash.Parameters.AddWithValue("@id", device.Id);
+            if (Convert.ToInt64(clash.ExecuteScalar()) != 0)
+            {
+                throw new DeviceRejectedException($"Another device is already called '{name}'.");
+            }
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE devices
+                SET name = @name, enabled = @enabled, action1_endpoint_id = @endpoint, engine_preference = @engine
+                WHERE id = @id;
+                """;
+            command.Parameters.AddWithValue("@name", name);
+            command.Parameters.AddWithValue("@enabled", device.Enabled ? 1 : 0);
+            command.Parameters.AddWithValue("@endpoint", string.IsNullOrWhiteSpace(device.EndpointId) ? DBNull.Value : device.EndpointId.Trim());
+            command.Parameters.AddWithValue("@engine", string.IsNullOrWhiteSpace(device.EnginePreference) ? DBNull.Value : device.EnginePreference);
+            command.Parameters.AddWithValue("@id", device.Id);
+            command.ExecuteNonQuery();
+        }
+
+        // The history keeps the name it was made under unless the device is renamed, in which case the
+        // whole record should read as the device is called now.
+        using (var history = connection.CreateCommand())
+        {
+            history.Transaction = transaction;
+            history.CommandText = "UPDATE installs SET device_name = @name WHERE device_id = @id;";
+            history.Parameters.AddWithValue("@name", name);
+            history.Parameters.AddWithValue("@id", device.Id);
+            history.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    /// <summary>
+    /// Issues a new token and forgets the old one, which stops working on the very next call because
+    /// authentication matches the stored hash.
+    /// </summary>
+    public string? RotateToken(string id)
+    {
+        var token = GenerateToken();
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE devices SET token_hash = @hash WHERE id = @id;";
+        command.Parameters.AddWithValue("@hash", Hash(token));
+        command.Parameters.AddWithValue("@id", id);
+        return command.ExecuteNonQuery() == 1 ? token : null;
+    }
+
+    /// <summary>
+    /// Records that the device called just now. The caller decides how often this is worth doing; every
+    /// API request would be a write per request for a number nobody reads to the second.
+    /// </summary>
+    public void TouchLastSeen(string id)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE devices SET last_seen_at = @now WHERE id = @id;";
+        command.Parameters.AddWithValue("@now", SqlTime.Now());
+        command.Parameters.AddWithValue("@id", id);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Removes a device by id, keeping its install history, which carries the device name of its own
+    /// since migration 006. False when an install is still in flight: that one is going to report back,
+    /// and there would be no device for the answer to belong to.
+    /// </summary>
+    public bool RemoveById(string id)
     {
         using var connection = database.Open();
         using var transaction = connection.BeginTransaction();
-        string id;
-        using (var find = connection.CreateCommand())
+
+        using (var active = connection.CreateCommand())
         {
-            find.Transaction = transaction;
-            find.CommandText = "SELECT id FROM devices WHERE name = @name COLLATE NOCASE;";
-            find.Parameters.AddWithValue("@name", name);
-            if (find.ExecuteScalar() is not string found)
+            active.Transaction = transaction;
+            active.CommandText = "SELECT COUNT(*) FROM installs WHERE device_id = @id AND state IN ('Queued', 'Running') COLLATE NOCASE;";
+            active.Parameters.AddWithValue("@id", id);
+            if (Convert.ToInt32(active.ExecuteScalar()) > 0)
             {
                 return false;
             }
-
-            id = found;
         }
 
-        using (var installs = connection.CreateCommand())
+        // Make sure the history can name the device before the device stops existing.
+        using (var stamp = connection.CreateCommand())
         {
-            installs.Transaction = transaction;
-            installs.CommandText = "SELECT COUNT(*) FROM installs WHERE device_id = @id;";
-            installs.Parameters.AddWithValue("@id", id);
-            var count = Convert.ToInt32(installs.ExecuteScalar());
-            if (count > 0)
-            {
-                throw new DeviceInUseException($"'{name}' has {count} install(s) in its history and cannot be removed. Disable it instead.");
-            }
+            stamp.Transaction = transaction;
+            stamp.CommandText = """
+                UPDATE installs
+                SET device_name = COALESCE(NULLIF(device_name, ''), (SELECT name FROM devices WHERE id = @id), '')
+                WHERE device_id = @id;
+                """;
+            stamp.Parameters.AddWithValue("@id", id);
+            stamp.ExecuteNonQuery();
         }
 
         using (var delete = connection.CreateCommand())
@@ -146,12 +273,56 @@ public sealed class DeviceStore(Database database)
         return true;
     }
 
+    /// <summary>How many installs each device has to its name, for the list page.</summary>
+    public IReadOnlyDictionary<string, int> InstallCounts()
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        // Installs whose device has been removed have no device_id any more. They still belong to the
+        // history, but to no device, so they are counted against none.
+        command.CommandText = "SELECT device_id, COUNT(*) FROM installs WHERE device_id IS NOT NULL GROUP BY device_id;";
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            counts[reader.GetString(0)] = (int)reader.GetInt64(1);
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// Removes a device by name. False means there was no such device. Kept for the CLI, which knows
+    /// devices by name; it refuses while an install is in flight, the same as the page does.
+    /// </summary>
+    public bool Remove(string name)
+    {
+        var device = FindByName(name);
+        if (device is null)
+        {
+            return false;
+        }
+
+        // Settled history no longer blocks a removal: it carries the device name itself now, so it
+        // survives on its own. Only an install still in flight does.
+        if (!RemoveById(device.Id))
+        {
+            throw new DeviceInUseException($"'{device.Name}' has an install in progress and cannot be removed yet. Wait for it to finish, or disable the device.");
+        }
+
+        return true;
+    }
+
     public static string Hash(string token)
         => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
     public static string NewId() => Guid.NewGuid().ToString("N");
 
-    private const string Select = "SELECT id, name, token_hash, enabled, action1_endpoint_id, created_at FROM devices";
+    private const string Select = """
+        SELECT id, name, token_hash, enabled, action1_endpoint_id, created_at,
+               has_agent, engine_preference, agent_version, enrolled_with_key_id, last_seen_at
+        FROM devices
+        """;
 
     private static List<DeviceRecord> Read(SqliteCommand command)
     {
@@ -167,6 +338,11 @@ public sealed class DeviceStore(Database database)
                 Enabled = reader.GetInt64(3) != 0,
                 EndpointId = reader.IsDBNull(4) ? "" : reader.GetString(4),
                 CreatedAt = SqlTime.Parse(reader.GetString(5)),
+                HasAgent = reader.GetInt64(6) != 0,
+                EnginePreference = reader.IsDBNull(7) ? null : reader.GetString(7),
+                AgentVersion = reader.IsDBNull(8) ? null : reader.GetString(8),
+                EnrolledWithKeyId = reader.IsDBNull(9) ? null : reader.GetString(9),
+                LastSeenAt = SqlTime.ParseOptional(reader.IsDBNull(10) ? null : reader.GetString(10)),
             });
         }
 
@@ -187,5 +363,8 @@ public sealed class DeviceStore(Database database)
     }
 }
 
-/// <summary>Raised when a device cannot be removed because its install history refers to it.</summary>
+/// <summary>Raised when a device cannot be removed because an install on it is still running.</summary>
 public sealed class DeviceInUseException(string message) : Exception(message);
+
+/// <summary>Raised when a change to a device is not allowed, with wording meant for an administrator.</summary>
+public sealed class DeviceRejectedException(string message) : Exception(message);

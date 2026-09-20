@@ -55,7 +55,7 @@ public sealed class InstallStore(Database database)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = Select + " WHERE d.name = @name COLLATE NOCASE ORDER BY i.requested_at DESC;";
+        command.CommandText = Select + " WHERE COALESCE(NULLIF(i.device_name, ''), d.name) = @name COLLATE NOCASE ORDER BY i.requested_at DESC;";
         command.Parameters.AddWithValue("@name", deviceName);
         return Read(command);
     }
@@ -116,9 +116,9 @@ public sealed class InstallStore(Database database)
         {
             write.Transaction = transaction;
             write.CommandText = """
-                INSERT INTO installs (id, device_id, app_id, app_name, requested_by, engine, external_ref,
+                INSERT INTO installs (id, device_id, device_name, app_id, app_name, requested_by, engine, external_ref,
                                       state, percent, detail, requested_at, completed_at, last_checked_at)
-                VALUES (@id, @device, @appId, @appName, @requestedBy, 'action1', @external,
+                VALUES (@id, @device, @deviceName, @appId, @appName, @requestedBy, 'action1', @external,
                         @state, @percent, @detail, @requested, @completed, @checked)
                 ON CONFLICT(id) DO UPDATE SET
                     app_name = excluded.app_name, external_ref = excluded.external_ref, state = excluded.state,
@@ -128,6 +128,8 @@ public sealed class InstallStore(Database database)
             write.Parameters.AddWithValue("@id", record.Id);
             // Always supplied: the column is not null, and SQLite checks that before it decides the row conflicts.
             write.Parameters.AddWithValue("@device", DeviceId(connection, transaction, record.DeviceName));
+            // Denormalised on purpose: this is what the history shows once the device itself is gone.
+            write.Parameters.AddWithValue("@deviceName", record.DeviceName);
             write.Parameters.AddWithValue("@appId", record.AppId);
             write.Parameters.AddWithValue("@appName", record.AppName);
             // Left out of the ON CONFLICT update on purpose: who asked is settled when the install is made,
@@ -148,12 +150,15 @@ public sealed class InstallStore(Database database)
         return true;
     }
 
+    // LEFT JOIN, and the name off the install rather than the device: a removed device leaves its
+    // history behind, and an inner join would have quietly deleted that history from every page.
     private const string Select = """
-        SELECT i.id, d.name, d.action1_endpoint_id, i.app_id, i.app_name, i.external_ref,
+        SELECT i.id, COALESCE(NULLIF(i.device_name, ''), d.name, '') AS device_name, d.action1_endpoint_id,
+               i.app_id, i.app_name, i.external_ref,
                i.state, i.percent, i.detail, i.requested_at, i.completed_at, i.last_checked_at,
                i.requested_by
         FROM installs i
-        JOIN devices d ON d.id = i.device_id
+        LEFT JOIN devices d ON d.id = i.device_id
         """;
 
     private static List<InstallRecord> Read(SqliteCommand command)

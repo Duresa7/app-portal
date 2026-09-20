@@ -1,0 +1,137 @@
+@page "/admin/devices/{id}"
+@model AppPortal.Server.Pages.Admin.Devices.DetailModel
+@{
+    ViewData["Title"] = Model.Device.Name;
+    ViewData["Nav"] = "devices";
+}
+@if (Model.Error is not null)
+{
+    <div class="message error">@Model.Error</div>
+}
+@if (Model.Notice is not null)
+{
+    <div class="message ok">@Model.Notice</div>
+}
+@if (Model.IssuedToken is not null)
+{
+    <div class="card token-panel">
+        <h2>New token for @Model.Device.Name</h2>
+        <p class="muted">Shown once and not stored. Put it in the device's <code>client.json</code> now.</p>
+        <code class="secret">@Model.IssuedToken</code>
+    </div>
+}
+
+<div class="card">
+    <h2>Device</h2>
+    <dl class="detail">
+        <dt>Id</dt>
+        <dd><code>@Model.Device.Id</code></dd>
+
+        <dt>Registered</dt>
+        <dd>@Model.Device.CreatedAt.ToLocalTime().ToString("u")</dd>
+
+        <dt>Last seen</dt>
+        <dd>@(Model.Device.LastSeenAt is { } seen ? seen.ToLocalTime().ToString("u") : "never")</dd>
+
+        <dt>Agent</dt>
+        <dd>@(Model.Device.HasAgent ? Model.Device.AgentVersion ?? "enrolled" : "not enrolled")</dd>
+
+        <dt>Enrolled with</dt>
+        <dd>@(Model.Device.EnrolledWithKeyId is { } key ? key : "added by hand")</dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h2>Settings</h2>
+    <form method="post" asp-page-handler="Save">
+        <label for="name">Name</label>
+        <input id="name" name="Name" type="text" value="@Model.Name" autocomplete="off" />
+
+        <label for="endpoint">Action1 endpoint id</label>
+        <input id="endpoint" name="EndpointId" type="text" value="@Model.EndpointId" autocomplete="off" />
+        <p class="muted">Empty means this device has no Action1 endpoint to deploy through.</p>
+
+        <label for="engine">Engine preference</label>
+        <select id="engine" name="EnginePreference">
+            @foreach (var option in AppPortal.Server.Pages.Admin.Devices.DetailModel.EnginePreferences)
+            {
+                <option value="@option" selected="@(option == Model.EnginePreference)">
+                    @(option.Length == 0 ? "Follow the server" : option)
+                </option>
+            }
+        </select>
+        <p class="muted">Which engine installs go through for this device. Used from 0.5.0.</p>
+
+        <label class="check">
+            <input name="Enabled" type="checkbox" value="true" checked="@Model.Enabled" />
+            Enabled. A disabled device is refused by the API on its very next call.
+        </label>
+
+        <div class="actions">
+            <button type="submit">Save</button>
+            <a class="button secondary" href="/admin/devices">Back to devices</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Token</h2>
+    <p class="muted">
+        Rotating issues a new token and stops the old one immediately. The device cannot call in again
+        until it has the new one, so do this when you can update the device.
+    </p>
+    <form method="post" asp-page-handler="Rotate">
+        <div class="actions">
+            <button type="submit" class="secondary">Rotate token</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Recent installs</h2>
+    @if (Model.RecentInstalls.Count == 0)
+    {
+        <p class="muted">Nothing has been installed on this device yet.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+            <tr>
+                <th>Requested</th>
+                <th>App</th>
+                <th>Requested by</th>
+                <th>State</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var install in Model.RecentInstalls)
+            {
+                <tr>
+                    <td><a href="/admin/installs/@install.Id">@install.RequestedAt.ToLocalTime().ToString("u")</a></td>
+                    <td>@install.AppName</td>
+                    <td>@(string.IsNullOrWhiteSpace(install.RequestedBy) ? "—" : install.RequestedBy)</td>
+                    <td><span class="pill @(install.State == AppPortal.Shared.InstallState.Failed ? "off" : "")">@install.State</span></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        <div class="actions">
+            <a class="button secondary" href="/admin/installs?Device=@Uri.EscapeDataString(Model.Device.Name)">All installs for this device</a>
+        </div>
+    }
+</div>
+
+<div class="card">
+    <h2>Remove</h2>
+    <p class="muted">
+        Removing takes the device off the portal and stops its token. Its install history stays on the
+        installs page under this name. A device with an install still running cannot be removed.
+    </p>
+    <form method="post" asp-page-handler="Remove">
+        <div class="actions">
+            <button type="submit" class="secondary"
+                    onclick="return confirm('Remove @Model.Device.Name? Its install history is kept.');">Remove device</button>
+        </div>
+    </form>
+</div>

@@ -113,8 +113,34 @@ curl -fsS -b "$jar" -c "$jar" -o /dev/null \
 code=$(curl -s -b "$jar" -o /tmp/admin.html -w '%{http_code}' "http://127.0.0.1:$port/admin")
 [[ "$code" == 200 ]] || { echo "Expected 200 for a signed-in /admin, got $code"; exit 1; }
 grep -q "Dashboard" /tmp/admin.html || { echo "/admin did not render the shell"; exit 1; }
-rm -f "$jar"
 echo "signed in and the dashboard rendered"
+
+step "Hiding an app in the browser takes it off the device catalog"
+verification=$(curl -fsS -b "$jar" -c "$jar" "http://127.0.0.1:$port/admin/catalog" \
+    | grep -o 'name="__RequestVerificationToken"[^>]*value="[^"]*"' \
+    | head -n 1 | sed 's/.*value="\([^"]*\)".*/\1/')
+[[ -n "$verification" ]] || { echo "No antiforgery token on the catalog page"; exit 1; }
+curl -fsS -b "$jar" -c "$jar" -o /dev/null -X POST \
+    --data-urlencode "id=$app_id" \
+    --data-urlencode "hidden=true" \
+    --data-urlencode "__RequestVerificationToken=$verification" \
+    "http://127.0.0.1:$port/admin/catalog?handler=Hide"
+# No restart in between: the store reads through to the database on every request.
+curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/v1/catalog" \
+    | grep -q "\"id\":\"$app_id\"" && { echo "A hidden app is still served to devices"; exit 1; }
+echo "$app_id is hidden from devices"
+
+step "Showing it again puts it back"
+curl -fsS -b "$jar" -c "$jar" -o /dev/null -X POST \
+    --data-urlencode "id=$app_id" \
+    --data-urlencode "hidden=false" \
+    --data-urlencode "__RequestVerificationToken=$verification" \
+    "http://127.0.0.1:$port/admin/catalog?handler=Hide"
+curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/v1/catalog" \
+    | grep -q "\"id\":\"$app_id\"" || { echo "The app did not come back"; exit 1; }
+echo "$app_id is served again"
+
+rm -f "$jar"
 
 step "DELETE /api/v1/admin/session revokes the token"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \

@@ -37,6 +37,8 @@ public interface IPortalApiClient
     Task<IReadOnlyList<InstalledApp>> GetInstalledAsync(CancellationToken ct);
     Task<IReadOnlyList<InstallRequest>> GetInstallsAsync(CancellationToken ct);
     Task<InstallRequest> RequestInstallAsync(string appId, CancellationToken ct);
+    Task<IReadOnlyList<AppRequest>> GetRequestsAsync(CancellationToken ct);
+    Task<AppRequest> CreateRequestAsync(string text, CancellationToken ct);
 }
 
 public sealed class PortalApiClient : IPortalApiClient
@@ -74,11 +76,21 @@ public sealed class PortalApiClient : IPortalApiClient
     public Task<IReadOnlyList<InstallRequest>> GetInstallsAsync(CancellationToken ct)
         => GetAsync<IReadOnlyList<InstallRequest>>(ApiRoutes.Installs, ct);
 
+    public Task<IReadOnlyList<AppRequest>> GetRequestsAsync(CancellationToken ct)
+        => GetAsync<IReadOnlyList<AppRequest>>(ApiRoutes.Requests, ct);
+
     public async Task<InstallRequest> RequestInstallAsync(string appId, CancellationToken ct)
     {
         using var response = await SendAsync(() => _http.PostAsJsonAsync(ApiRoutes.Installs.TrimStart('/'), new CreateInstallRequest(appId), Json, ct), ct);
         await ThrowIfFailedAsync(response, ct);
         return await ReadAsync<InstallRequest>(response, ct);
+    }
+
+    public async Task<AppRequest> CreateRequestAsync(string text, CancellationToken ct)
+    {
+        using var response = await SendAsync(() => _http.PostAsJsonAsync(ApiRoutes.Requests.TrimStart('/'), new CreateAppRequest(text), Json, ct), ct);
+        await ThrowIfFailedAsync(response, ct);
+        return await ReadAsync<AppRequest>(response, ct);
     }
 
     private async Task<T> GetAsync<T>(string route, CancellationToken ct)

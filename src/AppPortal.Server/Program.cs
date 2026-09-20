@@ -8,6 +8,7 @@ using AppPortal.Server.Devices;
 using AppPortal.Server.Enrollment;
 using AppPortal.Server.Installs;
 using AppPortal.Server.Options;
+using AppPortal.Server.Requests;
 using AppPortal.Shared;
 
 using Microsoft.Extensions.Options;
@@ -42,6 +43,7 @@ builder.Services.AddSingleton<CatalogStore>();
 builder.Services.AddSingleton<DeviceStore>();
 builder.Services.AddSingleton<EnrollmentKeyStore>();
 builder.Services.AddSingleton<InstallStore>();
+builder.Services.AddSingleton<AppRequestStore>();
 builder.Services.AddSingleton<InstallService>();
 builder.Services.AddHostedService<InstallStatusPoller>();
 

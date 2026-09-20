@@ -19,6 +19,11 @@ public sealed class CatalogEntry
     public string Category { get; set; } = "Other";
     public string? IconUrl { get; set; }
     public bool Featured { get; set; }
+
+    /// <summary>Hidden apps stay in the catalog and keep their history but are not offered to devices.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Hidden { get; set; }
+
     public Action1PackageRef Action1 { get; set; } = new();
     public MatchRule? Match { get; set; }
 
@@ -106,10 +111,36 @@ public sealed class CatalogStore
         }
     }
 
+    /// <summary>What the device API offers: everything the administrator has not hidden.</summary>
+    public IReadOnlyList<CatalogEntry> VisibleEntries
+    {
+        get
+        {
+            using var connection = _database.Open();
+            return Read(connection, null, visibleOnly: true);
+        }
+    }
+
     public CatalogEntry? Find(string id)
     {
         using var connection = _database.Open();
         return Read(connection, id).FirstOrDefault();
+    }
+
+    /// <summary>Apps whose id, name, publisher or category contains the term. An empty term is everything.</summary>
+    public IReadOnlyList<CatalogEntry> Search(string? term)
+    {
+        var needle = (term ?? "").Trim();
+        if (needle.Length == 0)
+        {
+            return Entries;
+        }
+
+        return [.. Entries.Where(e =>
+            e.Id.Contains(needle, StringComparison.OrdinalIgnoreCase)
+            || e.Name.Contains(needle, StringComparison.OrdinalIgnoreCase)
+            || e.Publisher.Contains(needle, StringComparison.OrdinalIgnoreCase)
+            || e.Category.Contains(needle, StringComparison.OrdinalIgnoreCase))];
     }
 
     public int Count()
@@ -145,7 +176,12 @@ public sealed class CatalogStore
         return file.Apps;
     }
 
-    /// <summary>Upserts by id. Apps the file does not mention are left alone.</summary>
+    /// <summary>
+    /// Upserts by id. Apps the file does not mention are left alone, but every field of the ones it does
+    /// mention comes from the file, <c>hidden</c> included: an export is meant to restore what it captured,
+    /// so a file that omits the flag says the app is visible. Seeding only runs on an empty catalog, so a
+    /// restart never walks over an administrator's decision; an upload is a deliberate act.
+    /// </summary>
     public int Import(IReadOnlyList<CatalogEntry> entries)
     {
         using var connection = _database.Open();
@@ -157,12 +193,12 @@ public sealed class CatalogStore
             {
                 app.Transaction = transaction;
                 app.CommandText = """
-                    INSERT INTO catalog_apps (id, name, publisher, description, category, icon_url, featured, match_json, engine_override, created_at, updated_at)
-                    VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @match, NULL, @now, @now)
+                    INSERT INTO catalog_apps (id, name, publisher, description, category, icon_url, featured, hidden, match_json, engine_override, created_at, updated_at)
+                    VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, NULL, @now, @now)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name, publisher = excluded.publisher, description = excluded.description,
                         category = excluded.category, icon_url = excluded.icon_url, featured = excluded.featured,
-                        match_json = excluded.match_json, updated_at = excluded.updated_at;
+                        hidden = excluded.hidden, match_json = excluded.match_json, updated_at = excluded.updated_at;
                     """;
                 app.Parameters.AddWithValue("@id", entry.Id);
                 app.Parameters.AddWithValue("@name", entry.Name);
@@ -171,6 +207,7 @@ public sealed class CatalogStore
                 app.Parameters.AddWithValue("@category", entry.Category ?? "");
                 app.Parameters.AddWithValue("@icon", (object?)entry.IconUrl ?? DBNull.Value);
                 app.Parameters.AddWithValue("@featured", entry.Featured ? 1 : 0);
+                app.Parameters.AddWithValue("@hidden", entry.Hidden ? 1 : 0);
                 app.Parameters.AddWithValue("@match", entry.Match is null ? DBNull.Value : JsonSerializer.Serialize(entry.Match, Json));
                 app.Parameters.AddWithValue("@now", now);
                 app.ExecuteNonQuery();
@@ -192,18 +229,137 @@ public sealed class CatalogStore
         return entries.Count;
     }
 
+    /// <summary>
+    /// Writes one app and its Action1 package. The edit pages own every field including hidden, unlike
+    /// <see cref="Import"/>, which leaves an app's hidden flag where the administrator put it.
+    /// </summary>
+    public void Upsert(CatalogEntry entry)
+    {
+        Validate(entry);
+
+        using var connection = _database.Open();
+        using var transaction = connection.BeginTransaction();
+        var now = SqlTime.Now();
+
+        using (var app = connection.CreateCommand())
+        {
+            app.Transaction = transaction;
+            app.CommandText = """
+                INSERT INTO catalog_apps (id, name, publisher, description, category, icon_url, featured, hidden, match_json, engine_override, created_at, updated_at)
+                VALUES (@id, @name, @publisher, @description, @category, @icon, @featured, @hidden, @match, NULL, @now, @now)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name, publisher = excluded.publisher, description = excluded.description,
+                    category = excluded.category, icon_url = excluded.icon_url, featured = excluded.featured,
+                    hidden = excluded.hidden, match_json = excluded.match_json, updated_at = excluded.updated_at;
+                """;
+            app.Parameters.AddWithValue("@id", entry.Id.Trim());
+            app.Parameters.AddWithValue("@name", entry.Name.Trim());
+            app.Parameters.AddWithValue("@publisher", entry.Publisher ?? "");
+            app.Parameters.AddWithValue("@description", entry.Description ?? "");
+            app.Parameters.AddWithValue("@category", entry.Category ?? "");
+            app.Parameters.AddWithValue("@icon", string.IsNullOrWhiteSpace(entry.IconUrl) ? DBNull.Value : entry.IconUrl);
+            app.Parameters.AddWithValue("@featured", entry.Featured ? 1 : 0);
+            app.Parameters.AddWithValue("@hidden", entry.Hidden ? 1 : 0);
+            app.Parameters.AddWithValue("@match", entry.Match is null ? DBNull.Value : JsonSerializer.Serialize(entry.Match, Json));
+            app.Parameters.AddWithValue("@now", now);
+            app.ExecuteNonQuery();
+        }
+
+        using (var package = connection.CreateCommand())
+        {
+            package.Transaction = transaction;
+            package.CommandText = """
+                INSERT INTO catalog_packages (app_id, engine, definition_json) VALUES (@id, @engine, @definition)
+                ON CONFLICT(app_id, engine) DO UPDATE SET definition_json = excluded.definition_json;
+                """;
+            package.Parameters.AddWithValue("@id", entry.Id.Trim());
+            package.Parameters.AddWithValue("@engine", ActionOneEngine);
+            package.Parameters.AddWithValue("@definition", JsonSerializer.Serialize(entry.Action1, Json));
+            package.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public bool SetHidden(string id, bool hidden)
+    {
+        using var connection = _database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE catalog_apps SET hidden = @hidden, updated_at = @now WHERE id = @id COLLATE NOCASE;";
+        command.Parameters.AddWithValue("@hidden", hidden ? 1 : 0);
+        command.Parameters.AddWithValue("@now", SqlTime.Now());
+        command.Parameters.AddWithValue("@id", id);
+        return command.ExecuteNonQuery() == 1;
+    }
+
+    /// <summary>
+    /// Removes an app outright. False when an install refers to it: that history names the app id, and
+    /// deleting the row would leave the installs page describing something that no longer exists.
+    /// Hiding is the answer in that case.
+    /// </summary>
+    public bool Delete(string id)
+    {
+        using var connection = _database.Open();
+        using var transaction = connection.BeginTransaction();
+
+        using (var referenced = connection.CreateCommand())
+        {
+            referenced.Transaction = transaction;
+            referenced.CommandText = "SELECT EXISTS(SELECT 1 FROM installs WHERE app_id = @id COLLATE NOCASE);";
+            referenced.Parameters.AddWithValue("@id", id);
+            if (Convert.ToInt64(referenced.ExecuteScalar()) != 0)
+            {
+                return false;
+            }
+        }
+
+        using (var delete = connection.CreateCommand())
+        {
+            delete.Transaction = transaction;
+            // catalog_packages cascades on the foreign key.
+            delete.CommandText = "DELETE FROM catalog_apps WHERE id = @id COLLATE NOCASE;";
+            delete.Parameters.AddWithValue("@id", id);
+            delete.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        return true;
+    }
+
+    /// <summary>The same rules <see cref="Parse"/> applies to a file, for one app coming off a form.</summary>
+    private static void Validate(CatalogEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.Id))
+        {
+            throw new InvalidDataException("An app needs an id.");
+        }
+
+        if (string.IsNullOrWhiteSpace(entry.Name))
+        {
+            throw new InvalidDataException("An app needs a name.");
+        }
+
+        if (string.IsNullOrWhiteSpace(entry.Action1.PackageId))
+        {
+            throw new InvalidDataException("An app needs an Action1 package id.");
+        }
+    }
+
     /// <summary>The catalog in the shape of the checked-in `catalog.json`, so an export re-imports.</summary>
     public string ExportJson()
         => JsonSerializer.Serialize(new CatalogFile { Apps = [.. Entries] }, Export);
 
-    private static List<CatalogEntry> Read(SqliteConnection connection, string? id)
+    private static List<CatalogEntry> Read(SqliteConnection connection, string? id, bool visibleOnly = false)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT a.id, a.name, a.publisher, a.description, a.category, a.icon_url, a.featured, a.match_json, p.definition_json
+            SELECT a.id, a.name, a.publisher, a.description, a.category, a.icon_url, a.featured, a.match_json, p.definition_json, a.hidden
             FROM catalog_apps a
             LEFT JOIN catalog_packages p ON p.app_id = a.id AND p.engine = 'action1'
-            """ + (id is null ? " ORDER BY a.rowid;" : " WHERE a.id = @id COLLATE NOCASE;");
+            """
+            + (id is null
+                ? (visibleOnly ? " WHERE a.hidden = 0 ORDER BY a.rowid;" : " ORDER BY a.rowid;")
+                : " WHERE a.id = @id COLLATE NOCASE;");
         if (id is not null)
         {
             command.Parameters.AddWithValue("@id", id);
@@ -224,6 +380,7 @@ public sealed class CatalogStore
                 Featured = reader.GetInt64(6) != 0,
                 Match = reader.IsDBNull(7) ? null : JsonSerializer.Deserialize<MatchRule>(reader.GetString(7), Json),
                 Action1 = reader.IsDBNull(8) ? new Action1PackageRef() : JsonSerializer.Deserialize<Action1PackageRef>(reader.GetString(8), Json) ?? new Action1PackageRef(),
+                Hidden = reader.GetInt64(9) != 0,
             });
         }
 

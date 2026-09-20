@@ -98,6 +98,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<InstalledApp> Installed { get; } = [];
     public ObservableCollection<InstallRequest> Installs { get; } = [];
     public ObservableCollection<ActivityItemViewModel> Activity { get; } = [];
+    public ObservableCollection<RequestItemViewModel> Requests { get; } = [];
     public ObservableCollection<string> Categories { get; } = ["All"];
 
     [ObservableProperty] private DeviceInfo? _device;
@@ -106,15 +107,21 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private DateTimeOffset? _lastRefreshed;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowApps), nameof(ShowInstalled), nameof(ShowActivity))]
+    [NotifyPropertyChangedFor(nameof(ShowApps), nameof(ShowInstalled), nameof(ShowActivity), nameof(ShowRequests))]
     private int _selectedSection;
 
     [ObservableProperty] private string _searchText = "";
+    [ObservableProperty] private string _requestText = "";
+    [ObservableProperty] private string? _requestNotice;
     [ObservableProperty] private string _selectedCategory = "All";
+
+    /// <summary>The server refuses anything longer, so the box stops the user before the round trip does.</summary>
+    public int RequestMaxLength => AppRequestLimits.MaxTextLength;
 
     public bool ShowApps => SelectedSection == 0;
     public bool ShowInstalled => SelectedSection == 1;
     public bool ShowActivity => SelectedSection == 2;
+    public bool ShowRequests => SelectedSection == 3;
 
     public string DeviceTitle => Device?.DeviceName ?? Environment.MachineName;
 
@@ -171,6 +178,16 @@ public sealed partial class MainViewModel : ViewModelBase
             ReplaceAll(Installs, installsTask.Result.OrderByDescending(i => i.RequestedAt));
             ReplaceAll(Activity, Installs.Select(i => new ActivityItemViewModel(i)));
 
+            // Requests ride the same refresh as installs, so a decision an admin made shows up without
+            // the user doing anything. A server from before M1-04 has no such route; that is not an error.
+            try
+            {
+                ReplaceAll(Requests, (await _api.GetRequestsAsync(ct)).Select(r => new RequestItemViewModel(r)));
+            }
+            catch (PortalApiException)
+            {
+            }
+
             // Inventory is read after the install refresh so a just-finished install is already reflected in it.
             try
             {
@@ -202,6 +219,36 @@ public sealed partial class MainViewModel : ViewModelBase
             IsBusy = false;
             OnPropertyChanged(nameof(ActiveInstallCount));
             _refreshGate.Release();
+        }
+    }
+
+    [RelayCommand]
+    private async Task SubmitRequestAsync()
+    {
+        if (_api is null)
+        {
+            return;
+        }
+
+        var text = (RequestText ?? "").Trim();
+        if (text.Length == 0)
+        {
+            RequestNotice = "Say what you would like installed.";
+            return;
+        }
+
+        try
+        {
+            var created = await _api.CreateRequestAsync(text, CancellationToken.None);
+
+            // Shown at once rather than waiting for the next poll, which is up to thirty seconds away.
+            Requests.Insert(0, new RequestItemViewModel(created));
+            RequestText = "";
+            RequestNotice = "Sent. An administrator will answer it here.";
+        }
+        catch (PortalApiException ex)
+        {
+            RequestNotice = ex.Message;
         }
     }
 

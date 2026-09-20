@@ -1,0 +1,33 @@
+@page "/admin/catalog"
+@model AppPortal.Server.Pages.Admin.Catalog.IndexModel
+@{
+    ViewData["Title"] = "Catalog";
+    ViewData["Nav"] = "catalog";
+}
+<div class="card">
+    <div class="toolbar">
+        <form method="get" class="inline">
+            <input type="search" name="Search" value="@Model.Search" placeholder="Search apps" aria-label="Search apps" />
+            <button type="submit" class="secondary">Search</button>
+        </form>
+        <div class="spacer"></div>
+        <a class="button" href="/admin/catalog/new">New app</a>
+        <a class="button secondary" href="/admin/catalog?handler=Export">Export JSON</a>
+    </div>
+    <partial name="_CatalogTable" model="Model.Table" />
+</div>
+
+<div class="card">
+    <h2>Import JSON</h2>
+    <p class="muted">
+        The format is the one <code>catalog.json</code> uses, which is what Export writes. Apps are matched
+        by id and every field comes from the file, so an app the file does not mark hidden becomes visible.
+        Apps the file does not mention are left alone, and nothing is deleted by an import.
+    </p>
+    <form method="post" asp-page-handler="Import" enctype="multipart/form-data">
+        <input type="file" name="file" accept="application/json,.json" aria-label="Catalog file" />
+        <div class="actions">
+            <button type="submit">Import</button>
+        </div>
+    </form>
+</div>

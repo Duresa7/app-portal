@@ -40,7 +40,7 @@ public sealed class DeviceStoreTests
         using var test = new TestDatabase();
         var token = new DeviceStore(test.Database).Add("PC1", "ep-1");
 
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        test.Database.ClearPool();
         var bytes = File.ReadAllBytes(test.Database.Path);
         var text = System.Text.Encoding.UTF8.GetString(bytes);
 
@@ -134,7 +134,7 @@ public sealed class DeviceStoreTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
+            Database.ClearPoolFor(path);
             try
             {
                 Directory.Delete(root, recursive: true);

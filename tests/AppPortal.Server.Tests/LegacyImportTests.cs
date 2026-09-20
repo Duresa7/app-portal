@@ -147,7 +147,7 @@ public sealed class LegacyImportTests : IDisposable
 
     public void Dispose()
     {
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        Database.ClearPoolFor(Path.Combine(_dataDirectory, Database.FileName));
         try
         {
             Directory.Delete(_root, recursive: true);

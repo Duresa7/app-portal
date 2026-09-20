@@ -1,0 +1,92 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="App Portal" Manufacturer="Duresa Kadi" Version="$(ProductVersion)"
+           UpgradeCode="$(UpgradeCode)" Scope="perMachine" InstallerVersion="500" Compressed="yes">
+    <MajorUpgrade Schedule="afterInstallExecute" DowngradeErrorMessage="A newer version of App Portal is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="AppPortalIcon" SourceFile="..\AppPortal.Client\Assets\app-portal.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppPortalIcon" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="SERVERURL" Secure="yes" />
+    <Property Id="ENROLLMENTKEY" Secure="yes" Hidden="yes" />
+    <Property Id="ACTION1ENDPOINTID" Secure="yes" />
+    <Property Id="REMOVEDATA" Secure="yes" />
+    <Property Id="Wix4ExecFormatFiles_X64" Hidden="yes" />
+    <Property Id="Wix4RollbackFormatFiles_X64" Hidden="yes" />
+    <Property Id="AppPortalDataPath">
+      <RegistrySearch Id="FindDataPath" Root="HKLM" Key="Software\AppPortal" Name="DataPath" Type="raw" Bitness="always64" />
+    </Property>
+
+    <!-- FormatFile performs MSI substitution, not JSON escaping. Reject values that would change the document. -->
+    <Property Id="JsonQuote" Value="&quot;" />
+    <Property Id="JsonSlash" Value="\" />
+    <Property Id="JsonTab" Value="&#9;" />
+    <Property Id="JsonCr" Value="&#13;" />
+    <Property Id="JsonLf" Value="&#10;" />
+    <Launch Condition="NOT (SERVERURL &gt;&lt; JsonQuote OR SERVERURL &gt;&lt; JsonSlash OR SERVERURL &gt;&lt; JsonTab OR SERVERURL &gt;&lt; JsonCr OR SERVERURL &gt;&lt; JsonLf OR ENROLLMENTKEY &gt;&lt; JsonQuote OR ENROLLMENTKEY &gt;&lt; JsonSlash OR ENROLLMENTKEY &gt;&lt; JsonTab OR ENROLLMENTKEY &gt;&lt; JsonCr OR ENROLLMENTKEY &gt;&lt; JsonLf OR ACTION1ENDPOINTID &gt;&lt; JsonQuote OR ACTION1ENDPOINTID &gt;&lt; JsonSlash OR ACTION1ENDPOINTID &gt;&lt; JsonTab OR ACTION1ENDPOINTID &gt;&lt; JsonCr OR ACTION1ENDPOINTID &gt;&lt; JsonLf)"
+            Message="Enrollment properties must not contain quotes, backslashes, tabs or line breaks. Use a URL with percent-encoded special characters." />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="App Portal" />
+    </StandardDirectory>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="APPPORTALDATA" Name="AppPortal" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Binary Id="EnrollmentTemplate" SourceFile="enroll.json.in" />
+    <Binary Id="EnrollmentEndpointTemplate" SourceFile="enroll-endpoint.json.in" />
+
+    <Feature Id="AppPortal" Title="App Portal" Level="1">
+      <ComponentGroupRef Id="ClientFiles" />
+      <ComponentRef Id="ClientExecutable" />
+      <ComponentRef Id="AgentService" />
+      <ComponentRef Id="DataDirectory" />
+      <ComponentRef Id="EnrollmentFile" />
+      <ComponentRef Id="EnrollmentEndpointFile" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ClientFiles" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.Client)\**">
+        <Exclude Files="!(bindpath.Client)\AppPortal.exe" />
+      </Files>
+    </ComponentGroup>
+    <Component Id="ClientExecutable" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="AppPortalExe" Source="!(bindpath.Client)\AppPortal.exe" KeyPath="yes">
+        <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="App Portal" Advertise="yes"
+                  WorkingDirectory="INSTALLFOLDER" Icon="AppPortalIcon" Description="Install approved software on this computer" />
+      </File>
+    </Component>
+    <Component Id="AgentService" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="AgentExe" Source="!(bindpath.Agent)\AppPortal.Agent.exe" KeyPath="yes" />
+      <ServiceInstall Id="InstallAgent" Name="AppPortalAgent" DisplayName="App Portal Agent"
+                      Description="Enrolls this PC and reports its status to App Portal."
+                      Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" Vital="yes" />
+      <ServiceControl Id="ControlAgent" Name="AppPortalAgent" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+    </Component>
+    <Component Id="DataDirectory" Directory="APPPORTALDATA" Guid="*">
+      <CreateFolder>
+        <PermissionEx Sddl="D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GRGX;;;BU)" />
+      </CreateFolder>
+      <RegistryValue Root="HKLM" Key="Software\AppPortal" Name="DataPath" Type="string" Value="[APPPORTALDATA]" KeyPath="yes" />
+      <util:RemoveFolderEx Id="RemoveAppPortalData" Property="AppPortalDataPath" On="uninstall"
+                           Condition="REMOVEDATA = &quot;1&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </Component>
+    <!-- Separate templates keep the optional endpoint a JSON null without a property-setting action. -->
+    <Component Id="EnrollmentFile" Directory="APPPORTALDATA" Guid="*" Condition="SERVERURL AND ENROLLMENTKEY AND NOT ACTION1ENDPOINTID">
+      <File Id="EnrollmentJson" Name="enroll.json" Source="enroll.json.in">
+        <PermissionEx Sddl="D:P(A;;FA;;;SY)(A;;FA;;;BA)" />
+        <util:FormatFile BinaryRef="EnrollmentTemplate" />
+      </File>
+      <RegistryValue Root="HKLM" Key="Software\AppPortal\Installer" Name="Enrollment" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <Component Id="EnrollmentEndpointFile" Directory="APPPORTALDATA" Guid="*" Condition="SERVERURL AND ENROLLMENTKEY AND ACTION1ENDPOINTID">
+      <File Id="EnrollmentEndpointJson" Name="enroll.json" Source="enroll-endpoint.json.in">
+        <PermissionEx Sddl="D:P(A;;FA;;;SY)(A;;FA;;;BA)" />
+        <util:FormatFile BinaryRef="EnrollmentEndpointTemplate" />
+      </File>
+      <RegistryValue Root="HKLM" Key="Software\AppPortal\Installer" Name="EnrollmentEndpoint" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Fragment>
+</Wix>

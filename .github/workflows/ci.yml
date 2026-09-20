@@ -89,15 +89,12 @@ jobs:
           # The version comes from Directory.Build.props; the version job has already checked a tag against it.
           dotnet publish src/AppPortal.Client  -c Release -r win-x64 --self-contained -o out/client
           dotnet publish src/AppPortal.Updater -c Release -r win-x64 --self-contained -o out/updater
-          dotnet publish src/AppPortal.Agent -p:PublishProfile=win-x64 -o out/agent
+          dotnet publish src/AppPortal.Agent -c Release -r win-x64 --self-contained -o out/agent
           mkdir -p out/package/client
           cp -r out/client/. out/package/client/
           # The updater is one self-contained file that sits beside the client and replaces it.
           cp out/updater/AppPortal.Updater.exe out/package/client/
           cp out/agent/AppPortal.Agent.exe out/package/client/
-          # The scripts ride inside client/ too, so an update keeps the uninstall entry's target present.
-          cp deploy/windows/Install-AppPortalClient.ps1 deploy/windows/Uninstall-AppPortalClient.ps1 out/package/
-          cp deploy/windows/Uninstall-AppPortalClient.ps1 out/package/client/
           cd out/package && zip -qr ../AppPortal-client-win-x64.zip .
           cd .. && sha256sum AppPortal-client-win-x64.zip > SHA256SUMS && cat SHA256SUMS
       - uses: actions/upload-artifact@v7
@@ -135,13 +132,10 @@ jobs:
         run: |
           Expand-Archive package/AppPortal-client-win-x64.zip -DestinationPath unpacked
           $required = @(
-            'Install-AppPortalClient.ps1',
-            'Uninstall-AppPortalClient.ps1',
             'client/AppPortal.exe',
             'client/AppPortal.dll',
             'client/AppPortal.Updater.exe',
-            'client/AppPortal.Agent.exe',
-            'client/Uninstall-AppPortalClient.ps1'
+            'client/AppPortal.Agent.exe'
           )
           $missing = $required | Where-Object { -not (Test-Path (Join-Path unpacked $_)) }
           if ($missing) { throw "Missing from the archive: $($missing -join ', ')" }
@@ -223,6 +217,37 @@ jobs:
           path: screenshot.png
           if-no-files-found: ignore
 
+  installer:
+    name: Build and verify Windows MSI
+    runs-on: windows-latest
+    needs: version
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Publish the MSI payloads
+        shell: pwsh
+        run: |
+          dotnet publish src/AppPortal.Client -c Release -r win-x64 --self-contained -o out/client
+          if ($LASTEXITCODE -ne 0) { throw 'Client publish failed.' }
+          dotnet publish src/AppPortal.Agent -c Release -r win-x64 --self-contained -o out/agent
+          if ($LASTEXITCODE -ne 0) { throw 'Agent publish failed.' }
+      - name: Build the MSI
+        shell: pwsh
+        run: |
+          dotnet build src/AppPortal.Installer/AppPortal.Installer.wixproj -c Release -o out/installer
+          if ($LASTEXITCODE -ne 0) { throw 'MSI build failed.' }
+      - name: Check silent install, service, enrollment file and uninstall
+        shell: pwsh
+        run: |
+          ./src/AppPortal.Installer/Verify-Msi.ps1 -Path "out/installer/AppPortal-${{ needs.version.outputs.version }}-x64.msi" -Version "${{ needs.version.outputs.version }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AppPortal-msi
+          path: out/installer/*.msi
+          if-no-files-found: error
+
   server:
     name: Build and smoke test server image
     runs-on: ubuntu-latest
@@ -246,7 +271,7 @@ jobs:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: [version, test, client-verify, server]
+    needs: [version, test, client-verify, installer, server]
     permissions:
       contents: write
       packages: write
@@ -256,6 +281,10 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: AppPortal-client-win-x64
+          path: out
+      - uses: actions/download-artifact@v8
+        with:
+          name: AppPortal-msi
           path: out
       - uses: actions/download-artifact@v8
         with:
@@ -269,6 +298,10 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker push "$IMAGE:$VERSION"
           docker push "$IMAGE:latest"
+      - name: Add the MSI checksum
+        run: |
+          cd out
+          sha256sum "AppPortal-$VERSION-x64.msi" >> SHA256SUMS
       - name: Create the GitHub release
         # Last on purpose: every installed client polls the latest release, so this is the moment
         # the build reaches devices.
@@ -276,6 +309,8 @@ jobs:
         with:
           files: |
             out/AppPortal-client-win-x64.zip
+            out/AppPortal-*-x64.msi
             out/SHA256SUMS
+          body: "Deploy the MSI for managed installations. The client zip is deprecated and ships for one transition release."
           fail_on_unmatched_files: true
           generate_release_notes: true

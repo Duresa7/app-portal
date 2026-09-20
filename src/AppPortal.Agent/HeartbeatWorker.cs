@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 
+using AppPortal.Agent.Enrollment;
 using AppPortal.Shared;
 
 namespace AppPortal.Agent;
@@ -16,7 +17,8 @@ public sealed class HeartbeatWorker(
     ILogger<HeartbeatWorker> logger,
     IHostApplicationLifetime lifetime,
     string statusPath,
-    bool once) : BackgroundService
+    bool once,
+    EnrollmentService? enrollment = null) : BackgroundService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -28,8 +30,15 @@ public sealed class HeartbeatWorker(
         while (!stoppingToken.IsCancellationRequested)
         {
             var outcome = "Succeeded";
+            var enrollmentComplete = false;
             try
             {
+                if (enrollment is not null)
+                {
+                    await enrollment.EnsureEnrolledAsync(stoppingToken);
+                }
+
+                enrollmentComplete = true;
                 // Reload on each attempt so enrollment and token rotation do not need a service restart.
                 var settings = PortalSettings.Load();
                 var version = typeof(HeartbeatWorker).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
@@ -49,6 +58,11 @@ public sealed class HeartbeatWorker(
             {
                 outcome = "Failed";
                 ExitCode = 1;
+                if (!enrollmentComplete)
+                {
+                    // A PC installed before the network is ready should not wait a whole heartbeat interval.
+                    seconds = 30;
+                }
                 logger.LogWarning("Heartbeat failed ({Reason}); will retry", ex.GetType().Name);
             }
 

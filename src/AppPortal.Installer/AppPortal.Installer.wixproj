@@ -1,0 +1,25 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>AppPortal-$(Version)-x64</OutputName>
+    <!-- This identity must survive every release so Windows Installer finds the previous package. -->
+    <UpgradeCode>5AAB338F-4FEA-48AA-9931-826DC33F536A</UpgradeCode>
+    <ClientPublishDir Condition="'$(ClientPublishDir)' == ''">$(MSBuildThisFileDirectory)..\..\out\client</ClientPublishDir>
+    <AgentPublishDir Condition="'$(AgentPublishDir)' == ''">$(MSBuildThisFileDirectory)..\..\out\agent</AgentPublishDir>
+    <DefineConstants>$(DefineConstants);ProductVersion=$(Version);UpgradeCode=$(UpgradeCode)</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <BindPath Include="$(ClientPublishDir)" BindName="Client" />
+    <BindPath Include="$(AgentPublishDir)" BindName="Agent" />
+  </ItemGroup>
+  <Target Name="CheckPublishedFiles" BeforeTargets="BeforeBuild">
+    <Error Condition="'$(OS)' != 'Windows_NT'" Text="Build the MSI on Windows; the solution intentionally excludes this project." />
+    <Error Condition="!Exists('$(ClientPublishDir)\AppPortal.exe')" Text="Publish AppPortal.Client for win-x64 to $(ClientPublishDir) first." />
+    <Error Condition="!Exists('$(AgentPublishDir)\AppPortal.Agent.exe')" Text="Publish AppPortal.Agent for win-x64 to $(AgentPublishDir) first." />
+  </Target>
+  <Target Name="ProtectEnrollmentLogging" AfterTargets="Build">
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildThisFileDirectory)Protect-EnrollmentLogging.ps1&quot; -Path &quot;$(TargetPath)&quot;" />
+  </Target>
+</Project>

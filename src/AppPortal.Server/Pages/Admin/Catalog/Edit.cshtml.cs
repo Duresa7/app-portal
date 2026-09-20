@@ -80,6 +80,9 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     public string WingetExtraArgs { get; set; } = "";
 
     [BindProperty]
+    public bool WingetRequiresReboot { get; set; }
+
+    [BindProperty]
     public string DirectUrl { get; set; } = "";
 
     [BindProperty]
@@ -96,6 +99,12 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
 
     [BindProperty]
     public string DirectUninstallKey { get; set; } = "";
+
+    [BindProperty]
+    public string DirectScope { get; set; } = "machine";
+
+    [BindProperty]
+    public bool DirectRequiresReboot { get; set; }
 
     public IActionResult OnGet(string id)
     {
@@ -169,9 +178,10 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             {
                 null or "" => null,
                 "winget" => new WingetPackageDefinition((WingetId ?? "").Trim(), WingetScope,
-                    EmptyToNull(WingetVersion), EmptyToNull(WingetExtraArgs)),
+                    EmptyToNull(WingetVersion), EmptyToNull(WingetExtraArgs), WingetRequiresReboot),
                 "direct" => new DirectPackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
-                    DirectInstallerType, DirectSilentArgs, DirectSizeBytes ?? 0, DirectUninstallKey),
+                    DirectInstallerType, DirectSilentArgs, DirectSizeBytes ?? 0, EmptyToNull(DirectUninstallKey),
+                    DirectScope, DirectRequiresReboot),
                 _ => throw new InvalidDataException("The agent package kind must be winget or direct."),
             };
             catalog.Upsert(entry);
@@ -291,6 +301,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
                 WingetScope = winget.Scope;
                 WingetVersion = winget.Version ?? "";
                 WingetExtraArgs = winget.ExtraArgs ?? "";
+                WingetRequiresReboot = winget.RequiresReboot;
                 break;
             case DirectPackageDefinition direct:
                 AgentKind = "direct";
@@ -299,7 +310,9 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
                 DirectInstallerType = direct.InstallerType;
                 DirectSilentArgs = direct.SilentArgs;
                 DirectSizeBytes = direct.SizeBytes;
-                DirectUninstallKey = direct.UninstallKey;
+                DirectUninstallKey = direct.UninstallKey ?? "";
+                DirectScope = direct.Scope;
+                DirectRequiresReboot = direct.RequiresReboot;
                 break;
         }
     }

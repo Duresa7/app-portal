@@ -116,6 +116,10 @@
             <input id="winget-version" name="WingetVersion" value="@Model.WingetVersion" />
             <label for="winget-extra">Extra arguments (optional)</label>
             <input id="winget-extra" name="WingetExtraArgs" value="@Model.WingetExtraArgs" />
+            <label for="winget-reboot">
+                <input id="winget-reboot" name="WingetRequiresReboot" type="checkbox" value="true" checked="@Model.WingetRequiresReboot" />
+                The software only works after a restart
+            </label>
             <button type="submit" class="secondary" asp-page-handler="LookupWinget">Look up winget id</button>
         </div>
         <div id="direct-fields">
@@ -129,12 +133,22 @@
                 <option value="msi" selected="@(Model.DirectInstallerType == "msi")">msi</option>
                 <option value="msix" selected="@(Model.DirectInstallerType == "msix")">msix</option>
             </select>
+            <label for="direct-scope">Scope</label>
+            <select id="direct-scope" name="DirectScope">
+                <option value="machine" selected="@(Model.DirectScope == "machine")">Machine</option>
+                <option value="user" selected="@(Model.DirectScope == "user")">User</option>
+            </select>
             <label for="direct-args">Silent arguments</label>
             <input id="direct-args" name="DirectSilentArgs" value="@Model.DirectSilentArgs" placeholder="/S or /qn" />
+            <p class="muted">An msix takes no arguments; leave this empty for one.</p>
             <label for="direct-size">Download size (bytes)</label>
             <input id="direct-size" name="DirectSizeBytes" type="number" min="1" step="1" value="@Model.DirectSizeBytes" />
-            <label for="direct-uninstall">Uninstall key</label>
+            <label for="direct-uninstall">Uninstall key (optional)</label>
             <input id="direct-uninstall" name="DirectUninstallKey" value="@Model.DirectUninstallKey" />
+            <label for="direct-reboot">
+                <input id="direct-reboot" name="DirectRequiresReboot" type="checkbox" value="true" checked="@Model.DirectRequiresReboot" />
+                The software only works after a restart
+            </label>
             <button type="submit" class="secondary" asp-page-handler="FetchAndHash">Fetch and hash</button>
             <p class="muted">Fetch and hash downloads the installer to calculate its hash and size. For files over the server's limit, enter these values manually.</p>
         </div>

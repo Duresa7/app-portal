@@ -17,8 +17,10 @@ A catalog app can carry an **agent** package: a winget id or a direct installer 
 
 ### In
 - Definition shapes (validated on save):
-  - winget: `{"kind":"winget","id":"Valve.Steam","scope":"machine","version":null,"extraArgs":null}`
-  - direct: `{"kind":"direct","url":"https://...","sha256":"...","installerType":"msi"|"exe"|"msix","silentArgs":"/qn"|"/S"|..., "sizeBytes":123456789,"uninstallKey":"..."}`
+  - winget: `{"kind":"winget","id":"Valve.Steam","scope":"machine"|"user","version":null,"extraArgs":null,"requiresReboot":false}`
+  - direct: `{"kind":"direct","url":"https://...","sha256":"...","installerType":"msi"|"exe"|"msix","silentArgs":"/qn"|"/S"|...,"sizeBytes":123456789,"uninstallKey":null,"scope":"machine"|"user","requiresReboot":false}`
+- `scope` and `requiresReboot` sit on the base record so that an executor reads both without caring which kind it holds. Nothing acts on them here: M3-07 runs a user-scope install in a session, and M3-09 turns a restart into part of the install. Declaring them now is what stops the shape being frozen wrong.
+- `uninstallKey` is optional. M3-04 already treats it as a hint and falls back to matching on the app name, and an msix has no entry under the Uninstall key at all. An msix likewise takes no command line, so `silentArgs` is required only for `msi` and `exe`.
 - Admin page: Agent package section enabled with a kind selector and the fields above, a "Fetch and hash" helper for direct URLs that downloads server-side up to a configurable size limit (default 2 GB) and fills `sha256` and `sizeBytes`, and a winget lookup helper that queries `https://api.winget.run` or the GitHub `winget-pkgs` manifest path to confirm the id exists (best effort, network permitting).
 - Device API: `CatalogApp` gains `Engines: string[]` listing which engines have definitions, and `DownloadSizeBytes: long?` for the card to show a size on large apps. Apps are still served regardless of the device's engines; M3-05 decides visibility.
 - Import and export formats extended with an `agent` object beside `action1`. `catalog verify` also validates agent definitions (shape and hash format; the winget check is best effort).
@@ -28,7 +30,7 @@ A catalog app can carry an **agent** package: a winget id or a direct installer 
 
 ## Interface
 
-Definition JSON shapes above, frozen for M3-03 and M3-04. `CatalogApp(..., string[] Engines, long? DownloadSizeBytes)`.
+Definition JSON shapes above, frozen for M3-03, M3-04, M3-07, M3-09 and M3-11. `CatalogApp(..., string[] Engines, long? DownloadSizeBytes)`.
 
 ## Steps
 
@@ -40,7 +42,8 @@ Definition JSON shapes above, frozen for M3-03 and M3-04. `CatalogApp(..., strin
 ## Acceptance criteria
 
 - An app with only an agent package is saved, exported, re-imported identically, and served with `Engines == ["agent"]`.
-- Bad definitions (missing sha256 on direct, unknown kind) are rejected on the page with a message.
+- A per-user definition and a definition needing a restart survive the same round trip with both fields intact.
+- Bad definitions (missing sha256 on direct, unknown kind, a scope that is neither machine nor user) are rejected on the page with a message.
 
 ## Verification
 

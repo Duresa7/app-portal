@@ -24,8 +24,10 @@ public sealed class PackageDefinitionTests
         definition.Validate();
         var json = JsonSerializer.Serialize(definition, Json);
         using var document = JsonDocument.Parse(json);
-        Assert.Equal(["kind", "url", "sha256", "installerType", "silentArgs", "sizeBytes", "uninstallKey"],
+        Assert.Equal(["kind", "url", "sha256", "installerType", "silentArgs", "sizeBytes", "uninstallKey", "scope", "requiresReboot"],
             document.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal("machine", document.RootElement.GetProperty("scope").GetString());
+        Assert.False(document.RootElement.GetProperty("requiresReboot").GetBoolean());
         Assert.Equal("direct", document.RootElement.GetProperty("kind").GetString());
         Assert.Equal(5_000_000_000L, document.RootElement.GetProperty("sizeBytes").GetInt64());
         Assert.Equal(definition, JsonSerializer.Deserialize<PackageDefinition>(json, Json));
@@ -34,11 +36,11 @@ public sealed class PackageDefinitionTests
     [Fact]
     public void Winget_json_preserves_optional_fields()
     {
-        const string json = """{"kind":"winget","id":"Valve.Steam","scope":"machine","version":null,"extraArgs":null}""";
+        const string json = """{"kind":"winget","id":"Valve.Steam","scope":"machine","version":null,"extraArgs":null,"requiresReboot":false}""";
         var definition = JsonSerializer.Deserialize<PackageDefinition>(json, Json)!;
         definition.Validate();
         Assert.Equal(json, JsonSerializer.Serialize(definition, Json));
-        var pinned = new WingetPackageDefinition("Vendor.App", "user", "1.2", "--silent");
+        var pinned = new WingetPackageDefinition("Vendor.App", "user", "1.2", "--silent", RequiresReboot: true);
         Assert.Equal(pinned, JsonSerializer.Deserialize<PackageDefinition>(JsonSerializer.Serialize<PackageDefinition>(pinned, Json), Json));
     }
 
@@ -77,7 +79,8 @@ public sealed class PackageDefinitionTests
             Direct with { SilentArgs = " " },
             Direct with { SizeBytes = 0 },
             Direct with { SizeBytes = -1 },
-            Direct with { UninstallKey = "" },
+            Direct with { Scope = "everyone" },
+            Direct with { Scope = "" },
         ];
         foreach (var definition in invalid)
         {
@@ -92,6 +95,35 @@ public sealed class PackageDefinitionTests
     public void Direct_validation_accepts_vendor_arguments_and_uppercase_hashes(string installerType, string silentArgs)
     {
         (Direct with { InstallerType = installerType, SilentArgs = silentArgs, Sha256 = new string('A', 64) }).Validate();
+    }
+
+    [Fact]
+    public void An_msix_needs_no_arguments_and_no_uninstall_key()
+    {
+        // The packaging API installs one by name. There is no command line to be silent on, and the
+        // identity is a package family name rather than an entry under the Uninstall key.
+        (Direct with { InstallerType = "msix", SilentArgs = "", UninstallKey = null }).Validate();
+        Assert.Throws<InvalidDataException>((Direct with { InstallerType = "msi", SilentArgs = "" }).Validate);
+        Assert.Throws<InvalidDataException>((Direct with { InstallerType = "exe", SilentArgs = "" }).Validate);
+    }
+
+    [Fact]
+    public void A_definition_carries_its_scope_and_its_restart_through_json()
+    {
+        // The executor reads both off the base record without caring which kind it has in hand.
+        PackageDefinition[] perUser =
+        [
+            new WingetPackageDefinition("Vendor.App", "user", RequiresReboot: true),
+            Direct with { Scope = "user", RequiresReboot = true },
+        ];
+        foreach (var definition in perUser)
+        {
+            definition.Validate();
+            var round = JsonSerializer.Deserialize<PackageDefinition>(JsonSerializer.Serialize(definition, Json), Json)!;
+            Assert.Equal("user", round.Scope);
+            Assert.True(round.RequiresReboot);
+            Assert.Equal(definition, round);
+        }
     }
 
     [Theory]

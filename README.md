@@ -10,6 +10,26 @@ The client follows the Windows 11 design language: a two-layer NavigationView la
 |---|---|
 | ![Apps view in dark theme](docs/images/apps-dark.png) | ![Activity view](docs/images/activity.png) |
 
+## Two install engines
+
+App Portal installs software one of two ways, and a device may have both.
+
+- **action1** — the server asks an Action1 automation to deploy a package to that endpoint. This is what the portal started as, and a fleet already managed by Action1 needs nothing else.
+- **agent** — a Windows service running as SYSTEM on the PC installs a winget package or downloads an installer the catalog names, checks its SHA-256, and runs it. A company with no RMM at all can run the portal on this alone.
+
+A server-wide default decides between them when both could serve an app; a catalog app or a device can override it. Every install says which engine ran it, on the card and in the history.
+
+What the agent adds beyond "run an installer":
+
+- **Per-user installs.** A great many Windows installers write into a user profile. The agent runs those in the session of the person who asked, not as the service account, and waits until they are signed in rather than installing into a profile nobody uses.
+- **Restarts.** Software whose driver loads at boot is not finished when its installer exits. The install stays open, the person is asked to restart, and it settles itself afterwards.
+- **Prerequisites.** A catalog app can name the apps that must go on first. One click installs the chain in order, skipping whatever the PC already has.
+- **Requirements.** An app can state what it needs in plain words, and the person confirms it before installing. The portal never checks these and never refuses an install over one.
+- **Removal.** Software can come off again, by an administrator always and by the person who installed it when the app allows it.
+- **Large downloads.** A multi-gigabyte installer resumes after a dropped connection or a service restart, is verified against its hash, and is cached so a second device on the same image does not fetch it twice.
+
+The portal installs applications and launchers. Content a launcher downloads afterwards for one signed-in account — a game inside a store client, for instance — is outside it: the portal has no account there and does not drive one.
+
 ## How it works
 
 ```
@@ -249,7 +269,11 @@ A few behaviours are deliberate and were put in after a review found the failure
 ## Limits
 
 - One catalog for all devices. Per-device or per-group catalogs are not implemented.
-- Uninstall is not offered to the user; Action1 supports it and the server could expose it later.
+- Removal goes through the agent only. Action1 owns what Action1 deployed, so an app whose engine on a PC is Action1 is refused with that reason rather than half-removed.
+- The portal installs launchers and applications, not the content a launcher downloads afterwards. That content belongs to a signed-in account inside that launcher, and the portal has no account there.
+- winget is not on a service account's PATH, so the agent finds it in the App Installer package directory. A PC without the App Installer cannot use winget packages, and the agent says so rather than failing obscurely.
+- A per-user install needs the person who asked to sign in. It waits up to seven days and then gives up, saying whose sign-in it waited for.
+- A restart is asked for, never forced. An install that needs one waits until somebody agrees.
 - Device tokens do not expire. Rotate them on the device detail page, or run `device add` again for the same name.
 - Admin sign-in uses local accounts. OpenID Connect and email notifications are not implemented.
 - Request approval is a recorded decision; an administrator must separately add any approved software to the catalog.

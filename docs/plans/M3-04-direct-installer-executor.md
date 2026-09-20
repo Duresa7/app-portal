@@ -10,7 +10,7 @@ The agent downloads an installer from a URL, verifies its SHA-256, runs it silen
 
 ## Context
 
-- Definition shape from M3-01: `url`, `sha256`, `installerType` (`msi`, `exe`, `msix`), `silentArgs`, `sizeBytes`, `uninstallKey`, `scope`, `requiresReboot` and `requirements`. This package reads the first six and the scope; M3-08 reads the requirements and M3-09 the restart flag.
+- Definition shape from M3-01: `url`, `sha256`, `installerType` (`msi`, `exe`, `msix`), `silentArgs`, `sizeBytes`, `uninstallKey`, `scope` and `requiresReboot`. This package reads the first six and the scope; M3-09 reads the restart flag.
 - Multi-gigabyte downloads must survive a network blip and a service restart: HTTP range requests resume a partial file; the hash is computed over the completed file.
 
 ## Scope
@@ -24,7 +24,7 @@ The agent downloads an installer from a URL, verifies its SHA-256, runs it silen
 
 ### Out
 - Uninstall; that is M3-11. Delta updates. Torrent-style peer distribution.
-- Running an installer in somebody's session (M3-07), asking for the restart a 3010 implies (M3-09), and checking the device can take the software at all (M3-08). A user-scope job fails here the same way it does in M3-03.
+- Running an installer in somebody's session (M3-07) and asking for the restart a 3010 implies (M3-09). A user-scope job fails here the same way it does in M3-03.
 
 ## Interface
 

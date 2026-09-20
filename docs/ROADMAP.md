@@ -13,7 +13,8 @@ Settled on 2026-09-19. Change them here first, then in the plans that depend on 
 | Storage | SQLite on the existing data volume is the source of truth for catalog, devices, installs, requests, admins and enrollment keys. `deploy/config/catalog.json` seeds an empty database; `catalog import` and `catalog export` remain. |
 | Install engines | Two: **action1** (exists) and **agent**, a Windows service running as SYSTEM that installs winget packages or direct installers with silent arguments and a SHA-256. A device may have both. A server-wide preference picks the engine when both apply; each catalog app can override it. Every install is labelled with the engine that ran it. Games are ordinary catalog apps; the agent must show download progress and resume downloads. |
 | Agent | Installed on every device. Takes over self-update of client and agent by running the newer MSI. The scheduled-task updater and the rename swap retire with it. |
-| Install shapes | A Windows install is not one shape. A catalog app says who runs it (`scope`: SYSTEM or the signed-in person), what the device must have first (`requirements`), whether a restart finishes it (`requiresReboot`), and what must be installed before it (`requires`). The agent honours all four. Anything the portal cannot finish says so before the person starts, not after. |
+| Install shapes | A Windows install is not one shape. A catalog app says who runs it (`scope`: SYSTEM or the signed-in person), whether a restart finishes it (`requiresReboot`), and which catalog apps come first (`requires`). The agent honours all three. |
+| Requirements | An app may also state what it needs in plain words, such as Secure Boot or a vendor account. The portal shows that text and asks the person to confirm it. It does not read TPM or Secure Boot state and never refuses an install on those grounds: installing is not running, the vendor owns the rules, and the person at the PC is better placed to judge. |
 | Launcher content | The portal installs launchers and applications. Content a launcher downloads for one signed-in account is outside it: the portal has no account there and no licence to drive one. This is a boundary in the README, not a gap to close later. |
 | Requests | Free-text box in the client. Admins approve or deny with an optional reason. The requester sees status and reason in the client. No email. No link from a request to a catalog app. |
 | Admin surfaces | Razor Pages + htmx web UI on the server, and full admin parity inside the Windows client: install history, catalog, requests, devices, enrollment keys, admin accounts. |
@@ -61,7 +62,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M3-05](plans/M3-05-engine-selection.md) | Engine selection and labels | M3-01, M3-02, M1-07 | Open |
 | [M3-06](plans/M3-06-release-0.5.0.md) | Release 0.5.0 | M3-03, M3-04, M3-05, M3-07, M3-08, M3-09, M3-10, M3-11 | Open |
 | [M3-07](plans/M3-07-user-session-installs.md) | Installs that run as the signed-in person | M3-03, M3-04 | Open |
-| [M3-08](plans/M3-08-device-requirements.md) | Device requirements and preflight | M3-01, M3-02 | Open |
+| [M3-08](plans/M3-08-app-requirements.md) | Requirements the person reads before installing | M3-01 | Open |
 | [M3-09](plans/M3-09-reboot-orchestration.md) | Restarts as part of the install | M3-02, M3-04 | Open |
 | [M3-10](plans/M3-10-prerequisite-chains.md) | Software that needs other software first | M3-01, M3-05 | Open |
 | [M3-11](plans/M3-11-uninstall.md) | Taking software off again | M3-03, M3-04, M3-07 | Open |
@@ -96,7 +97,7 @@ graph LR
   M3-02 --> M3-04
   M3-01 & M3-02 & M1-07 --> M3-05
   M3-03 & M3-04 --> M3-07 --> M3-11
-  M3-01 & M3-02 --> M3-08
+  M3-01 --> M3-08
   M3-04 --> M3-09
   M3-01 & M3-05 --> M3-10
   M3-03 & M3-04 & M3-05 & M3-07 & M3-08 & M3-09 & M3-10 & M3-11 --> M3-06

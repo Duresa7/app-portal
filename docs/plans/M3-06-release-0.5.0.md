@@ -24,7 +24,7 @@ Ship the agent install engine through the gate, with documentation that lets a c
 - Tag run green; release assets and image published.
 - A tester following only the README on a fresh VM and a fresh server reaches a successful winget install with no Action1 account.
 - Roadmap rows M3-01 through M3-11 Done.
-- Each install shape is proven once on a VM: machine-wide silent, per-user in a session, one needing a restart, one refused for a missing device requirement, and a two-step chain.
+- Each install shape is proven once on a VM: machine-wide silent, per-user in a session, one needing a restart, one carrying a requirements note the client makes the person confirm, and a two-step chain.
 
 ## Touches
 

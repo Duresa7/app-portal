@@ -31,8 +31,8 @@ A catalog app that must be installed before another one. The portal installs the
 _Avoid_: dependency, requirement, bundle, parent
 
 **Requirement**:
-Something a device must have before a catalog app is offered on it, such as Secure Boot or a minimum Windows build. A device that fails one is told which, and the install button is off.
-_Avoid_: prerequisite, capability, constraint, spec
+Something a catalog app needs that the portal cannot arrange, written in plain words for the person to read and confirm before installing, such as Secure Boot or a vendor account. The portal never checks one and never refuses an install over one.
+_Avoid_: prerequisite, capability, constraint, spec, check
 
 ### People and machines
 

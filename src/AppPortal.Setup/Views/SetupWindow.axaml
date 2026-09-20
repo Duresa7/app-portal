@@ -1,0 +1,135 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AppPortal.Setup.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="620" d:DesignHeight="460"
+        x:Class="AppPortal.Setup.Views.SetupWindow"
+        x:DataType="vm:SetupViewModel"
+        Icon="/Assets/app-portal.ico"
+        Title="App Portal Setup"
+        Width="620" Height="460" MinWidth="520" MinHeight="420"
+        WindowStartupLocation="CenterScreen"
+        TransparencyLevelHint="Mica, None"
+        Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+        FontFamily="{DynamicResource PortalFontFamily}">
+
+    <!-- One content layer over the base, as in the client: 24px gutters, a page above, buttons below. -->
+    <DockPanel Margin="24">
+
+        <!-- Buttons sit on the bottom edge and keep the tab order last, so Tab walks the page first. -->
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,20,0,0">
+            <Button Grid.Column="0" Classes="standard" Content="Back" TabIndex="90"
+                    Command="{Binding BackCommand}" IsVisible="{Binding CanGoBack}" />
+            <Button Grid.Column="2" Classes="standard" Content="Cancel" TabIndex="91" Margin="0,0,8,0"
+                    Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" />
+            <Button Grid.Column="3" Classes="accent" TabIndex="92" IsDefault="True"
+                    Content="{Binding NextText}" Command="{Binding NextCommand}"
+                    IsEnabled="{Binding CanContinue}" IsVisible="{Binding !IsDone}" />
+        </Grid>
+
+        <Panel>
+
+            <!-- Welcome -->
+            <StackPanel Spacing="16" IsVisible="{Binding IsWelcome}">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Border Width="40" Height="40" CornerRadius="8" Background="{DynamicResource AccentFillColorDefaultBrush}">
+                        <PathIcon Data="{StaticResource IconApps}" Width="22" Height="22"
+                                  Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                    </Border>
+                    <TextBlock Text="Install App Portal" Classes="title" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Classes="secondary" TextWrapping="Wrap"
+                           Text="This installs the App Portal client and its agent on this PC, then enrolls the PC with your server. You need the server address and an enrollment key." />
+                <Border Classes="card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="What this puts on the PC" Classes="bodyStrong" />
+                        <TextBlock Classes="caption" TextWrapping="Wrap"
+                                   Text="App Portal in Program Files, the App Portal Agent service, and a Start menu shortcut. This installer leaves nothing of itself behind." />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Server -->
+            <StackPanel Spacing="16" IsVisible="{Binding IsServer}">
+                <TextBlock Text="Your server" Classes="subtitle" />
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Server address" />
+                    <TextBox Classes="search" TabIndex="1" Text="{Binding ServerUrl}"
+                             PlaceholderText="https://portal.example.internal" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Enrollment key" />
+                    <TextBox Classes="search" TabIndex="2" Text="{Binding EnrollmentKey}"
+                             PasswordChar="•" PlaceholderText="ape_..." />
+                    <TextBlock Classes="caption" Text="From the Keys page on your App Portal server." />
+                </StackPanel>
+                <StackPanel Spacing="6" IsVisible="{Binding NeedsEndpointId}">
+                    <TextBlock Text="Action1 endpoint id" />
+                    <TextBox Classes="search" TabIndex="3" Text="{Binding Action1EndpointId}" />
+                    <TextBlock Classes="caption" Text="This key enrolls devices through Action1, which needs this PC's endpoint id." />
+                </StackPanel>
+                <Border Classes="infoBar critical" IsVisible="{Binding HasProblem}">
+                    <StackPanel Orientation="Horizontal">
+                        <PathIcon Data="{StaticResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                        <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Installing -->
+            <StackPanel Spacing="16" VerticalAlignment="Center" IsVisible="{Binding IsInstalling}">
+                <TextBlock Text="Installing" Classes="subtitle" />
+                <TextBlock Text="{Binding Status}" Classes="secondary" TextWrapping="Wrap" />
+                <!-- One way on purpose: ProgressBar.Value binds two way by default, and writing a
+                     double back into an int step count is a change the wizard never asked for. -->
+                <ProgressBar Classes="thin" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="This takes a minute or two. Leave the PC connected to the network until it finishes." />
+            </StackPanel>
+
+            <!-- Done -->
+            <StackPanel Spacing="16" VerticalAlignment="Center" IsVisible="{Binding IsDone}">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <PathIcon Data="{StaticResource IconCheck}" Width="24" Height="24"
+                              Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                    <TextBlock Text="App Portal is ready" Classes="subtitle" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Classes="secondary" TextWrapping="Wrap">
+                    <Run Text="This PC is enrolled as" />
+                    <Run Text="{Binding DeviceName}" FontWeight="SemiBold" />
+                    <Run Text="." />
+                </TextBlock>
+                <Border Classes="infoBar caution" IsVisible="{Binding RestartRequired}">
+                    <StackPanel Orientation="Horizontal">
+                        <PathIcon Data="{StaticResource IconWarning}" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                        <TextBlock Text="Restart this PC to finish the installation." TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="accent" Content="Open App Portal" TabIndex="1" IsDefault="True"
+                            Command="{Binding OpenAppPortalCommand}" />
+                    <Button Classes="standard" Content="Close" TabIndex="2" Command="{Binding CancelCommand}" />
+                </StackPanel>
+                <TextBlock Classes="caption" Text="{Binding Problem}" IsVisible="{Binding HasProblem}" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <!-- Failed -->
+            <StackPanel Spacing="16" IsVisible="{Binding IsFailed}">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <PathIcon Data="{StaticResource IconError}" Width="24" Height="24"
+                              Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                    <TextBlock Text="Setup did not finish" Classes="subtitle" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" />
+                <StackPanel Spacing="6" IsVisible="{Binding LogPath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBlock Text="Installer log" Classes="bodyStrong" />
+                    <SelectableTextBlock Text="{Binding LogPath}" Classes="caption" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="standard" Content="Copy details" TabIndex="1" Command="{Binding CopyDetailsCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </Panel>
+    </DockPanel>
+</Window>

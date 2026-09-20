@@ -168,9 +168,34 @@ After verification, archive the legacy JSON files outside the mounted directorie
 
 The upgrade was checked using a copy of a data volume written by the 0.2.1 server in fake mode. Its original token authenticated after migration, catalog and install records remained available, and a restart produced no duplicate records.
 
+## Install one PC with Setup.exe
+
+`AppPortalSetup.exe` is the whole product in one file: the MSI, the .NET runtime and a four-page wizard. Carry it to a machine, double-click it, answer two questions, and the PC is enrolled. Releases from the next one onwards attach it beside the MSI; until then, build it with `dotnet publish src/AppPortal.Setup -c Release -r win-x64 --self-contained -p:AppPortalMsiPath=<path to the .msi>`.
+
+It asks for the server address and an enrollment key, checks both against the server before it installs anything, and asks for an Action1 endpoint id only when the key enrolls devices through Action1. It then runs the MSI, waits up to a minute for the agent to enroll and report in, and names the device as the server recorded it. Enter moves to the next page and Escape cancels, so the whole path works from the keyboard.
+
+It requests elevation on launch, unpacks the MSI to `%TEMP%` and deletes it afterwards, and installs nothing of itself. The verbose Windows Installer log stays at `%TEMP%\AppPortal-Setup.log`, which is what the failure page points at.
+
+Deployment systems that prefer an exe to an MSI can use silent mode from an elevated context:
+
+```powershell
+AppPortalSetup.exe /quiet /server https://portal.example.internal /key ape_... [/endpoint <endpoint-id>]
+```
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Installed and enrolled |
+| 1 | Enrollment failed: the key was refused, or the PC never checked in |
+| 2 | The command line was wrong |
+| 1620 | This build of `AppPortalSetup.exe` carries no MSI |
+| 3010 | Installed, and the PC has to restart to finish |
+| other | The code `msiexec` returned |
+
+`/quiet` needs both `/server` and `/key`. Property values must not contain quotes, backslashes, tabs or line breaks, the same rule the MSI applies; setup refuses them before it installs rather than after.
+
 ## Deploy the MSI
 
-Download `AppPortal-<version>-x64.msi` from the [latest release](https://github.com/Duresa7/app-portal/releases/latest). Run it elevated or as SYSTEM through Group Policy, Intune or your RMM:
+The MSI is what a fleet rollout uses; `AppPortalSetup.exe` above wraps this same package for one machine at a time. Download `AppPortal-<version>-x64.msi` from the [latest release](https://github.com/Duresa7/app-portal/releases/latest). Run it elevated or as SYSTEM through Group Policy, Intune or your RMM:
 
 ```powershell
 msiexec /i AppPortal-0.4.0-x64.msi /qn SERVERURL=https://portal.example.internal ENROLLMENTKEY=ape_...

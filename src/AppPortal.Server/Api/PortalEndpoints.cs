@@ -2,6 +2,7 @@ using AppPortal.Server.Action1;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Installs;
+using AppPortal.Server.Requests;
 using AppPortal.Shared;
 
 namespace AppPortal.Server.Api;
@@ -91,6 +92,33 @@ public static class PortalEndpoints
             catch (Action1Exception ex)
             {
                 return Results.Json(new ErrorMessage("The management service refused the request: " + ex.Message), statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        api.MapGet("/requests", (HttpContext context, AppRequestStore requests) =>
+        {
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            return Results.Ok(requests.ListForDevice(device.Name).Select(r => r.ToPublic()).ToList());
+        });
+
+        api.MapPost("/requests", (HttpContext context, CreateAppRequest body, AppRequestStore requests, ILoggerFactory loggers) =>
+        {
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            try
+            {
+                var record = requests.Create(device.Name, DeviceAuthenticationMiddleware.RequestedBy(context), body?.Text ?? "");
+                loggers.CreateLogger("AppPortal.Server.Requests")
+                    .LogInformation("Device {Device} asked for {Text}", device.Name, record.Text);
+                return Results.Created($"{ApiRoutes.Requests}/{record.Id}", record.ToPublic());
+            }
+            catch (AppRequestRejectedException ex)
+            {
+                var status = ex.Reason switch
+                {
+                    AppRequestRejection.TooManyPending => StatusCodes.Status429TooManyRequests,
+                    _ => StatusCodes.Status400BadRequest,
+                };
+                return Results.Json(new ErrorMessage(ex.Message), statusCode: status);
             }
         });
 

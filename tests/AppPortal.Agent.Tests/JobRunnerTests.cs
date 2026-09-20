@@ -240,6 +240,8 @@ public sealed class JobRunnerTests
     {
         public string Kind => "direct";
         public Task<ExecutionResult> RunAsync(JobContext job, PackageDefinition d, IProgress<(int percent, string detail)> p, CancellationToken ct) => run(p, ct);
+
+        public Task<ExecutionResult> UninstallAsync(JobContext job, PackageDefinition d, IProgress<(int percent, string detail)> p, CancellationToken ct) => run(p, ct);
     }
 
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handle) : HttpMessageHandler

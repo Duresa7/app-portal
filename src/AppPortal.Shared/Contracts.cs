@@ -17,7 +17,8 @@ public sealed record CatalogApp(
     long? DownloadSizeBytes,
     string? InstallScope = null,
     string? Engine = null,
-    string? Requirements = null)
+    string? Requirements = null,
+    bool UserRemovable = false)
 {
     public CatalogApp(string id, string name, string publisher, string description, string category, string? iconUrl, bool featured)
         : this(id, name, publisher, description, category, iconUrl, featured, ["action1"], null)
@@ -57,7 +58,8 @@ public sealed record InstallRequest(
     string? RebootState = null,
     string? StepName = null,
     int StepNumber = 0,
-    int StepCount = 0);
+    int StepCount = 0,
+    string Kind = InstallKind.Install);
 
 /// <summary>Software the management plane reports as present on the device.</summary>
 public sealed record InstalledApp(
@@ -67,6 +69,9 @@ public sealed record InstalledApp(
     string? CatalogAppId);
 
 public sealed record CreateInstallRequest(string AppId);
+
+/// <summary>Asking for software to be taken off this device again.</summary>
+public sealed record CreateUninstallRequest(string AppId);
 
 public enum AppRequestStatus
 {
@@ -161,6 +166,7 @@ public static class ApiRoutes
     public const string Device = Prefix + "/device";
     public const string Installed = Prefix + "/device/installed";
     public const string Installs = Prefix + "/installs";
+    public const string Uninstalls = Prefix + "/uninstalls";
     public const string Requests = Prefix + "/requests";
     public const string Enroll = Prefix + "/enroll";
     public const string EnrollCheck = Enroll + "/check";
@@ -181,7 +187,8 @@ public sealed record AgentHeartbeatResponse(DateTimeOffset ServerTime, int Heart
 /// machine-wide install it is a record, and for a per-user one it decides which profile the software
 /// goes into and whose session the installer has to run in.
 /// </summary>
-public sealed record AgentJob(string Id, string InstallId, PackageDefinition Definition, int Attempt, string? Requester = null);
+public sealed record AgentJob(string Id, string InstallId, PackageDefinition Definition, int Attempt,
+    string? Requester = null, string Kind = InstallKind.Install);
 
 public sealed record AgentJobProgress(string State, int Percent, string? Detail);
 

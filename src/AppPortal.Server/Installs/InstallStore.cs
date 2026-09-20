@@ -42,6 +42,11 @@ public sealed class InstallRecord
     /// <summary>Which install engine carried this out.</summary>
     public string Engine { get; set; } = EngineLabel.Action1;
 
+    /// <summary>Whether this row put software on the device or took it off.</summary>
+    public string Kind { get; set; } = InstallKind.Install;
+
+    public bool IsUninstall => Kind == InstallKind.Uninstall;
+
     /// <summary>
     /// Null when no restart is involved, <c>pending</c> while one is owed, <c>confirmed</c> once the
     /// device has restarted and the software was still there.
@@ -66,7 +71,7 @@ public sealed class InstallRecord
 
     public InstallRequest ToPublic()
         => new(Id, AppId, AppName, DeviceName, RequestedAt, CompletedAt, State, PercentComplete, Detail, RequestedBy, Engine, RebootState,
-            StepName, StepNumber, StepCount);
+            StepName, StepNumber, StepCount, Kind);
 }
 
 /// <summary>Install history, one row per request, in the database under the data directory.</summary>
@@ -364,9 +369,9 @@ public sealed class InstallStore(Database database)
             write.Transaction = transaction;
             write.CommandText = """
                 INSERT INTO installs (id, device_id, device_name, app_id, app_name, requested_by, engine, external_ref,
-                                      state, percent, detail, reboot_state, requested_at, completed_at, last_checked_at)
+                                      state, percent, detail, reboot_state, kind, requested_at, completed_at, last_checked_at)
                 VALUES (@id, @device, @deviceName, @appId, @appName, @requestedBy, @engine, @external,
-                        @state, @percent, @detail, @reboot, @requested, @completed, @checked)
+                        @state, @percent, @detail, @reboot, @kind, @requested, @completed, @checked)
                 ON CONFLICT(id) DO UPDATE SET
                     app_name = excluded.app_name, external_ref = excluded.external_ref, state = excluded.state,
                     percent = excluded.percent, detail = excluded.detail, reboot_state = excluded.reboot_state,
@@ -391,6 +396,7 @@ public sealed class InstallStore(Database database)
             write.Parameters.AddWithValue("@percent", record.PercentComplete);
             write.Parameters.AddWithValue("@detail", (object?)record.Detail ?? DBNull.Value);
             write.Parameters.AddWithValue("@reboot", (object?)record.RebootState ?? DBNull.Value);
+            write.Parameters.AddWithValue("@kind", record.Kind);
             write.Parameters.AddWithValue("@requested", SqlTime.From(record.RequestedAt));
             write.Parameters.AddWithValue("@completed", (object?)SqlTime.FromOptional(record.CompletedAt) ?? DBNull.Value);
             // The column is not null: an install that has never been refreshed was last seen when it was made.
@@ -407,7 +413,7 @@ public sealed class InstallStore(Database database)
         SELECT i.id, COALESCE(NULLIF(i.device_name, ''), d.name, '') AS device_name, d.action1_endpoint_id,
                i.app_id, i.app_name, i.external_ref,
                i.state, i.percent, i.detail, i.requested_at, i.completed_at, i.last_checked_at,
-               i.requested_by, i.engine, i.device_id, i.reboot_state
+               i.requested_by, i.engine, i.device_id, i.reboot_state, i.kind
         FROM installs i
         LEFT JOIN devices d ON d.id = i.device_id
         """;
@@ -436,6 +442,7 @@ public sealed class InstallStore(Database database)
                 Engine = reader.IsDBNull(13) ? EngineLabel.Action1 : reader.GetString(13),
                 DeviceId = reader.IsDBNull(14) ? null : reader.GetString(14),
                 RebootState = reader.IsDBNull(15) ? null : reader.GetString(15),
+                Kind = reader.IsDBNull(16) ? InstallKind.Install : reader.GetString(16),
             });
         }
 

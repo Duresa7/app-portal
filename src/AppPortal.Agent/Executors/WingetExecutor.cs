@@ -90,6 +90,59 @@ public sealed class WingetExecutor(
         return Interpret(result, winget);
     }
 
+    public async Task<ExecutionResult> UninstallAsync(JobContext job, PackageDefinition definition,
+        IProgress<(int percent, string detail)> progress, CancellationToken ct)
+    {
+        if (definition is not WingetPackageDefinition winget)
+        {
+            return new ExecutionResult(false, "This job is not a winget package.");
+        }
+
+        var executable = _locator.Find();
+        if (executable is null)
+        {
+            return new ExecutionResult(false, "winget is not installed on this PC.");
+        }
+
+        var log = new JobLog(stateDirectory, job.JobId);
+        var arguments = $"uninstall --id {Quote(winget.Id)} --exact --scope {winget.Scope} --silent "
+                        + "--accept-source-agreements --disable-interactivity";
+        log.Write($"winget {arguments}");
+        progress.Report((0, "Removing"));
+
+        ProcessResult? result;
+        if (winget.Scope == "user")
+        {
+            if (string.IsNullOrWhiteSpace(job.Requester))
+            {
+                return new ExecutionResult(false, "This package belongs to one person, and the removal does not say who.");
+            }
+
+            result = await sessions.RunAsAsync(job.Requester, executable, arguments, log.Write, _timeout, ct);
+            if (result is null)
+            {
+                return new ExecutionResult(false, $"Waiting for {job.Requester} to sign in.", null, WaitingForUser: true);
+            }
+        }
+        else
+        {
+            result = await processes.RunAsync(executable, arguments, line => Report(line, log, progress), _timeout, ct);
+        }
+
+        log.Write($"exit {result.ExitCode}");
+        return result.ExitCode switch
+        {
+            0 => new ExecutionResult(true, "Removed.", 0),
+            // Not there is the state the caller wanted, so it is not a failure.
+            NoApplicableUpdate or NotInstalled => new ExecutionResult(true, "It was not installed.", result.ExitCode),
+            RebootRequired or RebootInitiated => DirectInstallerExecutor.Restart(result.ExitCode) with { Detail = "Removed. This PC has to restart to finish." },
+            _ => new ExecutionResult(false, $"winget could not remove {winget.Id} (exit code {result.ExitCode}).", result.ExitCode),
+        };
+    }
+
+    /// <summary>Nothing matched the id, which for a removal means there was nothing to remove.</summary>
+    private const int NotInstalled = unchecked((int)0x8A150014);
+
     internal static string Arguments(WingetPackageDefinition winget)
     {
         var arguments = new List<string>

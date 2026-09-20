@@ -18,7 +18,7 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
         var id = Guid.NewGuid().ToString("N");
         install.Engine = EngineLabel.Agent;
         install.AutomationId = id;
-        install.Detail = "Waiting for the agent.";
+        install.Detail = install.IsUninstall ? "Waiting for the agent to remove it." : "Waiting for the agent.";
         using var connection = database.Open();
         using var transaction = connection.BeginTransaction(deferred: false);
         // The job must never be visible without its install, even if the server stops between writes.
@@ -26,14 +26,15 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO agent_jobs (id, install_id, device_id, definition_json, state, requester, created_at, updated_at)
-            VALUES (@id, @install, @device, @definition, 'queued', @requester, @now, @now);
+            INSERT INTO agent_jobs (id, install_id, device_id, definition_json, state, requester, kind, created_at, updated_at)
+            VALUES (@id, @install, @device, @definition, 'queued', @requester, @kind, @now, @now);
             """;
         command.Parameters.AddWithValue("@id", id);
         command.Parameters.AddWithValue("@install", install.Id);
         command.Parameters.AddWithValue("@device", install.DeviceId!);
         command.Parameters.AddWithValue("@definition", JsonSerializer.Serialize(definition, Json));
         command.Parameters.AddWithValue("@requester", (object?)install.RequestedBy ?? DBNull.Value);
+        command.Parameters.AddWithValue("@kind", install.Kind);
         command.Parameters.AddWithValue("@now", SqlTime.From(_time.GetUtcNow()));
         command.ExecuteNonQuery();
         transaction.Commit();
@@ -64,7 +65,7 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
                         ORDER BY created_at, rowid LIMIT 1)
               AND NOT EXISTS (SELECT 1 FROM agent_jobs WHERE device_id = @device
                               AND state IN ('leased', 'downloading', 'installing'))
-            RETURNING id, install_id, definition_json, attempt, requester;
+            RETURNING id, install_id, definition_json, attempt, requester, kind;
             """;
         command.Parameters.AddWithValue("@device", deviceId);
         command.Parameters.AddWithValue("@until", SqlTime.From(now.AddMinutes(5)));
@@ -76,7 +77,8 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
             {
                 job = new AgentJob(reader.GetString(0), reader.GetString(1),
                     JsonSerializer.Deserialize<PackageDefinition>(reader.GetString(2), Json)!, reader.GetInt32(3),
-                    reader.IsDBNull(4) ? null : reader.GetString(4));
+                    reader.IsDBNull(4) ? null : reader.GetString(4),
+                    reader.IsDBNull(5) ? InstallKind.Install : reader.GetString(5));
             }
         }
 

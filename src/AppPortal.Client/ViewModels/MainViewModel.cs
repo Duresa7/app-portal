@@ -316,6 +316,38 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Asks for the app to be taken off. The same shape as an install, because the server treats a
+    /// removal as one: the same history row, the same states, the same progress on the card.
+    /// </summary>
+    private async Task RemoveAsync(AppItemViewModel item)
+    {
+        if (_api is null)
+        {
+            return;
+        }
+
+        item.LastError = null;
+        item.IsRequesting = true;
+        try
+        {
+            var request = await _api.RequestUninstallAsync(item.App.Id, CancellationToken.None);
+            item.ActiveInstall = request;
+            Installs.Insert(0, request);
+            Activity.Insert(0, new ActivityItemViewModel(request));
+            OnPropertyChanged(nameof(ActiveInstallCount));
+            SelectedSection = 0;
+        }
+        catch (PortalApiException ex)
+        {
+            item.LastError = ex.Message;
+        }
+        finally
+        {
+            item.IsRequesting = false;
+        }
+    }
+
     private async Task InstallAsync(AppItemViewModel item)
     {
         if (_api is null)
@@ -365,7 +397,7 @@ public sealed partial class MainViewModel : ViewModelBase
             }
             else
             {
-                var item = new AppItemViewModel(app, InstallAsync);
+                var item = new AppItemViewModel(app, InstallAsync, RemoveAsync);
                 Apps.Add(item);
                 if (app.IconUrl is not null)
                 {

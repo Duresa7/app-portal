@@ -37,6 +37,9 @@ public interface IPortalApiClient
     Task<IReadOnlyList<InstalledApp>> GetInstalledAsync(CancellationToken ct);
     Task<IReadOnlyList<InstallRequest>> GetInstallsAsync(CancellationToken ct);
     Task<InstallRequest> RequestInstallAsync(string appId, CancellationToken ct);
+
+    /// <summary>Asks for this app to be taken off this PC again.</summary>
+    Task<InstallRequest> RequestUninstallAsync(string appId, CancellationToken ct);
     Task<IReadOnlyList<AppRequest>> GetRequestsAsync(CancellationToken ct);
     Task<AppRequest> CreateRequestAsync(string text, CancellationToken ct);
 }
@@ -82,6 +85,13 @@ public sealed class PortalApiClient : IPortalApiClient
     public async Task<InstallRequest> RequestInstallAsync(string appId, CancellationToken ct)
     {
         using var response = await SendAsync(() => _http.PostAsJsonAsync(ApiRoutes.Installs.TrimStart('/'), new CreateInstallRequest(appId), Json, ct), ct);
+        await ThrowIfFailedAsync(response, ct);
+        return await ReadAsync<InstallRequest>(response, ct);
+    }
+
+    public async Task<InstallRequest> RequestUninstallAsync(string appId, CancellationToken ct)
+    {
+        using var response = await SendAsync(() => _http.PostAsJsonAsync(ApiRoutes.Uninstalls.TrimStart('/'), new CreateUninstallRequest(appId), Json, ct), ct);
         await ThrowIfFailedAsync(response, ct);
         return await ReadAsync<InstallRequest>(response, ct);
     }

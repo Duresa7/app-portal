@@ -59,6 +59,9 @@ public static class AgentRun
         builder.Services.AddSingleton<IUserSessionLauncher>(provider => OperatingSystem.IsWindows()
             ? new WindowsUserSessions(provider.GetRequiredService<ILogger<WindowsUserSessions>>())
             : new NoUserSessions());
+        builder.Services.AddSingleton<IUninstallRegistry>(_ => OperatingSystem.IsWindows()
+            ? new WindowsUninstallRegistry()
+            : new NoUninstallRegistry());
         builder.Services.AddSingleton(provider => new SoftwareReporter(
             provider.GetRequiredService<HttpClient>(),
             provider.GetRequiredService<IProcessRunner>(),
@@ -76,7 +79,8 @@ public static class AgentRun
             provider.GetRequiredService<IProcessRunner>(),
             provider.GetRequiredService<ILogger<DirectInstallerExecutor>>(),
             stateDirectory,
-            provider.GetRequiredService<IUserSessionLauncher>()));
+            provider.GetRequiredService<IUserSessionLauncher>(),
+            provider.GetRequiredService<IUninstallRegistry>()));
         builder.Services.AddSingleton<IPackageExecutor>(provider => new WingetExecutor(
             provider.GetRequiredService<IProcessRunner>(),
             provider.GetRequiredService<ILogger<WingetExecutor>>(),

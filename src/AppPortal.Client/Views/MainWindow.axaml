@@ -192,6 +192,7 @@
                                                         <TextBlock Text="{Binding EngineText}" IsVisible="{Binding HasEngine}" Classes="caption" />
                                                         <TextBlock Text="{Binding RequirementsText}" IsVisible="{Binding HasRequirements}"
                                                                    TextWrapping="Wrap" Classes="caption" />
+                                                        <Button Content="Remove" Command="{Binding RemoveCommand}" IsVisible="{Binding CanRemove}" Classes="secondary" />
                                                         <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding NeedsRestart}">
                                                             <TextBlock Text="{Binding RestartText}" TextWrapping="Wrap" Classes="caption" VerticalAlignment="Center" />
                                                             <Button Content="Restart now" Command="{Binding RestartCommand}" />

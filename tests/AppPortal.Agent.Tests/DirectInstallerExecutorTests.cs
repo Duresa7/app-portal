@@ -149,7 +149,7 @@ public sealed class DirectInstallerExecutorTests : IDisposable
         File.WriteAllBytes(cache.PathFor(Definition.Sha256, "exe"), _body);
         return new DirectInstallerExecutor(
             new ResumableDownload(new HttpClient(), cache, NullLogger.Instance),
-            processes, NullLogger<DirectInstallerExecutor>.Instance, _root, sessions ?? new FakeSessions());
+            processes, NullLogger<DirectInstallerExecutor>.Instance, _root, sessions ?? new FakeSessions(), new NoUninstallRegistry());
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);

@@ -7,8 +7,18 @@
       "description": "Web browser. Installs the current stable release from the Software Repository.",
       "category": "Browsers",
       "featured": true,
-      "action1": { "packageId": "Google_Google_Chrome_1570243626751_builtin", "version": "latest" },
-      "match": { "nameContains": "Google Chrome" }
+      "action1": {
+        "packageId": "Google_Google_Chrome_1570243626751_builtin",
+        "version": "latest"
+      },
+      "match": {
+        "nameContains": "Google Chrome"
+      },
+      "agent": {
+        "kind": "winget",
+        "id": "Google.Chrome",
+        "scope": "machine"
+      }
     },
     {
       "id": "mozilla-firefox",
@@ -16,8 +26,18 @@
       "publisher": "Mozilla",
       "description": "Web browser, English (US) build.",
       "category": "Browsers",
-      "action1": { "packageId": "Mozilla_Mozilla_Firefox_1570490818160_builtin", "version": "latest" },
-      "match": { "nameContains": "Mozilla Firefox" }
+      "action1": {
+        "packageId": "Mozilla_Mozilla_Firefox_1570490818160_builtin",
+        "version": "latest"
+      },
+      "match": {
+        "nameContains": "Mozilla Firefox"
+      },
+      "agent": {
+        "kind": "winget",
+        "id": "Mozilla.Firefox",
+        "scope": "machine"
+      }
     },
     {
       "id": "7-zip",
@@ -25,8 +45,18 @@
       "publisher": "Igor Pavlov",
       "description": "File archiver for zip, 7z, tar and other formats.",
       "category": "Utilities",
-      "action1": { "packageId": "Igor_Pavlov_7_Zip_1570578162075_builtin", "version": "latest" },
-      "match": { "nameContains": "7-Zip" }
+      "action1": {
+        "packageId": "Igor_Pavlov_7_Zip_1570578162075_builtin",
+        "version": "latest"
+      },
+      "match": {
+        "nameContains": "7-Zip"
+      },
+      "agent": {
+        "kind": "winget",
+        "id": "7zip.7zip",
+        "scope": "machine"
+      }
     },
     {
       "id": "vlc",
@@ -34,8 +64,18 @@
       "publisher": "VideoLAN",
       "description": "Plays most audio and video formats without extra codecs.",
       "category": "Media",
-      "action1": { "packageId": "VideoLAN_VLC_Media_Player_1606575317968_builtin", "version": "latest" },
-      "match": { "nameContains": "VLC" }
+      "action1": {
+        "packageId": "VideoLAN_VLC_Media_Player_1606575317968_builtin",
+        "version": "latest"
+      },
+      "match": {
+        "nameContains": "VLC"
+      },
+      "agent": {
+        "kind": "winget",
+        "id": "VideoLAN.VLC",
+        "scope": "machine"
+      }
     },
     {
       "id": "vscode",
@@ -44,8 +84,56 @@
       "description": "Source code editor. System-wide (all users) install.",
       "category": "Developer tools",
       "featured": true,
-      "action1": { "packageId": "Microsoft_Microsoft_Visual_Studio_Code_1685726188601_builtin", "version": "latest" },
-      "match": { "nameContains": "Visual Studio Code" }
+      "action1": {
+        "packageId": "Microsoft_Microsoft_Visual_Studio_Code_1685726188601_builtin",
+        "version": "latest"
+      },
+      "match": {
+        "nameContains": "Visual Studio Code"
+      },
+      "agent": {
+        "kind": "winget",
+        "id": "Microsoft.VisualStudioCode",
+        "scope": "machine"
+      }
+    },
+    {
+      "id": "steam",
+      "name": "Steam",
+      "publisher": "Valve",
+      "description": "Game launcher. The launcher only: games are downloaded inside Steam, for whoever is signed in there.",
+      "category": "Games",
+      "agent": {
+        "kind": "winget",
+        "id": "Valve.Steam",
+        "scope": "machine"
+      },
+      "match": {
+        "nameContains": "Steam"
+      }
+    },
+    {
+      "id": "example-direct-installer",
+      "name": "Example direct installer",
+      "publisher": "Your vendor",
+      "description": "A worked example of the direct form, for software no package source carries. Fill in the URL and hash, or delete this entry.",
+      "category": "Other",
+      "hidden": true,
+      "requirements": "Replace the placeholder sha256 before publishing this. The agent refuses a file whose hash does not match.",
+      "agent": {
+        "kind": "direct",
+        "url": "https://vendor.example/installer.exe",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "installerType": "exe",
+        "silentArgs": "/S",
+        "sizeBytes": 1,
+        "uninstallKey": "Example Application",
+        "scope": "machine",
+        "requiresReboot": false
+      },
+      "match": {
+        "nameContains": "Example Application"
+      }
     }
   ]
 }

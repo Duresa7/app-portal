@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>AppPortalSetup</AssemblyName>
+    <RootNamespace>AppPortal.Setup</RootNamespace>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationIcon>..\AppPortal.Client\Assets\app-portal.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <!-- One file is all a tech carries to the machine, so the runtime and the MSI travel inside it. -->
+    <PublishSingleFile Condition="'$(RuntimeIdentifier)' != ''">true</PublishSingleFile>
+    <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- The package this wraps, where the installer project's CI step leaves it. Override it with
+         -p:AppPortalMsiPath=<path> to wrap a package built anywhere else. -->
+    <AppPortalMsiPath Condition="'$(AppPortalMsiPath)' == ''">$(MSBuildThisFileDirectory)..\..\out\installer\AppPortal-$(Version)-x64.msi</AppPortalMsiPath>
+  </PropertyGroup>
+
+  <!-- Elevation is asked for in a Windows application manifest, which means nothing outside a Windows
+       executable. The Linux test job builds this project as part of the solution, so the manifest is
+       attached only when the output is a Windows binary. -->
+  <PropertyGroup>
+    <AppPortalWindowsBuild Condition="'$(OS)' == 'Windows_NT'">true</AppPortalWindowsBuild>
+    <AppPortalWindowsBuild Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('win'))">true</AppPortalWindowsBuild>
+    <ApplicationManifest Condition="'$(AppPortalWindowsBuild)' == 'true'">app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Absent on Linux and on any build made before the MSI exists. The wizard then refuses to install
+         and names the switch that fixes it, rather than the build failing somewhere nobody expects. -->
+    <EmbeddedResource Include="$(AppPortalMsiPath)" LogicalName="AppPortal.msi" Condition="Exists('$(AppPortalMsiPath)')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- As far as anyone at the keyboard is concerned this is App Portal's first screen, so it uses the
+         client's own tokens and control styles instead of a second copy of them that can drift. -->
+    <AvaloniaResource Include="..\AppPortal.Client\Assets\app-portal.ico" Link="Assets\app-portal.ico" />
+    <AvaloniaResource Include="..\AppPortal.Client\Styles\Fluent2Colors.axaml" Link="Styles\Fluent2Colors.axaml" />
+    <AvaloniaResource Include="..\AppPortal.Client\Styles\PortalStyles.axaml" Link="Styles\PortalStyles.axaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AppPortal.Shared\AppPortal.Shared.csproj" />
+  </ItemGroup>
+</Project>

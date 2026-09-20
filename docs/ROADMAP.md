@@ -52,7 +52,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M2-02](plans/M2-02-agent-service.md) | Agent service skeleton and heartbeat | M1-09 | Done |
 | [M2-03](plans/M2-03-msi-packaging.md) | MSI packaging of client and agent | M2-02 | Done |
 | [M2-04](plans/M2-04-agent-self-update.md) | Agent self-update via MSI | M2-03 | Open |
-| [M2-05](plans/M2-05-setup-bootstrapper.md) | Setup.exe bootstrapper | M2-01, M2-03 | Open |
+| [M2-05](plans/M2-05-setup-bootstrapper.md) | Setup.exe bootstrapper | M2-01, M2-03 | In review |
 | [M2-06](plans/M2-06-installer-ci-verification.md) | Installer verification in CI | M2-03, M2-05 | Open |
 | [M2-07](plans/M2-07-release-0.4.0.md) | Release 0.4.0 | M2-04, M2-06 | Open |
 | [M3-01](plans/M3-01-local-package-definitions.md) | Local package definitions in the catalog | M1-06 | Done |

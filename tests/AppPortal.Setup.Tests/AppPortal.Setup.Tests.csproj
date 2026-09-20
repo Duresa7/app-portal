@@ -19,7 +19,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\AppPortal.Updater\AppPortal.Updater.csproj" />
+    <!-- A stand-in for the MSI, so unpacking and deleting the package is proved without a hundred
+         megabytes of real installer and without Windows. -->
+    <EmbeddedResource Include="FakePackage.bin" LogicalName="FakePackage.msi" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AppPortal.Setup\AppPortal.Setup.csproj" />
   </ItemGroup>
 
 </Project>

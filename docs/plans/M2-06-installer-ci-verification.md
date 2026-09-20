@@ -1,6 +1,6 @@
 # M2-06: Installer verification in CI
 
-**Milestone:** 2 (0.4.0)
+**Milestone:** 2 (0.6.0)
 **Depends on:** M2-03, M2-05
 **Unlocks:** M2-07
 

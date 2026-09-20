@@ -1,6 +1,6 @@
 # M2-02: Agent service skeleton and heartbeat
 
-**Milestone:** 2 (0.4.0)
+**Milestone:** 2 (0.6.0)
 **Depends on:** M1-09
 **Unlocks:** M2-03, M3-02
 

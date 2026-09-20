@@ -1,6 +1,6 @@
 # M2-05: Setup.exe bootstrapper
 
-**Milestone:** 2 (0.4.0)
+**Milestone:** 2 (0.6.0)
 **Depends on:** M2-01, M2-03
 **Unlocks:** M2-06
 

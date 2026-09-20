@@ -26,9 +26,11 @@ Settled on 2026-09-19. Change them here first, then in the plans that depend on 
 | Milestone | Version | Delivers |
 |---|---|---|
 | 1 | 0.3.0 | SQLite, requester identity, app requests, web admin UI with local accounts, catalog CRUD, install history, devices, enrollment key management |
-| 2 | 0.4.0 | Enrollment API, agent service taking over updates, MSI and Setup.exe, installer verification in CI |
+| 2 | 0.6.0 | Enrollment API, agent service taking over updates, MSI and Setup.exe, installer verification in CI |
 | 3 | 0.5.0 | Agent install engine: every shape a Windows install takes. winget and direct installers, job protocol with progress, engine preference and labels, per-user installs, device requirements, restarts, prerequisite chains, uninstall |
-| 4 | 0.6.0 | Full admin parity in the Windows client over an admin JSON API |
+| 4 | 0.7.0 | Full admin parity in the Windows client over an admin JSON API |
+
+Milestone 2 was meant to be 0.4.0. Milestone 3 finished first and shipped as 0.5.0, so 0.4.0 was never cut and milestone 2's remainder ships as 0.6.0 instead. Milestone 4 moves up to 0.7.0. Versions only go forwards, so the number a milestone carries is a label rather than a promise.
 
 ## Packages and status
 
@@ -51,10 +53,10 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M2-01](plans/M2-01-enrollment-api.md) | Enrollment API | M1-08, M1-09 | Done |
 | [M2-02](plans/M2-02-agent-service.md) | Agent service skeleton and heartbeat | M1-09 | Done |
 | [M2-03](plans/M2-03-msi-packaging.md) | MSI packaging of client and agent | M2-02 | Done |
-| [M2-04](plans/M2-04-agent-self-update.md) | Agent self-update via MSI | M2-03 | Open |
-| [M2-05](plans/M2-05-setup-bootstrapper.md) | Setup.exe bootstrapper | M2-01, M2-03 | Open |
-| [M2-06](plans/M2-06-installer-ci-verification.md) | Installer verification in CI | M2-03, M2-05 | Open |
-| [M2-07](plans/M2-07-release-0.4.0.md) | Release 0.4.0 | M2-04, M2-06 | Open |
+| [M2-04](plans/M2-04-agent-self-update.md) | Agent self-update via MSI | M2-03 | Done |
+| [M2-05](plans/M2-05-setup-bootstrapper.md) | Setup.exe bootstrapper | M2-01, M2-03 | Done |
+| [M2-06](plans/M2-06-installer-ci-verification.md) | Installer verification in CI | M2-03, M2-05 | Done |
+| [M2-07](plans/M2-07-release-0.6.0.md) | Release 0.6.0 | M2-04, M2-06 | In review |
 | [M3-01](plans/M3-01-local-package-definitions.md) | Local package definitions in the catalog | M1-06 | Done |
 | [M3-02](plans/M3-02-agent-job-protocol.md) | Agent job protocol with progress | M2-02 | Done |
 | [M3-03](plans/M3-03-winget-executor.md) | winget executor | M3-02 | Done |
@@ -71,11 +73,13 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M4-03](plans/M4-03-client-installs-and-requests.md) | Client admin: installs and requests | M4-02 | Open |
 | [M4-04](plans/M4-04-client-catalog.md) | Client admin: catalog | M4-02 | Open |
 | [M4-05](plans/M4-05-client-devices-keys-admins.md) | Client admin: devices, keys, admins | M4-02 | Open |
-| [M4-06](plans/M4-06-release-0.6.0.md) | Release 0.6.0 | M4-03, M4-04, M4-05 | Open |
+| [M4-06](plans/M4-06-release-0.7.0.md) | Release 0.7.0 | M4-03, M4-04, M4-05 | Open |
 
 Milestone 3 shipped as [v0.5.0](https://github.com/Duresa7/app-portal/releases/tag/v0.5.0). The full gate, Windows jobs included, was run on the release commit before the tag and passed. **None of the VM verification in the milestone 3 plans was done.** The Win32 code behind per-user installs has only ever run against a test double, and no installer has been run by the agent outside a fake process runner, so prove a per-user install and a restart on one real PC before trusting this to a fleet.
 
-Milestone 2 is not finished: M2-04, M2-05 and M2-06 are open, so 0.4.0 never shipped and 0.5.0 carries an MSI with no Setup.exe bootstrapper and no agent self-update.
+Milestone 2 finished after milestone 3 and ships as 0.6.0. The agent now keeps the whole installation current from the release MSI, `AppPortalSetup.exe` puts one PC on through a wizard or one silent command, and the client zip retires.
+
+The caveat from 0.5.0 still stands for the install engine: **the Win32 code behind per-user installs has still never run outside a test double.** What is no longer untested is the package itself. `deploy/windows/ci-installer-test.ps1` installs it on a Windows runner, enrolls it against a real server, uses it and takes it off again, and the release cannot be built if any of that fails.
 
 Milestone 1 shipped as [v0.3.0](https://github.com/Duresa7/app-portal/releases/tag/v0.3.0). The [release gate](https://github.com/Duresa7/app-portal/actions/runs/35485822532) passed, the downloaded client archive matched `SHA256SUMS`, and `ghcr.io/duresa7/app-portal-server:0.3.0` was pulled without registry credentials. The upgrade check used a copied 0.2.1 fake-mode data volume; validate a copy of production data before upgrading a live deployment.
 

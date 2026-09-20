@@ -8,6 +8,13 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace AppPortal.Server.Enrollment;
 
 /// <summary>
+/// What a usable key will enroll a device for: <c>action1</c>, <c>agent</c> or <c>both</c>. The setup
+/// wizard reads it to decide whether it has to ask for an Action1 endpoint id, which is the difference
+/// between a refusal the person can act on and one that arrives after the MSI has already run.
+/// </summary>
+public sealed record EnrollmentCheck(string Engine);
+
+/// <summary>
 /// The one route a PC may call before it has a token. It trades an enrollment key for a device record
 /// and the device token that every other API call needs, so an installer never has to carry a token of
 /// its own: the key is the only secret that travels with the package, it can be revoked, and it is
@@ -153,7 +160,7 @@ public static class EnrollmentEndpoints
             var presented = context.Request.Headers[ApiHeaders.EnrollmentKey].ToString();
             var key = keys.FindByPlaintext(presented);
             return key?.Status == EnrollmentKeyStatus.Active
-                ? Results.NoContent()
+                ? Results.Ok(new EnrollmentCheck(EnrollmentKeyStore.Name(key.DefaultEngine)))
                 : Results.Json(
                     new ErrorMessage("That enrollment key is not usable."),
                     statusCode: StatusCodes.Status401Unauthorized);

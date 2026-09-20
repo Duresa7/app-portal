@@ -1,6 +1,6 @@
 # M2-04: Agent self-update via MSI
 
-**Milestone:** 2 (0.4.0)
+**Milestone:** 2 (0.6.0)
 **Depends on:** M2-03
 **Unlocks:** M2-07
 

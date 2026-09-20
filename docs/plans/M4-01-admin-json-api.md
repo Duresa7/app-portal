@@ -1,6 +1,6 @@
 # M4-01: Admin JSON API and client admin sessions
 
-**Milestone:** 4 (0.6.0)
+**Milestone:** 4 (0.7.0)
 **Depends on:** M1-10
 **Unlocks:** M4-02
 

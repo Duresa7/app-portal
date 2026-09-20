@@ -1,6 +1,6 @@
 # M2-01: Enrollment API
 
-**Milestone:** 2 (0.4.0)
+**Milestone:** 2 (0.6.0)
 **Depends on:** M1-08, M1-09
 **Unlocks:** M2-05
 

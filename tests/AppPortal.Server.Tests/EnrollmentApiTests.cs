@@ -210,12 +210,27 @@ public sealed class EnrollmentApiTests : IDisposable
     {
         var created = Keys.Create("checked", EnrollmentEngine.Agent, null, maxUses: 1, "tester");
 
-        Assert.Equal(HttpStatusCode.NoContent, (await Check(created.Plaintext)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Check(created.Plaintext)).StatusCode);
         Assert.Equal(0, Keys.Find(created.Key.Id)!.Uses);
 
         // Still good for the one enrollment it was made for.
         Assert.Equal(HttpStatusCode.Created, (await Enroll(Body(created.Plaintext))).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await Check(created.Plaintext)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData(EnrollmentEngine.Action1, "action1")]
+    [InlineData(EnrollmentEngine.Agent, "agent")]
+    [InlineData(EnrollmentEngine.Both, "both")]
+    public async Task The_check_route_names_the_engine_the_key_enrolls_for(EnrollmentEngine engine, string expected)
+    {
+        // The setup wizard asks for an Action1 endpoint id only when this says the key needs one, so
+        // the name is a contract and not a label: action1, agent or both, and nothing else.
+        var created = Keys.Create("engine-" + expected, engine, null, maxUses: 1, "tester");
+
+        var answer = await (await Check(created.Plaintext)).Content.ReadFromJsonAsync<EnrollmentCheck>(Json);
+
+        Assert.Equal(expected, answer!.Engine);
     }
 
     [Fact]

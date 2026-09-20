@@ -2,11 +2,11 @@ name: CI
 
 # Two shapes of run. Day to day, on a pull request or a push to main: format check, build, tests and
 # the server image, all on Linux. Before a release, on a v* tag or when somebody asks for it from the
-# Actions tab: the same plus everything on Windows, which is the client archive, the MSI and the test
-# matrix's second leg. A v* tag then runs the release job, the only place a GitHub release or a
+# Actions tab: the same plus everything on Windows, which is the installer and the test matrix's
+# second leg. A v* tag then runs the release job, the only place a GitHub release or a
 # registry image is created, and only after all of it passed.
 #
-# Windows minutes bill at several times the Linux rate and the three Windows jobs are most of the cost
+# Windows minutes bill at several times the Linux rate and the two Windows jobs are most of the cost
 # of this workflow. They are the jobs that must pass before anything ships, not the jobs that must pass
 # before every commit. Run the full gate from the Actions tab in the days before a release, and treat a
 # red result there as blocking the tag.
@@ -110,154 +110,13 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: '**/TestResults/*.trx'
 
-  client:
-    name: Publish Windows client
-    runs-on: ubuntu-latest
-    needs: version
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: Publish self-contained win-x64
-        run: |
-          # The version comes from Directory.Build.props; the version job has already checked a tag against it.
-          dotnet publish src/AppPortal.Client  -c Release -r win-x64 --self-contained -o out/client
-          dotnet publish src/AppPortal.Updater -c Release -r win-x64 --self-contained -o out/updater
-          dotnet publish src/AppPortal.Agent -c Release -r win-x64 --self-contained -o out/agent
-          mkdir -p out/package/client
-          cp -r out/client/. out/package/client/
-          # The updater is one self-contained file that sits beside the client and replaces it.
-          cp out/updater/AppPortal.Updater.exe out/package/client/
-          cp out/agent/AppPortal.Agent.exe out/package/client/
-          cd out/package && zip -qr ../AppPortal-client-win-x64.zip .
-          cd .. && sha256sum AppPortal-client-win-x64.zip > SHA256SUMS && cat SHA256SUMS
-      - uses: actions/upload-artifact@v7
-        with:
-          name: AppPortal-client-win-x64
-          path: |
-            out/AppPortal-client-win-x64.zip
-            out/SHA256SUMS
-          if-no-files-found: error
-
-  client-verify:
-    name: Verify client on Windows
-    needs: [gate, version, client]
-    if: needs.gate.outputs.windows == 'true'
-    runs-on: windows-latest
-    env:
-      EXPECTED_VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-      - uses: actions/download-artifact@v8
-        with:
-          name: AppPortal-client-win-x64
-          path: package
-      - name: Checksum matches the archive
-        shell: pwsh
-        run: |
-          $expected = ((Get-Content package/SHA256SUMS -Raw).Trim() -split '\s+')[0]
-          $actual = (Get-FileHash package/AppPortal-client-win-x64.zip -Algorithm SHA256).Hash
-          if ($expected -ne $actual) { throw "SHA256SUMS says $expected, archive hashes to $actual" }
-          "Checksum ok: $actual"
-      - name: Archive has every file the installer and updater need
-        shell: pwsh
-        run: |
-          Expand-Archive package/AppPortal-client-win-x64.zip -DestinationPath unpacked
-          $required = @(
-            'client/AppPortal.exe',
-            'client/AppPortal.dll',
-            'client/AppPortal.Updater.exe',
-            'client/AppPortal.Agent.exe'
-          )
-          $missing = $required | Where-Object { -not (Test-Path (Join-Path unpacked $_)) }
-          if ($missing) { throw "Missing from the archive: $($missing -join ', ')" }
-          "All $($required.Count) required files present."
-      - name: Binaries report the release version
-        shell: pwsh
-        run: |
-          # The updater compares the installed AppPortal.exe's version with the release tag. A binary that
-          # reports a different version makes every device either update forever or never update.
-          foreach ($exe in 'client/AppPortal.exe', 'client/AppPortal.Updater.exe', 'client/AppPortal.Agent.exe') {
-            $info = (Get-Item (Join-Path unpacked $exe)).VersionInfo
-            $product = ($info.ProductVersion -split '[+\- ]')[0]
-            "$exe ProductVersion=$($info.ProductVersion) FileVersion=$($info.FileVersion)"
-            if ($product -ne $env:EXPECTED_VERSION) {
-              throw "$exe reports $product, expected $env:EXPECTED_VERSION"
-            }
-          }
-      - name: Published client starts, renders, and exits
-        shell: pwsh
-        run: |
-          # Demo mode needs no server. --screenshot renders the window once and exits, which proves the
-          # self-contained build loads, Avalonia initialises, and the main window composes on Windows.
-          $out = Join-Path $PWD 'screenshot.png'
-          $p = Start-Process -FilePath (Join-Path $PWD 'unpacked/client/AppPortal.exe') `
-                 -ArgumentList '--demo', '--screenshot', "`"$out`"", '0' -PassThru
-          if (-not $p.WaitForExit(90000)) {
-            $p.Kill()
-            $log = Join-Path $env:LOCALAPPDATA 'AppPortal/client.log'
-            if (Test-Path $log) { Get-Content $log }
-            throw 'AppPortal.exe did not exit within 90 seconds.'
-          }
-          if ($p.ExitCode -ne 0) { throw "AppPortal.exe exited with $($p.ExitCode)" }
-          if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 1024) { throw 'No screenshot was written.' }
-          "Client rendered $((Get-Item $out).Length) bytes in $out"
-      - name: Published agent records a heartbeat and exits
-        shell: pwsh
-        run: |
-          dotnet build src/AppPortal.Server -c Release
-          if ($LASTEXITCODE -ne 0) { throw 'Server build failed.' }
-          $serverDll = Join-Path $PWD 'src/AppPortal.Server/bin/Release/net10.0/AppPortal.Server.dll'
-          $env:Action1__Mode = 'Fake'
-          $env:Portal__DataDirectory = Join-Path $env:RUNNER_TEMP 'agent-server-data'
-          $env:ASPNETCORE_URLS = 'http://127.0.0.1:5189'
-          $registration = dotnet $serverDll device add --name AGENT-CI --endpoint-id endpoint-1234
-          if ($LASTEXITCODE -ne 0) { throw 'Device registration failed.' }
-          $token = ($registration | Where-Object { $_ -match '^apd_' } | Select-Object -Last 1)
-          if (-not $token) { throw 'No device token was issued.' }
-          $env:APPPORTAL_SERVER_URL = $env:ASPNETCORE_URLS
-          $env:APPPORTAL_DEVICE_TOKEN = $token
-          $server = Start-Process dotnet -ArgumentList "`"$serverDll`"" -PassThru `
-            -RedirectStandardOutput server.log -RedirectStandardError server-error.log
-          try {
-            $ready = $false
-            for ($i = 0; $i -lt 30; $i++) {
-              try {
-                Invoke-RestMethod "$env:ASPNETCORE_URLS/healthz" | Out-Null
-                $ready = $true
-                break
-              } catch { Start-Sleep -Seconds 1 }
-            }
-            if (-not $ready) { throw 'Fake-mode server did not start.' }
-            $agent = Start-Process -FilePath (Join-Path $PWD 'unpacked/client/AppPortal.Agent.exe') `
-              -ArgumentList '--console', '--once' -PassThru
-            if (-not $agent.WaitForExit(60000)) {
-              $agent.Kill()
-              throw 'Agent did not exit within 60 seconds.'
-            }
-            if ($agent.ExitCode -ne 0) { throw "Agent exited with $($agent.ExitCode)" }
-            $statusPath = Join-Path $env:ProgramData 'AppPortal/agent.json'
-            $status = Get-Content $statusPath -Raw | ConvertFrom-Json
-            if ($status.outcome -ne 'Succeeded') { throw 'Heartbeat was not recorded as successful.' }
-          } finally {
-            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
-          }
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: client-smoke-screenshot
-          path: screenshot.png
-          if-no-files-found: ignore
-
-  installer:
-    name: Build and verify Windows MSI
+  installer-verify:
+    name: Build, install and verify on Windows
     needs: [gate, version]
     if: needs.gate.outputs.windows == 'true'
     runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -275,15 +134,69 @@ jobs:
         run: |
           dotnet build src/AppPortal.Installer/AppPortal.Installer.wixproj -c Release -o out/installer
           if ($LASTEXITCODE -ne 0) { throw 'MSI build failed.' }
-      - name: Check silent install, service, enrollment file and uninstall
+      - name: Build the bootstrapper around the MSI
         shell: pwsh
         run: |
-          ./src/AppPortal.Installer/Verify-Msi.ps1 -Path "out/installer/AppPortal-${{ needs.version.outputs.version }}-x64.msi" -Version "${{ needs.version.outputs.version }}"
+          # The bootstrapper carries the MSI as a resource, so it can only be built after it.
+          if (-not (Test-Path src/AppPortal.Setup)) {
+            'No bootstrapper project in this commit; the installer checks run against the MSI alone.'
+            exit 0
+          }
+          $msi = (Resolve-Path "out/installer/AppPortal-$env:VERSION-x64.msi").Path
+          dotnet publish src/AppPortal.Setup -c Release -r win-x64 --self-contained `
+            -p:PublishSingleFile=true -p:AppPortalMsiPath="$msi" -o out/setup
+          if ($LASTEXITCODE -ne 0) { throw 'Bootstrapper publish failed.' }
+          if (-not (Test-Path out/setup/AppPortalSetup.exe)) { throw 'No AppPortalSetup.exe was produced.' }
+      - name: The release feed still parses
+        shell: pwsh
+        run: |
+          # Every installed agent reads this feed to find its next version. A change in GitHub's answer
+          # should fail a build here, not stop a fleet updating. It downloads nothing.
+          ./out/agent/AppPortal.Agent.exe --check
+          if ($LASTEXITCODE -ne 0) { throw 'The agent could not read the release feed.' }
+      - name: Check the package on its own
+        shell: pwsh
+        run: |
+          ./src/AppPortal.Installer/Verify-Msi.ps1 -Path "out/installer/AppPortal-$env:VERSION-x64.msi" -Version "$env:VERSION"
+      - name: Fetch the previous release for the upgrade check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # There is nothing to upgrade from until a release exists, and a fork has none at all, so a
+          # failure here is not a reason to fail the gate.
+          New-Item -ItemType Directory -Force previous | Out-Null
+          gh release download --repo "$env:GITHUB_REPOSITORY" --pattern '*-x64.msi' --dir previous
+          if ($LASTEXITCODE -ne 0) { 'No previous release MSI; the upgrade check will be skipped.' }
+      - name: Install, enroll, use and remove
+        shell: pwsh
+        run: |
+          $arguments = @{
+            Msi     = "out/installer/AppPortal-$env:VERSION-x64.msi"
+            Version = $env:VERSION
+          }
+          if (Test-Path out/setup/AppPortalSetup.exe) { $arguments.Setup = 'out/setup/AppPortalSetup.exe' }
+          $previous = Get-ChildItem previous/*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($previous) { $arguments.PreviousMsi = $previous.FullName }
+          ./deploy/windows/ci-installer-test.ps1 @arguments
       - uses: actions/upload-artifact@v7
         with:
           name: AppPortal-msi
           path: out/installer/*.msi
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: hashFiles('out/setup/AppPortalSetup.exe') != ''
+        with:
+          name: AppPortal-setup
+          path: out/setup/AppPortalSetup.exe
+          if-no-files-found: error
+      - name: Keep the logs of a failed install
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: installer-verify-logs
+          path: ${{ runner.temp }}/app-portal-installer-test
+          if-no-files-found: ignore
 
   server:
     name: Build and smoke test server image
@@ -308,7 +221,7 @@ jobs:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: [version, test, client-verify, installer, server]
+    needs: [version, test, installer-verify, server]
     permissions:
       contents: write
       packages: write
@@ -317,11 +230,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: AppPortal-client-win-x64
-          path: out
-      - uses: actions/download-artifact@v8
-        with:
-          name: AppPortal-msi
+          pattern: AppPortal-*
+          merge-multiple: true
           path: out
       - uses: actions/download-artifact@v8
         with:
@@ -335,19 +245,22 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker push "$IMAGE:$VERSION"
           docker push "$IMAGE:latest"
-      - name: Add the MSI checksum
+      - name: Checksum everything the release carries
         run: |
+          # Every installed agent verifies the MSI it downloads against this file, so a release without
+          # it is a release no device can take.
           cd out
-          sha256sum "AppPortal-$VERSION-x64.msi" >> SHA256SUMS
+          sha256sum "AppPortal-$VERSION-x64.msi" AppPortalSetup.exe > SHA256SUMS
+          cat SHA256SUMS
       - name: Create the GitHub release
         # Last on purpose: every installed client polls the latest release, so this is the moment
         # the build reaches devices.
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            out/AppPortal-client-win-x64.zip
             out/AppPortal-*-x64.msi
+            out/AppPortalSetup.exe
             out/SHA256SUMS
-          body: "Deploy the MSI for managed installations. The client zip is deprecated and ships for one transition release."
+          body: "Run AppPortalSetup.exe on one PC, or deploy the MSI with SERVERURL and ENROLLMENTKEY for a fleet. The client zip is retired: move a PC installed from one by deploying this MSI to it once."
           fail_on_unmatched_files: true
           generate_release_notes: true

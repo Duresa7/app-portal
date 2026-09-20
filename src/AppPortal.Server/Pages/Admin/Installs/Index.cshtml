@@ -1,0 +1,61 @@
+@page "/admin/installs"
+@model AppPortal.Server.Pages.Admin.Installs.IndexModel
+@{
+    ViewData["Title"] = "Installs";
+    ViewData["Nav"] = "installs";
+}
+<div class="card">
+    @* A GET form, so a filtered view is a URL an administrator can send to someone else. *@
+    <form method="get" class="filters">
+        <div class="field">
+            <label for="device">Device</label>
+            <select id="device" name="Device">
+                <option value="">Any</option>
+                @foreach (var name in Model.DeviceNames)
+                {
+                    <option value="@name" selected="@(name == Model.Device)">@name</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="app">App</label>
+            <select id="app" name="App">
+                <option value="">Any</option>
+                @foreach (var app in Model.Apps)
+                {
+                    <option value="@app.Id" selected="@(app.Id == Model.App)">@app.Name</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="state">State</label>
+            <select id="state" name="State">
+                <option value="">Any</option>
+                @foreach (var state in Model.States)
+                {
+                    <option value="@state" selected="@(state.ToString() == Model.State)">@state</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="requester">Requested by</label>
+            <input id="requester" name="Requester" type="text" value="@Model.Requester" autocomplete="off" />
+        </div>
+        <div class="field">
+            <label for="from">From</label>
+            <input id="from" name="From" type="date" value="@Model.From" />
+        </div>
+        <div class="field">
+            <label for="to">To</label>
+            <input id="to" name="To" type="date" value="@Model.To" />
+        </div>
+        <div class="field">
+            <button type="submit">Filter</button>
+            <a class="button secondary" href="/admin/installs">Clear</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <partial name="_InstallRows" model="Model" />
+</div>

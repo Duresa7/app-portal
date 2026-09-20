@@ -2,22 +2,58 @@ using System.Text.Json;
 
 using AppPortal.Server.Action1;
 using AppPortal.Server.Catalog;
+using AppPortal.Shared;
 
 namespace AppPortal.Server.Cli;
 
 /// <summary>
-/// `catalog verify` checks every catalog package against the Software Repository, `catalog import` and
-/// `catalog export` move the catalog between the database and a file, and `packages search` finds IDs.
+/// Import and export share the seed file format, so operators can move the catalog between deployments.
+/// Verification checks definitions before devices rely on them; winget lookup remains best effort.
 /// </summary>
 public static class CatalogCli
 {
-    public static async Task<int> RunAsync(string[] args, CatalogStore catalog, IAction1Client action1, TextWriter output, CancellationToken ct)
+    public static async Task<int> RunAsync(string[] args, CatalogStore catalog, IAction1Client action1, TextWriter output, CancellationToken ct, PackageHelpers? helpers = null)
     {
         if (args.Length >= 2 && args[0] == "catalog" && args[1] == "verify")
         {
             var failures = 0;
-            foreach (var entry in catalog.Entries)
+            IReadOnlyList<CatalogEntry> entries;
+            try
             {
+                entries = catalog.Entries;
+            }
+            catch (Exception ex) when (ex is JsonException or NotSupportedException)
+            {
+                output.WriteLine($"ERROR    Invalid package definition: {ex.Message}");
+                return 1;
+            }
+
+            foreach (var entry in entries)
+            {
+                if (entry.Agent is { } agent)
+                {
+                    try
+                    {
+                        agent.Validate();
+                        output.WriteLine($"OK       {entry.Id}: agent definition is valid.");
+                        if (agent is WingetPackageDefinition winget)
+                        {
+                            var lookup = await (helpers ?? PackageHelpers.Shared).LookupWingetAsync(winget.Id, ct);
+                            output.WriteLine($"INFO     {entry.Id}: {lookup.Message}");
+                        }
+                    }
+                    catch (InvalidDataException ex)
+                    {
+                        failures++;
+                        output.WriteLine($"ERROR    {entry.Id}: {ex.Message}");
+                    }
+                }
+
+                if (!entry.HasAction1)
+                {
+                    continue;
+                }
+
                 try
                 {
                     var version = await action1.ResolvePackageVersionAsync(entry.Action1.PackageId, entry.Action1.Version, ct);

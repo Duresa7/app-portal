@@ -8,6 +8,10 @@
 {
     <div class="message error">@Model.Error</div>
 }
+@if (Model.HelperMessage is not null)
+{
+    <div class="message">@Model.HelperMessage</div>
+}
 @if (Model.Saved)
 {
     <div class="message ok">Saved. Devices pick this up on their next refresh.</div>
@@ -67,6 +71,7 @@
 
     <div class="card">
         <h2>Action1 package</h2>
+        <p class="muted">Leave the package id empty when this app only has an agent package.</p>
         <label for="package-id">Package id</label>
         <input id="package-id" name="PackageId" type="text" value="@Model.PackageId" autocomplete="off" />
 
@@ -93,9 +98,46 @@
 
     <div class="card">
         <h2>Agent package</h2>
-        <p class="muted">Available in 0.5.0.</p>
-        <label for="agent-package">Package definition</label>
-        <input id="agent-package" type="text" disabled placeholder="Available in 0.5.0" />
+        <label for="agent-kind">Kind</label>
+        <select id="agent-kind" name="AgentKind">
+            <option value="" selected="@(string.IsNullOrEmpty(Model.AgentKind))">None</option>
+            <option value="winget" selected="@(Model.AgentKind == "winget")">Winget</option>
+            <option value="direct" selected="@(Model.AgentKind == "direct")">Direct installer</option>
+        </select>
+        <div id="winget-fields">
+            <label for="winget-id">Winget id</label>
+            <input id="winget-id" name="WingetId" value="@Model.WingetId" placeholder="Valve.Steam" />
+            <label for="winget-scope">Scope</label>
+            <select id="winget-scope" name="WingetScope">
+                <option value="machine" selected="@(Model.WingetScope == "machine")">Machine</option>
+                <option value="user" selected="@(Model.WingetScope == "user")">User</option>
+            </select>
+            <label for="winget-version">Version (optional)</label>
+            <input id="winget-version" name="WingetVersion" value="@Model.WingetVersion" />
+            <label for="winget-extra">Extra arguments (optional)</label>
+            <input id="winget-extra" name="WingetExtraArgs" value="@Model.WingetExtraArgs" />
+            <button type="submit" class="secondary" asp-page-handler="LookupWinget">Look up winget id</button>
+        </div>
+        <div id="direct-fields">
+            <label for="direct-url">Installer URL</label>
+            <input id="direct-url" name="DirectUrl" value="@Model.DirectUrl" />
+            <label for="direct-sha256">SHA-256</label>
+            <input id="direct-sha256" name="DirectSha256" value="@Model.DirectSha256" />
+            <label for="direct-type">Installer type</label>
+            <select id="direct-type" name="DirectInstallerType">
+                <option value="exe" selected="@(Model.DirectInstallerType == "exe")">exe</option>
+                <option value="msi" selected="@(Model.DirectInstallerType == "msi")">msi</option>
+                <option value="msix" selected="@(Model.DirectInstallerType == "msix")">msix</option>
+            </select>
+            <label for="direct-args">Silent arguments</label>
+            <input id="direct-args" name="DirectSilentArgs" value="@Model.DirectSilentArgs" placeholder="/S or /qn" />
+            <label for="direct-size">Download size (bytes)</label>
+            <input id="direct-size" name="DirectSizeBytes" type="number" min="1" step="1" value="@Model.DirectSizeBytes" />
+            <label for="direct-uninstall">Uninstall key</label>
+            <input id="direct-uninstall" name="DirectUninstallKey" value="@Model.DirectUninstallKey" />
+            <button type="submit" class="secondary" asp-page-handler="FetchAndHash">Fetch and hash</button>
+            <p class="muted">Fetch and hash downloads the installer to calculate its hash and size. For files over the server's limit, enter these values manually.</p>
+        </div>
     </div>
 
     <div class="actions">
@@ -103,3 +145,13 @@
         <a class="button secondary" href="/admin/catalog">Back to the catalog</a>
     </div>
 </form>
+
+<script>
+    const kind = document.getElementById('agent-kind');
+    function showAgentFields() {
+        document.getElementById('winget-fields').hidden = kind.value !== 'winget';
+        document.getElementById('direct-fields').hidden = kind.value !== 'direct';
+    }
+    kind.addEventListener('change', showAgentFields);
+    showAgentFields();
+</script>

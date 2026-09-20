@@ -1,6 +1,7 @@
 using AppPortal.Server.Action1;
 using AppPortal.Server.Admin;
 using AppPortal.Server.Catalog;
+using AppPortal.Shared;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +14,7 @@ namespace AppPortal.Server.Pages.Admin.Catalog;
 /// every other id edits the app it names.
 /// </summary>
 [Authorize(Policy = AdminAuth.Policy)]
-public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : PageModel
+public sealed class EditModel(CatalogStore catalog, IAction1Client action1, IConfiguration configuration, PackageHelpers? helpers = null) : PageModel
 {
     public const string NewId = "new";
 
@@ -61,6 +62,41 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : Pa
     [BindProperty]
     public string Version { get; set; } = "latest";
 
+    public string? HelperMessage { get; private set; }
+
+    [BindProperty]
+    public string AgentKind { get; set; } = "";
+
+    [BindProperty]
+    public string WingetId { get; set; } = "";
+
+    [BindProperty]
+    public string WingetScope { get; set; } = "machine";
+
+    [BindProperty]
+    public string WingetVersion { get; set; } = "";
+
+    [BindProperty]
+    public string WingetExtraArgs { get; set; } = "";
+
+    [BindProperty]
+    public string DirectUrl { get; set; } = "";
+
+    [BindProperty]
+    public string DirectSha256 { get; set; } = "";
+
+    [BindProperty]
+    public string DirectInstallerType { get; set; } = "exe";
+
+    [BindProperty]
+    public string DirectSilentArgs { get; set; } = "";
+
+    [BindProperty]
+    public long? DirectSizeBytes { get; set; } = null;
+
+    [BindProperty]
+    public string DirectUninstallKey { get; set; } = "";
+
     public IActionResult OnGet(string id)
     {
         IsNew = string.Equals(id, NewId, StringComparison.OrdinalIgnoreCase);
@@ -97,6 +133,12 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : Pa
             return Page();
         }
 
+        if (ModelState[nameof(DirectSizeBytes)]?.Errors.Count > 0 && AgentKind == "direct")
+        {
+            Error = "Enter sizeBytes as a positive whole number of bytes.";
+            return Page();
+        }
+
         var entry = new CatalogEntry
         {
             Id = target,
@@ -123,6 +165,15 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : Pa
 
         try
         {
+            entry.Agent = AgentKind switch
+            {
+                null or "" => null,
+                "winget" => new WingetPackageDefinition((WingetId ?? "").Trim(), WingetScope,
+                    EmptyToNull(WingetVersion), EmptyToNull(WingetExtraArgs)),
+                "direct" => new DirectPackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
+                    DirectInstallerType, DirectSilentArgs, DirectSizeBytes ?? 0, DirectUninstallKey),
+                _ => throw new InvalidDataException("The agent package kind must be winget or direct."),
+            };
             catalog.Upsert(entry);
         }
         catch (InvalidDataException ex)
@@ -172,6 +223,52 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : Pa
         }
     }
 
+    public async Task<IActionResult> OnPostFetchAndHashAsync([FromRoute] string id, CancellationToken ct)
+    {
+        IsNew = string.Equals(id, NewId, StringComparison.OrdinalIgnoreCase);
+        if (!IsNew)
+        {
+            Id = id;
+        }
+
+        try
+        {
+            var maxBytes = configuration.GetValue<long?>("Catalog:MaxDownloadBytes") ?? PackageHelpers.DefaultMaxDownloadBytes;
+            var result = await (helpers ?? PackageHelpers.Shared).FetchAndHashAsync(DirectUrl, maxBytes, ct);
+            DirectSha256 = result.Sha256;
+            DirectSizeBytes = result.SizeBytes;
+            HelperMessage = "Hash and size filled. Save to keep the definition.";
+        }
+        catch (Exception ex) when (ex is InvalidDataException or HttpRequestException or IOException or OperationCanceledException)
+        {
+            Error = "Could not fetch the installer. " + ex.Message;
+        }
+
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostLookupWingetAsync([FromRoute] string id, CancellationToken ct)
+    {
+        IsNew = string.Equals(id, NewId, StringComparison.OrdinalIgnoreCase);
+        if (!IsNew)
+        {
+            Id = id;
+        }
+
+        try
+        {
+            HelperMessage = (await (helpers ?? PackageHelpers.Shared).LookupWingetAsync((WingetId ?? "").Trim(), ct)).Message;
+        }
+        catch (InvalidDataException ex)
+        {
+            Error = ex.Message;
+        }
+
+        return Page();
+    }
+
+    private static string? EmptyToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
     private void Fill(CatalogEntry entry)
     {
         Id = entry.Id;
@@ -186,6 +283,25 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1) : Pa
         MatchNameEquals = entry.Match?.NameEquals ?? "";
         PackageId = entry.Action1.PackageId;
         Version = entry.Action1.Version;
+        switch (entry.Agent)
+        {
+            case WingetPackageDefinition winget:
+                AgentKind = "winget";
+                WingetId = winget.Id;
+                WingetScope = winget.Scope;
+                WingetVersion = winget.Version ?? "";
+                WingetExtraArgs = winget.ExtraArgs ?? "";
+                break;
+            case DirectPackageDefinition direct:
+                AgentKind = "direct";
+                DirectUrl = direct.Url;
+                DirectSha256 = direct.Sha256;
+                DirectInstallerType = direct.InstallerType;
+                DirectSilentArgs = direct.SilentArgs;
+                DirectSizeBytes = direct.SizeBytes;
+                DirectUninstallKey = direct.UninstallKey;
+                break;
+        }
     }
 }
 

@@ -23,10 +23,15 @@ public interface IReleaseFeed
 }
 
 /// <summary>
-/// The newest release of one GitHub repository. No token is involved: sixty anonymous calls an hour
-/// is plenty for a machine that checks a few times a day.
+/// The newest release of one GitHub repository. A device sends no token: sixty anonymous calls an hour
+/// is plenty for a machine that checks a few times a day, and a device has no credential to send.
 /// </summary>
-public sealed class GitHubReleaseFeed(HttpClient http, string repository) : IReleaseFeed
+/// <param name="token">
+/// Only ever set by <c>--check</c> in CI. A hosted runner shares its address with every other runner
+/// on it, so the anonymous allowance is long gone by the time a build asks and GitHub answers 403. The
+/// token buys the call, not different behaviour: the same request is made and the same answer parsed.
+/// </param>
+public sealed class GitHubReleaseFeed(HttpClient http, string repository, string? token = null) : IReleaseFeed
 {
     public const string ChecksumsAssetName = "SHA256SUMS";
 
@@ -43,6 +48,11 @@ public sealed class GitHubReleaseFeed(HttpClient http, string repository) : IRel
         // GitHub answers 403 to a request without one, so it is set here rather than left to whichever
         // HttpClient this feed was handed.
         request.Headers.UserAgent.ParseAdd($"AppPortal.Agent/{ThisVersion()}");
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
         using var response = await http.SendAsync(request, ct);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {

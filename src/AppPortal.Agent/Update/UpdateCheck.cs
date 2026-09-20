@@ -7,13 +7,18 @@ namespace AppPortal.Agent.Update;
 /// and nothing is installed. CI runs this against the real feed, so a change to what GitHub answers
 /// fails a build rather than every PC in the field on the same afternoon.
 /// </summary>
+/// <remarks>
+/// GITHUB_TOKEN is used when the environment has one, which on a device it never does. A hosted runner
+/// shares its address with every other runner on it and the anonymous allowance is always spent, so
+/// without it this check reports a rate limit instead of whether the feed still parses.
+/// </remarks>
 public static class UpdateCheck
 {
     public static async Task<int> RunAsync(CancellationToken ct)
     {
         var repository = UpdateRepository.Resolve(PortalSettings.Load().UpdateRepository);
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        var feed = new GitHubReleaseFeed(http, repository);
+        var feed = new GitHubReleaseFeed(http, repository, Environment.GetEnvironmentVariable("GITHUB_TOKEN"));
         try
         {
             var latest = await feed.GetLatestAsync(ct);

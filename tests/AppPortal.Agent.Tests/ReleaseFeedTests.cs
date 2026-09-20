@@ -68,7 +68,24 @@ public sealed class ReleaseFeedTests
         Assert.Null(release.ChecksumsUrl);
     }
 
-    private static GitHubReleaseFeed Feed(Canned handler) => new(new HttpClient(handler), Repository);
+    [Fact]
+    public async Task A_device_asks_anonymously_and_only_a_build_sends_a_token()
+    {
+        // The token exists for a hosted runner, whose anonymous allowance is shared with every other
+        // runner on the same address and always spent. A device has no credential and must never look
+        // as though it does.
+        var anonymous = new Canned(HttpStatusCode.OK, Payload("v0.4.1", "AppPortal-0.4.1-x64.msi", "SHA256SUMS"));
+        await Feed(anonymous).GetLatestAsync(CancellationToken.None);
+        Assert.Null(anonymous.Last?.Headers.Authorization);
+
+        var build = new Canned(HttpStatusCode.OK, Payload("v0.4.1", "AppPortal-0.4.1-x64.msi", "SHA256SUMS"));
+        await Feed(build, "ghs_a_build_token").GetLatestAsync(CancellationToken.None);
+        Assert.Equal("Bearer", build.Last?.Headers.Authorization?.Scheme);
+        Assert.Equal("ghs_a_build_token", build.Last?.Headers.Authorization?.Parameter);
+    }
+
+    private static GitHubReleaseFeed Feed(Canned handler, string? token = null)
+        => new(new HttpClient(handler), Repository, token);
 
     private static string Payload(string tag, params string?[] assets)
     {

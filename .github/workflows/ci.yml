@@ -1,15 +1,32 @@
 name: CI
 
-# Every push and pull request: format check, build, tests on Linux and Windows, the client zip verified
-# on Windows, the server image started and exercised. A v* tag additionally runs the release job, which
-# is the only place a GitHub release or a registry image is created, and it runs only after all of that
-# passed. Nothing a device or a server host can pull exists before the gate.
+# Two shapes of run. Day to day, on a pull request or a push to main: format check, build, tests and
+# the server image, all on Linux. Before a release, on a v* tag or when somebody asks for it from the
+# Actions tab: the same plus everything on Windows, which is the client archive, the MSI and the test
+# matrix's second leg. A v* tag then runs the release job, the only place a GitHub release or a
+# registry image is created, and only after all of it passed.
+#
+# Windows minutes bill at several times the Linux rate and the three Windows jobs are most of the cost
+# of this workflow. They are the jobs that must pass before anything ships, not the jobs that must pass
+# before every commit. Run the full gate from the Actions tab in the days before a release, and treat a
+# red result there as blocking the tag.
 
 on:
   push:
     branches: [main]
     tags: ['v*']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      windows:
+        description: Run the Windows jobs as well
+        type: boolean
+        default: true
+
+# A second push to the same branch makes the first run's remaining minutes worthless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -51,12 +68,30 @@ jobs:
             echo "Tag v$tag matches and is on main."
           fi
 
+  # Every job below that costs Windows minutes reads this.
+  gate:
+    name: Gate
+    runs-on: ubuntu-latest
+    outputs:
+      windows: ${{ steps.decide.outputs.windows }}
+    steps:
+      - id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "windows=${{ inputs.windows }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
+            echo "windows=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "windows=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     name: Test (${{ matrix.os }})
+    needs: gate
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ fromJSON(needs.gate.outputs.windows == 'true' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -107,8 +142,9 @@ jobs:
 
   client-verify:
     name: Verify client on Windows
+    needs: [gate, version, client]
+    if: needs.gate.outputs.windows == 'true'
     runs-on: windows-latest
-    needs: [version, client]
     env:
       EXPECTED_VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -219,8 +255,9 @@ jobs:
 
   installer:
     name: Build and verify Windows MSI
+    needs: [gate, version]
+    if: needs.gate.outputs.windows == 'true'
     runs-on: windows-latest
-    needs: version
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6

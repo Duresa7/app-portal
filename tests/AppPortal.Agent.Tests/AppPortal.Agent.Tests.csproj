@@ -19,6 +19,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The resumable download is tested against a real Kestrel. Its behaviour under test is HTTP
+         behaviour, and a fake handler would only prove the fake agreed with the code. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\AppPortal.Agent\AppPortal.Agent.csproj" />
   </ItemGroup>
 

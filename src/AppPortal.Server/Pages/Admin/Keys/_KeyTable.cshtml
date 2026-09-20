@@ -1,0 +1,56 @@
+@using AppPortal.Server.Enrollment
+@model IReadOnlyList<AppPortal.Server.Enrollment.EnrollmentKeyRecord>
+<table id="key-table">
+    <thead>
+    <tr>
+        <th>Name</th>
+        <th>Key</th>
+        <th>Engine</th>
+        <th>Uses</th>
+        <th>Expires</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th class="right">Actions</th>
+    </tr>
+    </thead>
+    <tbody>
+    @if (Model.Count == 0)
+    {
+        <tr>
+            <td colspan="8" class="muted">No enrollment keys yet. Create one below.</td>
+        </tr>
+    }
+    @foreach (var key in Model)
+    {
+        <tr>
+            <td>@key.Name</td>
+            <td class="muted">@key.DisplayPrefix&hellip;</td>
+            <td>@EnrollmentKeyStore.Name(key.DefaultEngine)</td>
+            <td>@key.UsesText</td>
+            <td class="muted">@(key.ExpiresAt is { } at ? at.ToLocalTime().ToString("u") : "never")</td>
+            <td>
+                @if (key.Status == EnrollmentKeyStatus.Active)
+                {
+                    <span class="pill">Active</span>
+                }
+                else
+                {
+                    <span class="pill off">@key.Status</span>
+                }
+            </td>
+            <td class="muted">@key.CreatedAt.ToLocalTime().ToString("u") by @key.CreatedBy</td>
+            <td class="right">
+                @if (key.RevokedAt is null)
+                {
+                    <button class="secondary"
+                            hx-post="/admin/keys?handler=Revoke"
+                            hx-vals='@($"{{\"id\":\"{key.Id}\"}}")'
+                            hx-target="#key-table"
+                            hx-swap="outerHTML"
+                            hx-confirm="Revoke '@key.Name'? Machines that have not enrolled with it yet no longer can.">Revoke</button>
+                }
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>

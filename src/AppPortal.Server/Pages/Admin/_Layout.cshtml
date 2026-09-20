@@ -1,9 +1,14 @@
 @inject IAdminContext Admin
 @inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@inject AppPortal.Server.Requests.AppRequestStore RequestStore
 @{
     var token = Antiforgery.GetAndStoreTokens(Context).RequestToken;
     var nav = ViewData["Nav"] as string ?? "";
     string On(string key) => nav == key ? "nav-item current" : "nav-item";
+
+    // One small count per admin page render. Cheap against an index, and always right, which a cached
+    // number would not be the moment another administrator decided something.
+    var pending = Admin.IsSignedIn ? RequestStore.PendingCount() : 0;
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -24,7 +29,11 @@
             <a class="@On("dashboard")" href="/admin">Dashboard</a>
             <a class="@On("installs")" href="/admin/installs">Installs</a>
             <a class="@On("catalog")" href="/admin/catalog">Catalog</a>
-            <a class="@On("requests")" href="/admin/requests">Requests</a>
+            <a class="@On("requests")" href="/admin/requests">
+                Requests
+                @* Swapped out of band when a decision changes the count, so it never lies after an htmx post. *@
+                <span id="pending-badge" class="pill">@pending</span>
+            </a>
             <a class="@On("devices")" href="/admin/devices">Devices</a>
             <a class="@On("keys")" href="/admin/keys">Enrollment keys</a>
             <a class="@On("admins")" href="/admin/admins">Admins</a>

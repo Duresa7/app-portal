@@ -1,0 +1,40 @@
+@model IReadOnlyList<AppPortal.Server.Admin.AdminRecord>
+<table id="admin-table">
+    <thead>
+    <tr>
+        <th>User name</th>
+        <th>Status</th>
+        <th>Last signed in</th>
+        <th class="right">Actions</th>
+    </tr>
+    </thead>
+    <tbody>
+    @foreach (var admin in Model)
+    {
+        <tr>
+            <td>@admin.Username</td>
+            <td>
+                @if (admin.Disabled)
+                {
+                    <span class="pill off">Disabled</span>
+                }
+                else
+                {
+                    <span class="pill">Enabled</span>
+                }
+            </td>
+            <td class="muted">@(admin.LastLoginAt is { } at ? at.ToLocalTime().ToString("u") : "never")</td>
+            <td class="right">
+                @if (!admin.Disabled)
+                {
+                    <button class="secondary"
+                            hx-post="/admin/admins?handler=Disable"
+                            hx-vals='@($"{{\"username\":\"{admin.Username}\"}}")'
+                            hx-target="#admin-table"
+                            hx-swap="outerHTML">Disable</button>
+                }
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>

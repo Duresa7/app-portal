@@ -79,5 +79,51 @@ step "The install shows up in the device's history"
 curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/v1/installs" | grep -q "\"appId\":\"$app_id\""
 echo "listed"
 
+step "admin add creates the first administrator"
+docker exec -e APPPORTAL_ADMIN_PASSWORD=smoke-password-1234 "$name" \
+    dotnet AppPortal.Server.dll admin add --username smokeadmin
+docker exec "$name" dotnet AppPortal.Server.dll admin list | grep -q smokeadmin
+echo "smokeadmin listed"
+
+step "The admin area is closed without a session"
+code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/admin")
+[[ "$code" == 302 ]] || { echo "Expected 302 to the sign-in page, got $code"; exit 1; }
+echo "302 as expected"
+
+step "POST /api/v1/admin/session issues a bearer token"
+admin_token=$(curl -fsS -X POST -H 'Content-Type: application/json' \
+    -d '{"username":"smokeadmin","password":"smoke-password-1234"}' \
+    "http://127.0.0.1:$port/api/v1/admin/session" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+[[ "$admin_token" == apa_* ]] || { echo "Expected an apa_ token, got '$admin_token'"; exit 1; }
+echo "token issued"
+
+step "Signing in through the form opens /admin"
+jar=$(mktemp)
+# The sign-in form carries an antiforgery token that the post has to echo back.
+verification=$(curl -fsS -c "$jar" "http://127.0.0.1:$port/admin/login" \
+    | grep -o 'name="__RequestVerificationToken"[^>]*value="[^"]*"' \
+    | sed 's/.*value="\([^"]*\)".*/\1/')
+[[ -n "$verification" ]] || { echo "No antiforgery token on the sign-in form"; exit 1; }
+curl -fsS -b "$jar" -c "$jar" -o /dev/null \
+    --data-urlencode "Username=smokeadmin" \
+    --data-urlencode "Password=smoke-password-1234" \
+    --data-urlencode "__RequestVerificationToken=$verification" \
+    "http://127.0.0.1:$port/admin/login"
+code=$(curl -s -b "$jar" -o /tmp/admin.html -w '%{http_code}' "http://127.0.0.1:$port/admin")
+[[ "$code" == 200 ]] || { echo "Expected 200 for a signed-in /admin, got $code"; exit 1; }
+grep -q "Dashboard" /tmp/admin.html || { echo "/admin did not render the shell"; exit 1; }
+rm -f "$jar"
+echo "signed in and the dashboard rendered"
+
+step "DELETE /api/v1/admin/session revokes the token"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+    -H "Authorization: Bearer $admin_token" "http://127.0.0.1:$port/api/v1/admin/session")
+[[ "$code" == 204 ]] || { echo "Expected 204, got $code"; exit 1; }
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+    -H "Authorization: Bearer $admin_token" "http://127.0.0.1:$port/api/v1/admin/session")
+[[ "$code" == 401 ]] || { echo "A revoked token still worked, got $code"; exit 1; }
+echo "revoked, and refused the second time"
+
 echo
 echo "Smoke test passed."

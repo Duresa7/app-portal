@@ -157,14 +157,24 @@ public sealed class ConcurrencyAndDurabilityTests : IDisposable
         database.Migrate();
         new DeviceStore(database).Add("PC1", "ep-1");
 
+        var applied = AppliedMigrations(database);
+        Assert.NotEqual(0, applied);
+
         database.Migrate();
         new Database(path).Migrate();
 
+        // Running them again records nothing further and disturbs nothing already stored. Asserting the
+        // count is unchanged rather than that it is one keeps this true as later milestones add migrations.
+        Assert.Equal(applied, AppliedMigrations(database));
+        Assert.Single(new DeviceStore(database).All());
+    }
+
+    private static int AppliedMigrations(Database database)
+    {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM schema_version;";
-        Assert.Equal(1, Convert.ToInt32(command.ExecuteScalar()));
-        Assert.Single(new DeviceStore(database).All());
+        return Convert.ToInt32(command.ExecuteScalar());
     }
 
     public void Dispose() => _test.Dispose();

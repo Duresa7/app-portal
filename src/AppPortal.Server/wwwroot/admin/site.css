@@ -1,0 +1,167 @@
+/* Fluent-ish, hand written, no build step. The client follows Windows 11; this follows it loosely
+   so the two do not look like different products, but a browser is not a Win32 window and does not
+   pretend to be one. */
+
+:root {
+    --bg: #f3f3f3;
+    --layer: #ffffff;
+    --stroke: #e5e5e5;
+    --text: #1b1b1b;
+    --text-secondary: #5d5d5d;
+    --accent: #005fb8;
+    --accent-text: #ffffff;
+    --danger: #c42b1c;
+    --success: #0f7b0f;
+    --radius-control: 4px;
+    --radius-container: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #202020;
+        --layer: #2b2b2b;
+        --stroke: #3d3d3d;
+        --text: #ffffff;
+        --text-secondary: #cfcfcf;
+        --accent: #60cdff;
+        --accent-text: #003354;
+        --danger: #ff99a4;
+        --success: #6ccb5f;
+    }
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.shell { display: flex; min-height: 100vh; }
+
+.pane {
+    width: 260px;
+    flex: 0 0 260px;
+    background: var(--layer);
+    border-right: 1px solid var(--stroke);
+    padding: 16px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.brand { font-weight: 600; font-size: 16px; padding: 8px 12px 16px; }
+
+.nav-item {
+    display: block;
+    padding: 8px 12px;
+    border-radius: var(--radius-control);
+    color: var(--text);
+    text-decoration: none;
+    position: relative;
+}
+
+.nav-item:hover { background: rgba(127, 127, 127, 0.12); }
+
+.nav-item.current { background: rgba(127, 127, 127, 0.16); font-weight: 600; }
+
+/* The 3x16 accent bar the client uses for the selected item. */
+.nav-item.current::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
+    background: var(--accent);
+}
+
+.spacer { flex: 1; }
+
+.signed-in { padding: 8px 12px; border-top: 1px solid var(--stroke); }
+.signed-in .who { display: block; color: var(--text-secondary); font-size: 12px; }
+
+.content { flex: 1; padding: 24px 32px; max-width: 1100px; }
+.content h1 { font-size: 24px; font-weight: 600; margin: 0 0 20px; }
+
+.centred { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+
+.card {
+    background: var(--layer);
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-container);
+    padding: 20px 24px;
+    margin-bottom: 16px;
+}
+
+.card h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+
+.sign-in { width: 360px; }
+.sign-in .brand { padding: 0 0 4px; font-size: 20px; }
+.sign-in p.hint { color: var(--text-secondary); margin: 0 0 20px; }
+
+label { display: block; font-weight: 600; margin: 12px 0 4px; }
+
+input[type=text], input[type=password] {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--stroke);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-control);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+}
+
+input:focus { outline: none; border-bottom-color: var(--accent); }
+
+button {
+    padding: 7px 16px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    background: var(--accent);
+    color: var(--accent-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button:hover { filter: brightness(1.08); }
+
+button.secondary { background: var(--layer); color: var(--text); border-color: var(--stroke); }
+
+button.link {
+    background: none;
+    border: none;
+    color: var(--accent);
+    padding: 0;
+    font-weight: 400;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.actions { margin-top: 20px; display: flex; gap: 8px; align-items: center; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--stroke); }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
+td.right, th.right { text-align: right; }
+
+.tiles { display: flex; gap: 16px; flex-wrap: wrap; }
+.tile { flex: 1 1 180px; }
+.tile .value { font-size: 32px; font-weight: 600; line-height: 1.2; }
+.tile .label { color: var(--text-secondary); }
+
+.message { padding: 10px 14px; border-radius: var(--radius-control); margin-bottom: 12px; }
+.message.error { background: rgba(196, 43, 28, 0.12); color: var(--danger); }
+.message.ok { background: rgba(15, 123, 15, 0.12); color: var(--success); }
+
+.pill { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(127, 127, 127, 0.16); }
+.pill.off { color: var(--danger); }
+.muted { color: var(--text-secondary); }

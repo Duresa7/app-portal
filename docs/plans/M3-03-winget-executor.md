@@ -19,7 +19,8 @@ The agent installs winget packages machine-wide as SYSTEM and reports progress a
 ### In
 - `WingetExecutor : IPackageExecutor` for `kind == "winget"`: locate winget, run `winget install --id <id> --exact --scope <scope> --silent --accept-package-agreements --accept-source-agreements --disable-interactivity [--version v] [extraArgs]`, with the scope taken from the definition rather than fixed, stream output to the job log, map exit codes, report progress.
 - Source update once per day (`winget source update`) before the first install of the day, with a timeout.
-- Job log file per job under `%ProgramData%\AppPortal\jobs\<id>.log`, last 4 KB sent as detail on failure.
+- Job log file per job under `%ProgramData%\AppPortal\jobs\<id>.log`, its tail sent as detail on failure.
+- `JobRunner` is registered as a hosted service. M3-02 built it and tested it but never added it to the host, so an agent would never have asked for a job. It stays out of a `--console --once` run, whose only purpose is one heartbeat and which should not wait out a twenty-five second long poll before exiting.
 - Installed-software reporting: the agent runs `winget list` after a success and posts the found display name and version with the completion so `GET /api/v1/device/installed` can show agent-installed apps (server side: store them in `device_software(device_id, name, version, seen_at)` via migration 009 and merge with Action1 inventory when both exist).
 
 ### Out
@@ -29,6 +30,12 @@ The agent installs winget packages machine-wide as SYSTEM and reports progress a
 ## Interface
 
 `device_software` table and `POST /api/v1/agent/software` `[{name, version}]` replacing the device's list. Completion body from M3-02 unchanged.
+
+Three things differ from this plan as written, and the code is what shipped:
+
+- The migration is **011**, not 009. Enrollment took 009 and the agent jobs took 010 while this package was open.
+- `IPackageExecutor.RunAsync` gains a `jobId` first parameter. The plan asks for a log file per job and the interface it inherited had no way to name one.
+- The software report is a separate call after the completion, not a field on it. The agent sends its whole list so that software somebody removed can leave the record, which a per-install field could never express.
 
 ## Steps
 

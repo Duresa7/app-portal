@@ -30,7 +30,8 @@ public sealed class InstallService(
     IAction1Client action1,
     IOptions<PortalOptions> options,
     ILogger<InstallService> logger,
-    IEnumerable<IInstallEngine> engines)
+    IEnumerable<IInstallEngine> engines,
+    DeviceSoftwareStore software)
 {
     private readonly Dictionary<string, IInstallEngine> _engines = engines.ToDictionary(e => e.Name);
 
@@ -119,12 +120,28 @@ public sealed class InstallService(
 
     public async Task<IReadOnlyList<InstalledApp>> InstalledAppsAsync(DeviceRecord device, CancellationToken ct)
     {
-        var inventory = await action1.GetInstalledSoftwareAsync(device.EndpointId, ct);
         var entries = catalog.Entries;
-        return inventory
-            .Select(item => new InstalledApp(item.Name, item.Vendor, item.Version,
-                entries.FirstOrDefault(e => e.MatchesInstalled(item.Name))?.Id))
-            .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var merged = new Dictionary<string, InstalledApp>(StringComparer.OrdinalIgnoreCase);
+
+        // A device with no Action1 endpoint has nothing to ask, and asking anyway fails the whole call
+        // for a device whose only engine is the agent.
+        if (!string.IsNullOrWhiteSpace(device.EndpointId))
+        {
+            foreach (var item in await action1.GetInstalledSoftwareAsync(device.EndpointId, ct))
+            {
+                merged[item.Name] = new InstalledApp(item.Name, item.Vendor, item.Version,
+                    entries.FirstOrDefault(e => e.MatchesInstalled(item.Name))?.Id);
+            }
+        }
+
+        // Action1 reports a vendor and the agent cannot, so where both saw the same software the richer
+        // row stays and the agent's is dropped rather than overwriting it with a blank.
+        foreach (var item in software.ForDevice(device.Id).Where(item => !merged.ContainsKey(item.Name)))
+        {
+            merged[item.Name] = new InstalledApp(item.Name, "", item.Version,
+                entries.FirstOrDefault(e => e.MatchesInstalled(item.Name))?.Id);
+        }
+
+        return merged.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 }

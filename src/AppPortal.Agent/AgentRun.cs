@@ -1,4 +1,7 @@
 using AppPortal.Agent.Enrollment;
+using AppPortal.Agent.Executors;
+using AppPortal.Agent.Jobs;
+
 using AppPortal.Shared;
 
 namespace AppPortal.Agent;
@@ -49,6 +52,22 @@ public static class AgentRun
             provider.GetRequiredService<IHostApplicationLifetime>(),
             Path.Combine(stateDirectory, "agent.json"), once, provider.GetRequiredService<EnrollmentService>()));
         builder.Services.AddHostedService(provider => provider.GetRequiredService<HeartbeatWorker>());
+        builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+        builder.Services.AddSingleton<SoftwareReporter>();
+        builder.Services.AddSingleton<IPackageExecutor>(provider => new WingetExecutor(
+            provider.GetRequiredService<IProcessRunner>(),
+            provider.GetRequiredService<ILogger<WingetExecutor>>(),
+            stateDirectory));
+        if (!once)
+        {
+            // Not in a single-shot run: the job loop long-polls for twenty-five seconds, and a run whose
+            // only purpose is one heartbeat should not wait that out before it can exit.
+            builder.Services.AddHostedService(provider => new JobRunner(
+                provider.GetRequiredService<HttpClient>(),
+                provider.GetServices<IPackageExecutor>(),
+                provider.GetRequiredService<ILogger<JobRunner>>(),
+                software: provider.GetRequiredService<SoftwareReporter>()));
+        }
         using var host = builder.Build();
         // Take the worker before the run. RunAsync disposes the host on shutdown, so asking the provider
         // for it afterwards throws instead of reporting the exit code CI reads.

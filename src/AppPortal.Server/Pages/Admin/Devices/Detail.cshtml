@@ -43,7 +43,7 @@
 
 <div class="card">
     <h2>Settings</h2>
-    <form method="post" asp-page-handler="Save">
+    <form method="post" hx-boost="true" hx-history="false" asp-page-handler="Save">
         <label for="name">Name</label>
         <input id="name" name="Name" type="text" value="@Model.Name" autocomplete="off" />
 
@@ -80,7 +80,7 @@
         Rotating issues a new token and stops the old one immediately. The device cannot call in again
         until it has the new one, so do this when you can update the device.
     </p>
-    <form method="post" asp-page-handler="Rotate">
+    <form method="post" hx-boost="true" hx-history="false" asp-page-handler="Rotate">
         <div class="actions">
             <button type="submit" class="secondary">Rotate token</button>
         </div>
@@ -128,10 +128,10 @@
         Removing takes the device off the portal and stops its token. Its install history stays on the
         installs page under this name. A device with an install still running cannot be removed.
     </p>
-    <form method="post" asp-page-handler="Remove">
+    <form method="post" hx-boost="true" hx-history="false" asp-page-handler="Remove">
         <div class="actions">
             <button type="submit" class="secondary"
-                    onclick="return confirm('Remove @Model.Device.Name? Its install history is kept.');">Remove device</button>
+                    onclick="return confirm('Remove this device? Its install history is kept.');">Remove device</button>
         </div>
     </form>
 </div>

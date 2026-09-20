@@ -94,7 +94,7 @@
         The same registration <code>device add</code> performs. The token is shown once, here, and then
         never again.
     </p>
-    <form method="post" asp-page-handler="Add">
+    <form method="post" hx-boost="true" hx-history="false" asp-page-handler="Add">
         <label for="new-name">Name</label>
         <input id="new-name" name="NewName" type="text" value="@Model.NewName" autocomplete="off" />
 

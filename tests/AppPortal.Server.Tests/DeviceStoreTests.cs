@@ -145,6 +145,147 @@ public sealed class DeviceStoreTests
         }
     }
 
+    [Theory]
+    [InlineData("winget")]
+    [InlineData("both")]
+    public void An_unknown_engine_preference_is_rejected(string engine)
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        var device = devices.All().Single();
+        device.EnginePreference = engine;
+        Assert.Throws<DeviceRejectedException>(() => devices.Update(device));
+        Assert.Null(devices.Find(device.Id)!.EnginePreference);
+    }
+
+    [Theory]
+    [InlineData(" ACTION1 ", "action1")]
+    [InlineData("agent", "agent")]
+    [InlineData(" ", null)]
+    public void Engine_preferences_are_stored_canonically(string input, string? expected)
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        var device = devices.All().Single();
+        device.EnginePreference = input;
+        devices.Update(device);
+        Assert.Equal(expected, devices.Find(device.Id)!.EnginePreference);
+    }
+
+    [Fact]
+    public void A_refresh_started_before_a_rename_keeps_the_install_owner_and_new_name()
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        var device = devices.All().Single();
+        var installs = new InstallStore(test.Database);
+        installs.Upsert(new InstallRecord
+        {
+            Id = "i1",
+            DeviceName = "PC1",
+            AppId = "app",
+            AppName = "App",
+            State = InstallState.Running,
+            RequestedAt = DateTimeOffset.UtcNow,
+        });
+        var pendingRefresh = installs.Find("i1")!;
+        device.Name = "RENAMED";
+        devices.Update(device);
+        pendingRefresh.State = InstallState.Succeeded;
+        pendingRefresh.LastCheckedAt = DateTimeOffset.UtcNow;
+
+        Assert.True(installs.Upsert(pendingRefresh));
+        var refreshed = installs.Find("i1")!;
+        Assert.Equal(device.Id, refreshed.DeviceId);
+        Assert.Equal("RENAMED", refreshed.DeviceName);
+        Assert.Equal(InstallState.Succeeded, refreshed.State);
+    }
+
+    [Fact]
+    public void Updating_a_retired_install_cannot_attach_it_to_a_replacement_device()
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        var installs = new InstallStore(test.Database);
+        installs.Upsert(new InstallRecord
+        {
+            Id = "i1",
+            DeviceName = "PC1",
+            AppId = "app",
+            AppName = "App",
+            State = InstallState.Succeeded,
+            RequestedAt = DateTimeOffset.UtcNow,
+        });
+        var previous = installs.Find("i1")!;
+        Assert.True(devices.Remove("PC1"));
+        devices.Add("PC1", "ep-2");
+        previous.Detail = "Updated detail";
+        previous.LastCheckedAt = DateTimeOffset.UtcNow;
+
+        Assert.True(installs.Upsert(previous));
+        var saved = installs.Find("i1")!;
+        Assert.Null(saved.DeviceId);
+        Assert.Equal("PC1", saved.DeviceName);
+        Assert.Equal("Updated detail", saved.Detail);
+        Assert.Empty(installs.ForDeviceId(devices.FindByName("PC1")!.Id));
+    }
+
+    [Fact]
+    public void A_pending_creation_cannot_attach_to_a_replacement_device_with_the_same_name()
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        var original = devices.All().Single();
+        devices.RemoveById(original.Id);
+        devices.Add("PC1", "ep-2");
+        var installs = new InstallStore(test.Database);
+
+        Assert.Throws<SqliteException>(() => installs.Upsert(new InstallRecord
+        {
+            Id = "i1",
+            DeviceId = original.Id,
+            DeviceName = original.Name,
+            AppId = "app",
+            AppName = "App",
+            State = InstallState.Queued,
+            RequestedAt = DateTimeOffset.UtcNow,
+        }));
+        Assert.Empty(installs.All());
+    }
+
+    [Fact]
+    public void The_endpoint_cannot_change_until_the_active_install_finishes()
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        var device = devices.All().Single();
+        var installs = new InstallStore(test.Database);
+        var install = new InstallRecord
+        {
+            Id = "i1",
+            DeviceName = "PC1",
+            AppId = "app",
+            AppName = "App",
+            State = InstallState.Running,
+            RequestedAt = DateTimeOffset.UtcNow,
+        };
+        installs.Upsert(install);
+        device.EndpointId = "ep-2";
+        Assert.Throws<DeviceRejectedException>(() => devices.Update(device));
+        Assert.Throws<DeviceRejectedException>(() => devices.Add("PC1", "ep-2"));
+        Assert.Equal("ep-1", installs.Find("i1")!.EndpointId);
+        install.State = InstallState.Succeeded;
+        installs.Upsert(install);
+        devices.Update(device);
+        Assert.Equal("ep-2", devices.Find(device.Id)!.EndpointId);
+    }
+
     private static string MigrationSql(string name)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

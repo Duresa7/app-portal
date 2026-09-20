@@ -8,6 +8,7 @@ namespace AppPortal.Server.Installs;
 public sealed class InstallRecord
 {
     public string Id { get; set; } = "";
+    public string? DeviceId { get; set; }
     public string DeviceName { get; set; } = "";
     public string EndpointId { get; set; } = "";
     public string AppId { get; set; } = "";
@@ -60,6 +61,15 @@ public sealed class InstallStore(Database database)
         return Read(command);
     }
 
+    public IReadOnlyList<InstallRecord> ForDeviceId(string deviceId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE i.device_id = @device ORDER BY i.requested_at DESC;";
+        command.Parameters.AddWithValue("@device", deviceId);
+        return Read(command);
+    }
+
     public InstallRecord? Find(string id)
     {
         using var connection = database.Open();
@@ -85,16 +95,18 @@ public sealed class InstallStore(Database database)
 
         string? storedState = null;
         string? storedChecked = null;
+        string? storedDeviceId = null;
         using (var stored = connection.CreateCommand())
         {
             stored.Transaction = transaction;
-            stored.CommandText = "SELECT state, last_checked_at FROM installs WHERE id = @id;";
+            stored.CommandText = "SELECT state, last_checked_at, device_id FROM installs WHERE id = @id;";
             stored.Parameters.AddWithValue("@id", record.Id);
             using var reader = stored.ExecuteReader();
             if (reader.Read())
             {
                 storedState = reader.GetString(0);
                 storedChecked = reader.GetString(1);
+                storedDeviceId = reader.IsDBNull(2) ? null : reader.GetString(2);
             }
         }
 
@@ -126,8 +138,11 @@ public sealed class InstallStore(Database database)
                     last_checked_at = excluded.last_checked_at;
                 """;
             write.Parameters.AddWithValue("@id", record.Id);
-            // Always supplied: the column is not null, and SQLite checks that before it decides the row conflicts.
-            write.Parameters.AddWithValue("@device", DeviceId(connection, transaction, record.DeviceName));
+            // Updates retain their original owner even if the device was renamed or removed.
+            var deviceId = storedState is not null
+                ? storedDeviceId
+                : record.DeviceId ?? DeviceId(connection, transaction, record.DeviceName);
+            write.Parameters.AddWithValue("@device", (object?)deviceId ?? DBNull.Value);
             // Denormalised on purpose: this is what the history shows once the device itself is gone.
             write.Parameters.AddWithValue("@deviceName", record.DeviceName);
             write.Parameters.AddWithValue("@appId", record.AppId);
@@ -156,7 +171,7 @@ public sealed class InstallStore(Database database)
         SELECT i.id, COALESCE(NULLIF(i.device_name, ''), d.name, '') AS device_name, d.action1_endpoint_id,
                i.app_id, i.app_name, i.external_ref,
                i.state, i.percent, i.detail, i.requested_at, i.completed_at, i.last_checked_at,
-               i.requested_by
+               i.requested_by, i.device_id
         FROM installs i
         LEFT JOIN devices d ON d.id = i.device_id
         """;
@@ -182,6 +197,7 @@ public sealed class InstallStore(Database database)
                 CompletedAt = SqlTime.ParseOptional(reader.IsDBNull(10) ? null : reader.GetString(10)),
                 LastCheckedAt = SqlTime.Parse(reader.GetString(11)),
                 RequestedBy = reader.IsDBNull(12) ? null : reader.GetString(12),
+                DeviceId = reader.IsDBNull(13) ? null : reader.GetString(13),
             });
         }
 

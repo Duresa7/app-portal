@@ -40,7 +40,7 @@ public sealed class InstallService(
 
     public async Task<InstallRecord> CreateAsync(DeviceRecord device, string appId, string? requestedBy, CancellationToken ct)
     {
-        var gate = DeviceGates.GetOrAdd(device.Name, _ => new SemaphoreSlim(1, 1));
+        var gate = DeviceGates.GetOrAdd(device.Id, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct);
         try
         {
@@ -57,7 +57,7 @@ public sealed class InstallService(
         var app = catalog.Find(appId)
                   ?? throw new InstallRejectedException(InstallRejection.UnknownApp, $"'{appId}' is not in the catalog.");
 
-        var existing = store.ForDevice(device.Name);
+        var existing = store.ForDeviceId(device.Id);
         if (existing.Any(r => r.IsActive && string.Equals(r.AppId, app.Id, StringComparison.OrdinalIgnoreCase)))
         {
             throw new InstallRejectedException(InstallRejection.AlreadyInProgress, $"{app.Name} is already being installed on this device.");
@@ -74,6 +74,7 @@ public sealed class InstallService(
         var record = new InstallRecord
         {
             Id = Guid.NewGuid().ToString("N"),
+            DeviceId = device.Id,
             DeviceName = device.Name,
             EndpointId = device.EndpointId,
             AppId = app.Id,
@@ -150,7 +151,7 @@ public sealed class InstallService(
 
     public async Task<IReadOnlyList<InstallRecord>> ListForDeviceAsync(DeviceRecord device, bool refreshActive, CancellationToken ct)
     {
-        var records = store.ForDevice(device.Name);
+        var records = store.ForDeviceId(device.Id);
         if (!refreshActive)
         {
             return records;

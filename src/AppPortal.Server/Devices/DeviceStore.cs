@@ -89,6 +89,11 @@ public sealed class DeviceStore(Database database)
             existing = find.ExecuteScalar() as string;
         }
 
+        if (existing is not null)
+        {
+            EnsureEndpointCanChange(connection, transaction, existing, endpointId);
+        }
+
         using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
@@ -153,8 +158,16 @@ public sealed class DeviceStore(Database database)
             throw new DeviceRejectedException("A device needs a name.");
         }
 
+        var engine = string.IsNullOrWhiteSpace(device.EnginePreference) ? null : device.EnginePreference.Trim().ToLowerInvariant();
+        if (engine is not null and not "action1" and not "agent")
+        {
+            throw new DeviceRejectedException("The engine preference must be action1, agent, or inherit.");
+        }
+
         using var connection = database.Open();
         using var transaction = connection.BeginTransaction();
+
+        EnsureEndpointCanChange(connection, transaction, device.Id, device.EndpointId);
 
         using (var clash = connection.CreateCommand())
         {
@@ -179,7 +192,7 @@ public sealed class DeviceStore(Database database)
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@enabled", device.Enabled ? 1 : 0);
             command.Parameters.AddWithValue("@endpoint", string.IsNullOrWhiteSpace(device.EndpointId) ? DBNull.Value : device.EndpointId.Trim());
-            command.Parameters.AddWithValue("@engine", string.IsNullOrWhiteSpace(device.EnginePreference) ? DBNull.Value : device.EnginePreference);
+            command.Parameters.AddWithValue("@engine", (object?)engine ?? DBNull.Value);
             command.Parameters.AddWithValue("@id", device.Id);
             command.ExecuteNonQuery();
         }
@@ -311,6 +324,23 @@ public sealed class DeviceStore(Database database)
         }
 
         return true;
+    }
+
+    private static void EnsureEndpointCanChange(SqliteConnection connection, SqliteTransaction transaction, string id, string? endpointId)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT EXISTS(SELECT 1 FROM devices d
+                WHERE d.id = @id AND COALESCE(d.action1_endpoint_id, '') <> @endpoint
+                  AND EXISTS(SELECT 1 FROM installs i WHERE i.device_id = d.id AND i.state IN ('Queued', 'Running')));
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@endpoint", endpointId?.Trim() ?? "");
+        if (Convert.ToInt64(command.ExecuteScalar()) != 0)
+        {
+            throw new DeviceRejectedException("The Action1 endpoint cannot change while an install is in progress.");
+        }
     }
 
     public static string Hash(string token)

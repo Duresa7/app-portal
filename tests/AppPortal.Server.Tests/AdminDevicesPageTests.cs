@@ -300,6 +300,69 @@ public sealed class AdminDevicesPageTests : IDisposable
         Assert.True(DateTimeOffset.UtcNow - seen < TimeSpan.FromMinutes(1), "Last seen was not written as now.");
     }
 
+    [Fact]
+    public async Task A_renamed_device_keeps_access_to_its_install_by_id()
+    {
+        SeedInstall("TESTPC", "chrome", InstallState.Succeeded);
+        var install = Assert.Single(_installs.All());
+        var device = _devices.FindByName("TESTPC")!;
+        device.Name = "RENAMED";
+        _devices.Update(device);
+        using var client = Device(_token);
+
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(ApiRoutes.Installs + "/" + install.Id)).StatusCode);
+        Assert.Contains(install.Id, await client.GetStringAsync(ApiRoutes.Installs + "?refresh=false"));
+    }
+
+    [Fact]
+    public async Task Removing_a_device_through_htmx_navigates_to_the_device_list()
+    {
+        var device = _devices.FindByName("TESTPC")!;
+        using var admin = await SignedIn();
+        admin.DefaultRequestHeaders.Add("HX-Request", "true");
+
+        var response = await Post(admin, $"/admin/devices/{device.Id}?handler=Remove", $"/admin/devices/{device.Id}", new());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("/admin/devices", Assert.Single(response.Headers.GetValues("HX-Redirect")));
+        Assert.Null(_devices.Find(device.Id));
+    }
+
+    [Fact]
+    public async Task An_invalid_engine_preference_returns_a_validation_message()
+    {
+        var device = _devices.FindByName("TESTPC")!;
+        using var admin = await SignedIn();
+        var response = await Post(admin, $"/admin/devices/{device.Id}?handler=Save", $"/admin/devices/{device.Id}", new()
+        {
+            ["Name"] = device.Name,
+            ["EndpointId"] = device.EndpointId,
+            ["Enabled"] = "true",
+            ["EnginePreference"] = "unsupported",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("The engine preference must be action1, agent, or inherit.", await response.Content.ReadAsStringAsync());
+        Assert.Null(_devices.Find(device.Id)!.EnginePreference);
+    }
+
+    [Fact]
+    public async Task A_replacement_device_cannot_read_the_previous_devices_install_history()
+    {
+        SeedInstall("TESTPC", "chrome", InstallState.Succeeded);
+        var previous = _installs.All().Single();
+        Assert.True(_devices.Remove("TESTPC"));
+        var replacementToken = _devices.Add("testpc", "endpoint-new");
+        using var replacement = Device(replacementToken);
+
+        Assert.Equal("[]", await replacement.GetStringAsync(ApiRoutes.Installs + "?refresh=false"));
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await replacement.GetAsync(ApiRoutes.Installs + "/" + previous.Id)).StatusCode);
+        Assert.Empty(_installs.ForDeviceId(_devices.FindByName("testpc")!.Id));
+        Assert.Equal(previous.Id, Assert.Single(_installs.ForDevice("TESTPC")).Id);
+        Assert.Equal(previous.Id, Assert.Single(_installs.All()).Id);
+    }
+
     public void Dispose()
     {
         _factory.Dispose();

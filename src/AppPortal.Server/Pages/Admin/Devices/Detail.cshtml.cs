@@ -103,6 +103,12 @@ public sealed class DetailModel(DeviceStore devices, InstallStore installs) : Pa
 
         if (devices.RemoveById(Device.Id))
         {
+            if (Request.Headers["HX-Request"] == "true")
+            {
+                Response.Headers["HX-Redirect"] = "/admin/devices";
+                return new EmptyResult();
+            }
+
             return RedirectToPage("Index");
         }
 
@@ -120,7 +126,7 @@ public sealed class DetailModel(DeviceStore devices, InstallStore installs) : Pa
         }
 
         Device = record;
-        RecentInstalls = [.. installs.ForDevice(record.Name).Take(20)];
+        RecentInstalls = [.. installs.ForDeviceId(record.Id).Take(20)];
         return true;
     }
 

@@ -55,7 +55,7 @@ public static class PortalEndpoints
         {
             var device = DeviceAuthenticationMiddleware.Current(context);
             var record = store.Find(id);
-            if (record is null || !string.Equals(record.DeviceName, device.Name, StringComparison.OrdinalIgnoreCase))
+            if (record is null || !string.Equals(record.DeviceId, device.Id, StringComparison.Ordinal))
             {
                 return Results.NotFound(new ErrorMessage("No such install request."));
             }

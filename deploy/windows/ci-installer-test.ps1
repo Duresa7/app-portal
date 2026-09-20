@@ -254,6 +254,16 @@ try {
     if ($row -match '>never<') { throw "$deviceName is listed but has never been seen; the agent did not heartbeat." }
     "$deviceName is listed with agent version $Version and a heartbeat."
 
+    Write-Step 'The installed binaries report the release version'
+    # The agent compares the installed version with the newest release to decide whether to update. A
+    # binary that reports the wrong version makes every device either update forever or never update.
+    foreach ($exe in 'AppPortal.exe', 'AppPortal.Agent.exe') {
+        $info = (Get-Item (Join-Path $installDir $exe)).VersionInfo
+        $product = ($info.ProductVersion -split '[+\- ]')[0]
+        "$exe ProductVersion=$($info.ProductVersion) FileVersion=$($info.FileVersion)"
+        if ($product -ne $Version) { throw "$exe reports $product, expected $Version." }
+    }
+
     Write-Step 'The installed client starts, renders, and exits'
     $screenshot = Join-Path $LogDirectory 'installed-client.png'
     $client = Start-Process -FilePath (Join-Path $installDir 'AppPortal.exe') -PassThru `

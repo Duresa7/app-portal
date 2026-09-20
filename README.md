@@ -27,8 +27,11 @@ The client follows the Windows 11 design language: a two-layer NavigationView la
 2. Install sends `POST /api/v1/installs {appId}`. The server checks the token, maps the device to its Action1 endpoint ID, resolves the package version in the Software Repository, and runs a `deploy_package` automation on that one endpoint.
 3. The server polls the automation's endpoint result and records Queued, Running, Succeeded, Failed or Cancelled. The client shows progress on the card and the full history under Activity.
 4. Installed shows what Action1's software inventory reports for the device, matched back to catalog entries.
+5. Requests lets the user ask for software outside the catalog. An administrator approves or denies the request in the browser; the client shows the decision and reason on its next refresh.
 
-The Action1 API credential lives only on the server, supplied through its environment at start. A device token can request installs of catalog apps on its own endpoint and nothing else.
+The server stores the catalog, devices, install history, requests and admin accounts in one SQLite database on the data volume. The client sends `X-AppPortal-User: DOMAIN\user` with API calls so installs and requests record who asked. This account name is a client-supplied label; the device token authenticates the call.
+
+The Action1 API credential lives only on the server, supplied through its environment at start. A device token grants access to the catalog, installs and requests for that device; it cannot administer the portal or act on another endpoint.
 
 ## Why this exists
 
@@ -53,6 +56,7 @@ Demo mode fills the whole interface with sample data held in memory. Installs ad
 | `src/AppPortal.Client` | Avalonia desktop client (Windows target; runs on Linux for development) |
 | `src/AppPortal.Updater` | Self-contained updater run by a SYSTEM scheduled task; replaces the client from GitHub releases |
 | `tests/AppPortal.Server.Tests` | xUnit tests against an in-memory Action1 stand-in |
+| `tests/AppPortal.Client.Tests` | Client catalog refresh regression tests |
 | `tests/AppPortal.Updater.Tests` | xUnit tests for version parsing, checksum parsing and the file swap |
 | `deploy/` | Dockerfile, compose file, environment template, server smoke test, Windows install script |
 | `docs/` | Screenshots and design notes |
@@ -63,20 +67,57 @@ Requirements: Docker and an Action1 API credential. A secrets manager whose CLI 
 
 1. **Create the API credential** in the Action1 console under Configuration, API Credentials. Store the Client ID and Client Secret in your secrets manager together with your organization ID (the `org=` value in the console URL). The server needs `view_endpoints`, `view_software_repository`, `view_installed_software`, `view_automations` and `run_automations`.
 2. **Write the environment file.** Copy `deploy/server.env.example` to `deploy/server.env`, which is gitignored, and fill in the three `Action1__` values, either by hand or by rendering the file from your secrets manager's references. Keep it mode 600; it is the only place the credential exists on the host.
-3. **Write the catalog** in `deploy/config/catalog.json`. See [deploy/config/README.md](deploy/config/README.md). Package IDs must exist in your Software Repository; the checked-in file is a starting point, not a verified list. The file seeds the database the first time the server starts; after that, apply an edit with `catalog import` and write the database back out with `catalog export`.
-4. **Start the server**:
+3. **Start the server**:
    ```bash
    docker compose -f deploy/compose.yaml up -d
-   docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll catalog verify
    ```
-   This pulls `ghcr.io/duresa7/app-portal-server`, the image CI tested and pushed for the latest release. Put `APP_PORTAL_VERSION=0.2.1` in `deploy/.env` to pin a release, or add `--build` to build from the checkout instead. `catalog verify` resolves every package against Action1 and exits non-zero if one is missing.
-5. **Register a device.** Find the endpoint ID in the Action1 console (the endpoint's URL) and run:
+   This pulls `ghcr.io/duresa7/app-portal-server`. Put `APP_PORTAL_VERSION=0.3.0` in `deploy/.env` to pin the release, or add `--build` to build from the checkout. The checked-in catalog seeds an empty database; its package IDs are examples and must be verified against your Action1 Software Repository.
+4. **Create the first administrator**:
    ```bash
-   docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll device add --name OBIPC --endpoint-id <endpoint-id>
+   docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll admin add --username admin
    ```
-   The token prints once. Store it in your secrets manager; the server keeps only its SHA-256, in `app-portal.db` inside the data volume.
+   Enter the password at the prompt. For unattended setup, supply `APPPORTAL_ADMIN_PASSWORD` through the process environment. Open `/admin` on the server, sign in, and manage further accounts under **Admins**.
+5. **Prepare the catalog.** Open **Catalog** to add or edit apps, search and verify Action1 packages, or import a JSON catalog. Hide removes an app from the device catalog while retaining its history; delete is refused when installs reference it. Export downloads the current catalog. See [the catalog format](deploy/config/README.md).
+6. **Register a device.** Open **Devices**, enter its name and Action1 endpoint ID, and copy the device token shown once. Store it in your secrets manager and pass it to the client installer. Only the token's SHA-256 is stored on the server.
+
+The CLI remains available for scripts:
+
+```bash
+docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll catalog import /app/config/catalog.json
+docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll catalog export
+docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll catalog verify
+docker compose -f deploy/compose.yaml exec app-portal dotnet AppPortal.Server.dll device add --name OBIPC --endpoint-id <endpoint-id>
+```
 
 Put the server behind TLS (a reverse proxy or your tunnel) before a device on another network uses it. The token is a bearer secret.
+
+## Administration
+
+Sign in at `/admin` with a local administrator account. Browser sessions use cookies and forms require antiforgery tokens. Admin API sessions use separate `apa_` bearer tokens; device tokens cannot open admin pages.
+
+**Installs** shows fleet-wide history with device, requester, app, engine, state and dates. Filter by device, app, state, requester or date range; the table refreshes every 30 seconds.
+
+![Install history in the admin UI](docs/images/admin-installs.png)
+
+**Catalog** manages approved software. Edits appear in the client on its next refresh, including changes to existing cards.
+
+![Catalog management in the admin UI](docs/images/admin-catalog.png)
+
+**Requests** shows pending and decided software requests. Approve or deny with an optional reason of up to 500 characters. Approval records a decision; it does not add an app or trigger an installation.
+
+![Software requests in the admin UI](docs/images/admin-requests.png)
+
+**Devices** supports renaming, disabling, token rotation and removal. Disabling or rotating a token takes effect on the next API call. Removal is refused while an install is active; afterward, install and request history remains available to administrators. A replacement device does not inherit the retired device's history.
+
+**Enrollment keys** lets administrators create and revoke keys with an expiry, use limit and default engine. The full key appears once. Automatic enrollment and the local agent arrive in milestone 2; version 0.3.0 still uses manual device registration and Action1 for installs.
+
+## Upgrading from 0.2.x
+
+Stop the old container and back up both the data volume and `deploy/config` before starting 0.3.0. Keep the existing volume mounted at `/app/data` and the catalog available at `/app/config/catalog.json` for the first start. The server imports `devices.json`, `installs.json` and the catalog into `app-portal.db`; existing device tokens remain valid. Verify the device list, catalog and install history, then create the first administrator with `admin add`.
+
+After verification, archive the legacy JSON files outside the mounted directories. The config volume no longer needs `catalog.json`: edits now live in SQLite, and explicit CLI or browser imports remain available. Leaving legacy files in place can seed a table again if it becomes empty. Back up the data volume while the server is stopped, including the database and admin authentication keys. To roll back, restore the pre-upgrade backup and old image; 0.2.x does not read SQLite.
+
+The upgrade was checked using a copy of a data volume written by the 0.2.1 server in fake mode. Its original token authenticated after migration, catalog and install records remained available, and a restart produced no duplicate records.
 
 ## Client deployment
 
@@ -87,6 +128,10 @@ The CI workflow publishes `AppPortal-client-win-x64.zip`: a self-contained build
 ```
 
 The script copies the client to `%ProgramFiles%\App Portal`, writes `%ProgramData%\AppPortal\client.json` readable by Users and writable only by Administrators, adds a Start menu shortcut for all users, registers an uninstall entry, and registers the updater task described next. Pass the token through the RMM's secret parameter rather than embedding it in the package.
+
+The client's **Requests** section accepts up to 500 characters describing the software needed. Each device can have 20 pending requests. The newest request appears immediately after submission; status and administrator reasons refresh with the rest of the client.
+
+![Requests in the Windows client](docs/images/requests.png)
 
 ## Updates
 
@@ -144,7 +189,7 @@ Two things CI cannot do:
 
 ## API
 
-All routes except `/healthz` need `Authorization: Bearer <device token>`.
+Device routes below need `Authorization: Bearer <device token>`. `/healthz` is public; admin session routes use the credentials described separately.
 
 | Route | Purpose |
 |---|---|
@@ -154,6 +199,15 @@ All routes except `/healthz` need `Authorization: Bearer <device token>`.
 | `GET /api/v1/installs` | This device's install history, active ones refreshed |
 | `GET /api/v1/installs/{id}` | One install request, refreshed |
 | `POST /api/v1/installs` | `{ "appId": "..." }`, answers 202 with the record; 404 unknown app, 409 already in progress, 422 no matching package version, 429 too many active, 502 Action1 refused |
+| `GET /api/v1/requests` | This device's software requests, newest first |
+| `POST /api/v1/requests` | `{ "text": "..." }`; 201 created, 400 empty or over 500 characters, 429 at the pending limit |
+
+| Admin session route | Purpose |
+|---|---|
+| `POST /api/v1/admin/session` | `{ "username": "...", "password": "..." }`; issue an `apa_` admin bearer token |
+| `DELETE /api/v1/admin/session` | Revoke the calling admin bearer token; 204 on success |
+
+The admin session API is available in 0.3.0; the full admin JSON API is planned for milestone 4. Browser administration lives under `/admin`.
 
 ## Reliability notes
 
@@ -168,7 +222,10 @@ A few behaviours are deliberate and were put in after a review found the failure
 
 - One catalog for all devices. Per-device or per-group catalogs are not implemented.
 - Uninstall is not offered to the user; Action1 supports it and the server could expose it later.
-- Device tokens do not expire. Rotate one by running `device add` again for the same name.
+- Device tokens do not expire. Rotate them on the device detail page, or run `device add` again for the same name.
+- Admin sign-in uses local accounts. OpenID Connect and email notifications are not implemented.
+- Request approval is a recorded decision; an administrator must separately add any approved software to the catalog.
+- Enrollment keys can be managed, but automatic enrollment, the Windows agent and non-Action1 install engines are not yet implemented.
 - Updates come only from GitHub releases over HTTPS, verified by SHA-256 but not signed. A machine without internet access keeps the build it has.
 - Action1's API is rate limited (HTTP 429). The server polls active installs every 30 seconds by default; keep the catalog small and the device count modest.
 

@@ -1,5 +1,6 @@
 @page "/admin/installs"
-@model AppPortal.Server.Pages.Admin.Installs.IndexModel
+@using AppPortal.Server.Installs
+@model IndexModel
 @{
     ViewData["Title"] = "Installs";
     ViewData["Nav"] = "installs";
@@ -13,7 +14,7 @@
                 <option value="">Any</option>
                 @foreach (var name in Model.DeviceNames)
                 {
-                    <option value="@name" selected="@(name == Model.Device)">@name</option>
+                    <option value="@name" selected="@(name == Model.Filter.Device)">@name</option>
                 }
             </select>
         </div>
@@ -23,7 +24,7 @@
                 <option value="">Any</option>
                 @foreach (var app in Model.Apps)
                 {
-                    <option value="@app.Id" selected="@(app.Id == Model.App)">@app.Name</option>
+                    <option value="@app.Id" selected="@(app.Id == Model.Filter.AppId)">@app.Name</option>
                 }
             </select>
         </div>
@@ -33,21 +34,21 @@
                 <option value="">Any</option>
                 @foreach (var state in Model.States)
                 {
-                    <option value="@state" selected="@(state.ToString() == Model.State)">@state</option>
+                    <option value="@state" selected="@(state == Model.Filter.State)">@state</option>
                 }
             </select>
         </div>
         <div class="field">
             <label for="requester">Requested by</label>
-            <input id="requester" name="Requester" type="text" value="@Model.Requester" autocomplete="off" />
+            <input id="requester" name="Requester" type="text" value="@Model.Filter.Requester" autocomplete="off" />
         </div>
         <div class="field">
             <label for="from">From</label>
-            <input id="from" name="From" type="date" value="@Model.From" />
+            <input id="from" name="From" type="date" value="@InstallFilter.Day(Model.Filter.From)" />
         </div>
         <div class="field">
             <label for="to">To</label>
-            <input id="to" name="To" type="date" value="@Model.To" />
+            <input id="to" name="To" type="date" value="@InstallFilter.Day(Model.Filter.To)" />
         </div>
         <div class="field">
             <button type="submit">Filter</button>
@@ -57,5 +58,5 @@
 </div>
 
 <div class="card">
-    <partial name="_InstallRows" model="Model" />
+    <partial name="_InstallRows" model="Model.Slice" />
 </div>

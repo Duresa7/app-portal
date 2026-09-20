@@ -27,7 +27,7 @@
 <div class="card">
     <div class="toolbar">
         <form method="get" class="inline">
-            <input type="search" name="Search" value="@Model.Search" placeholder="Search devices" aria-label="Search devices" />
+            <input type="search" name="Search" value="@Model.Filter.Term" placeholder="Search devices" aria-label="Search devices" />
             <button type="submit" class="secondary">Search</button>
         </form>
     </div>
@@ -44,13 +44,13 @@
         </tr>
         </thead>
         <tbody>
-        @if (Model.Devices.Count == 0)
+        @if (Model.Slice.Rows.Count == 0)
         {
             <tr>
                 <td colspan="7" class="muted">No devices match.</td>
             </tr>
         }
-        @foreach (var device in Model.Devices)
+        @foreach (var device in Model.Slice.Rows)
         {
             <tr>
                 <td><a href="/admin/devices/@device.Id">@device.Name</a></td>

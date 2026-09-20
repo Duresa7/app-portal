@@ -7,14 +7,14 @@
 <div class="card">
     <div class="toolbar">
         <form method="get" class="inline">
-            <input type="search" name="Search" value="@Model.Search" placeholder="Search apps" aria-label="Search apps" />
+            <input type="search" name="Search" value="@Model.Filter.Term" placeholder="Search apps" aria-label="Search apps" />
             <button type="submit" class="secondary">Search</button>
         </form>
         <div class="spacer"></div>
         <a class="button" href="/admin/catalog/new">New app</a>
         <a class="button secondary" href="/admin/catalog?handler=Export">Export JSON</a>
     </div>
-    <partial name="_CatalogTable" model="Model.Table" />
+    <partial name="_CatalogTable" model="Model.Slice" />
 </div>
 
 <div class="card">

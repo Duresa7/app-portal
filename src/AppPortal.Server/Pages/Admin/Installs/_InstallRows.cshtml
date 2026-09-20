@@ -1,8 +1,11 @@
 @using AppPortal.Shared
-@model AppPortal.Server.Pages.Admin.Installs.IndexModel
+@using AppPortal.Server.Admin.Lists
+@using AppPortal.Server.Installs
+@model Slice<InstallRecord>
 @{
+    var list = ViewData.Page<IndexModel>();
     // Keep checking a quiet fleet too, so installs started after this page opened appear automatically.
-    var pollUrl = "/admin/installs?handler=Rows" + Model.QueryFor(Model.Skip).Replace('?', '&');
+    var pollUrl = "/admin/installs" + list.LinkTo(Model.Offset, handler: "Rows");
 }
 <div id="install-rows" hx-get="@pollUrl" hx-trigger="every 30s" hx-swap="outerHTML">
     <table>
@@ -18,13 +21,13 @@
         </tr>
         </thead>
         <tbody>
-        @if (Model.Installs.Count == 0)
+        @if (Model.Rows.Count == 0)
         {
             <tr>
                 <td colspan="7" class="muted">No installs match.</td>
             </tr>
         }
-        @foreach (var install in Model.Installs)
+        @foreach (var install in Model.Rows)
         {
             <tr>
                 <td><a href="/admin/installs/@install.Id">@install.RequestedAt.ToLocalTime().ToString("u")</a></td>
@@ -52,18 +55,18 @@
         </tbody>
     </table>
 
-    @if (Model.Total > 0)
+    @if (Model.Total is > 0)
     {
         <div class="toolbar pager">
-            <span class="muted">Showing @Model.FirstShown to @Model.LastShown of @Model.Total</span>
+            <span class="muted">Showing @(Model.Offset + 1) to @(Model.Offset + Model.Rows.Count) of @Model.Total</span>
             <div class="spacer"></div>
-            @if (Model.HasPrevious)
+            @if (Model.Offset > 0)
             {
-                <a class="button secondary" href="/admin/installs@(Model.QueryFor(Math.Max(0, Model.Skip - AppPortal.Server.Pages.Admin.Installs.IndexModel.PageSize)))">Newer</a>
+                <a class="button secondary" href="/admin/installs@(list.LinkTo(Model.Offset - IndexModel.PageSize))">Newer</a>
             }
-            @if (Model.HasNext)
+            @if (Model.HasMore)
             {
-                <a class="button secondary" href="/admin/installs@(Model.QueryFor(Model.Skip + AppPortal.Server.Pages.Admin.Installs.IndexModel.PageSize))">Older</a>
+                <a class="button secondary" href="/admin/installs@(list.LinkTo(Model.Offset + Model.Rows.Count))">Older</a>
             }
         </div>
     }

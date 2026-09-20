@@ -1,26 +1,15 @@
 using AppPortal.Server.Admin;
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Catalog;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace AppPortal.Server.Pages.Admin.Catalog;
 
 [Authorize(Policy = AdminAuth.Policy)]
-public sealed class IndexModel(CatalogStore catalog) : PageModel
+public sealed class IndexModel(CatalogStore catalog) : AdminListPage<SearchFilter, CatalogEntry>
 {
-    public IReadOnlyList<CatalogEntry> Apps { get; private set; } = [];
-
-    public string? Error { get; private set; }
-
-    public string? Notice { get; private set; }
-
-    [BindProperty(SupportsGet = true)]
-    public string Search { get; set; } = "";
-
-    public void OnGet() => Load();
-
     public IActionResult OnPostHide(string id, bool hidden)
     {
         Notice = catalog.SetHidden(id ?? "", hidden)
@@ -79,16 +68,7 @@ public sealed class IndexModel(CatalogStore catalog) : PageModel
     public IActionResult OnGetExport()
         => File(System.Text.Encoding.UTF8.GetBytes(catalog.ExportJson()), "application/json", "catalog.json");
 
-    public CatalogTableView Table => new(Apps, Error, Notice);
+    protected override string TablePartial => "_CatalogTable";
 
-    private void Load() => Apps = catalog.Search(Search);
-
-    /// <summary>htmx asked for the table alone, so give it the table alone; a plain browser post gets the page.</summary>
-    private IActionResult Done()
-    {
-        Load();
-        return Request.Headers.ContainsKey("HX-Request")
-            ? Partial("_CatalogTable", Table)
-            : Page();
-    }
+    protected override void Load() => Slice = catalog.List(Filter, Query);
 }

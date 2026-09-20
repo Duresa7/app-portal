@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.RegularExpressions;
 
-using AppPortal.Server.Admin;
 using AppPortal.Server.Enrollment;
 
 using Microsoft.AspNetCore.Hosting;
@@ -11,8 +10,6 @@ namespace AppPortal.Server.Tests;
 
 public sealed class AdminKeysPageTests : IDisposable
 {
-    private const string Password = "a-long-enough-password";
-
     private readonly TestDatabase _test = new();
     private readonly WebApplicationFactory<Program> _factory;
 
@@ -30,43 +27,31 @@ public sealed class AdminKeysPageTests : IDisposable
             builder.UseSetting("Portal:StatusPollSeconds", "3600");
         });
 
-        new AdminStore(_test.Database).Add("admin", Password);
+        _test.AddAdmin();
     }
 
-    private HttpClient Browser() => _factory.CreateClient(new WebApplicationFactoryClientOptions
-    {
-        AllowAutoRedirect = false,
-    });
+    private Task<HttpClient> SignedIn() => TestDatabase.SignedIn(_factory);
 
-    private static async Task<string> TokenFrom(HttpClient client, string path)
-    {
-        var html = await client.GetStringAsync(path);
-        var match = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
-        Assert.True(match.Success, $"The form on {path} carried no antiforgery token.");
-        return match.Groups[1].Value;
-    }
-
-    private async Task<HttpClient> SignedIn()
-    {
-        var client = Browser();
-        var token = await TokenFrom(client, "/admin/login");
-        var response = await client.PostAsync("/admin/login", new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["Username"] = "admin",
-            ["Password"] = Password,
-            ["__RequestVerificationToken"] = token,
-        }));
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        return client;
-    }
+    private static Task<string> TokenFrom(HttpClient client, string path) => TestDatabase.TokenOn(client, path);
 
     [Fact]
     public async Task The_page_is_closed_to_anyone_not_signed_in()
     {
-        var response = await Browser().GetAsync("/admin/keys");
+        var response = await TestDatabase.Browser(_factory).GetAsync("/admin/keys");
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Contains("/admin/login", response.Headers.Location?.OriginalString ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_page_opens_for_a_signed_in_administrator()
+    {
+        new EnrollmentKeyStore(_test.Database).Create("Sales laptops", EnrollmentEngine.Action1, null, null, "admin");
+
+        var response = await (await SignedIn()).GetAsync("/admin/keys");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Sales laptops", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]

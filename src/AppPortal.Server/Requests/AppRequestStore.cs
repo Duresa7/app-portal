@@ -1,3 +1,4 @@
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Data;
 using AppPortal.Shared;
 
@@ -33,6 +34,33 @@ public enum AppRequestRejection
 public sealed class AppRequestRejectedException(AppRequestRejection reason, string message) : Exception(message)
 {
     public AppRequestRejection Reason { get; } = reason;
+}
+
+/// <summary>
+/// The one thing the request list is narrowed by: a decision state, or none for every request. On
+/// the URL it is the tab an administrator clicked, "pending", "approved", "denied" or "all"; a tab
+/// that does not exist falls back to pending, which is what the page opens on.
+/// </summary>
+public sealed record RequestFilter(AppRequestStatus? Status) : IListFilter<RequestFilter>
+{
+    public static readonly RequestFilter Pending = new(AppRequestStatus.Pending);
+
+    public static readonly RequestFilter Everything = new(Status: null);
+
+    public string Tab => Status is { } status ? AppRequestStore.Name(status) : "all";
+
+    public void Write(IDictionary<string, string?> query) => query.Put("tab", Tab);
+
+    public static RequestFilter Read(IReadOnlyDictionary<string, string?> query)
+    {
+        var tab = query.Get("tab");
+        if (tab == "all")
+        {
+            return Everything;
+        }
+
+        return Enum.TryParse<AppRequestStatus>(tab, ignoreCase: true, out var status) ? new RequestFilter(status) : Pending;
+    }
 }
 
 /// <summary>Free-text requests, one row each, in the database under the data directory.</summary>
@@ -125,22 +153,35 @@ public sealed class AppRequestStore(Database database)
         return Read(command);
     }
 
-    /// <summary>Used by the admin pages in M1-05. A null status means every request.</summary>
-    public IReadOnlyList<AppRequestRecord> ListByStatus(AppRequestStatus? status, int limit, int offset)
+    /// <summary>The slice of the requests a filter leaves, newest first unless the query sorts otherwise.</summary>
+    public Slice<AppRequestRecord> List(RequestFilter filter, ListQuery query)
     {
+        var orderBy = Sorts.OrderBy(query.Sort);
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = Select
-                              + (status is null ? "" : " WHERE r.status = @status")
-                              + " ORDER BY r.created_at DESC LIMIT @limit OFFSET @offset;";
-        if (status is not null)
+        command.CommandText = Select + Where(command, filter) + orderBy + " LIMIT @limit OFFSET @offset;";
+        command.Parameters.AddWithValue("@limit", Slice.Lookahead(query));
+        command.Parameters.AddWithValue("@offset", query.Offset);
+        var window = Read(command);
+        return Slice.FromLookahead(window, query, query.WantTotal ? Count(connection, filter) : null);
+    }
+
+    private static int Count(SqliteConnection connection, RequestFilter filter)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM app_requests r" + Where(command, filter) + ";";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    private static string Where(SqliteCommand command, RequestFilter filter)
+    {
+        if (filter.Status is not { } status)
         {
-            command.Parameters.AddWithValue("@status", Name(status.Value));
+            return "";
         }
 
-        command.Parameters.AddWithValue("@limit", limit);
-        command.Parameters.AddWithValue("@offset", offset);
-        return Read(command);
+        command.Parameters.AddWithValue("@status", Name(status));
+        return " WHERE r.status = @status";
     }
 
     public AppRequestRecord? Find(string id)
@@ -183,7 +224,16 @@ public sealed class AppRequestStore(Database database)
         return Convert.ToInt32(command.ExecuteScalar());
     }
 
-    private static string Name(AppRequestStatus status) => status.ToString().ToLowerInvariant();
+    public static string Name(AppRequestStatus status) => status.ToString().ToLowerInvariant();
+
+    /// <summary>Newest first is how the queue reads; every other order is by request.</summary>
+    private static readonly SortColumns Sorts = new(
+        "r.created_at DESC",
+        ("submitted", "r.created_at"),
+        ("device", "COALESCE(d.name, r.device_name)"),
+        ("requester", "r.requested_by"),
+        ("status", "r.status"),
+        ("decided", "r.decided_at"));
 
     private static (string Id, string Name) Device(SqliteConnection connection, SqliteTransaction transaction, string identity, bool byId)
     {

@@ -4,7 +4,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-using AppPortal.Server.Admin;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Installs;
@@ -17,8 +16,6 @@ namespace AppPortal.Server.Tests;
 
 public sealed class AdminCatalogPageTests : IDisposable
 {
-    private const string Password = "a-long-enough-password";
-
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly TestDatabase _test = new();
@@ -40,37 +37,18 @@ public sealed class AdminCatalogPageTests : IDisposable
             builder.UseSetting("Portal:StatusPollSeconds", "3600");
         });
 
-        new AdminStore(_test.Database).Add("admin", Password);
+        _test.AddAdmin();
     }
 
-    private async Task<HttpClient> SignedIn()
-    {
-        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var html = await client.GetStringAsync("/admin/login");
-        var token = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        var response = await client.PostAsync("/admin/login", new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["Username"] = "admin",
-            ["Password"] = Password,
-            ["__RequestVerificationToken"] = token,
-        }));
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        return client;
-    }
+    private Task<HttpClient> SignedIn() => TestDatabase.SignedIn(_factory);
+
+    private static Task<string> TokenOn(HttpClient client, string path) => TestDatabase.TokenOn(client, path);
 
     private HttpClient Device()
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _deviceToken);
         return client;
-    }
-
-    private static async Task<string> TokenOn(HttpClient client, string path)
-    {
-        var html = await client.GetStringAsync(path);
-        var match = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
-        Assert.True(match.Success, $"The form on {path} carried no antiforgery token.");
-        return match.Groups[1].Value;
     }
 
     private async Task<IReadOnlyList<CatalogApp>> DeviceCatalog()
@@ -275,9 +253,24 @@ public sealed class AdminCatalogPageTests : IDisposable
     }
 
     [Fact]
+    public async Task The_catalog_page_opens_for_a_signed_in_administrator()
+    {
+        new CatalogStore(_test.Database, "").Import(CatalogStore.Parse("""
+            { "apps": [ { "id": "chrome", "name": "Google Chrome", "action1": { "packageId": "x" } } ] }
+            """));
+
+        var response = await (await SignedIn()).GetAsync("/admin/catalog?Search=goo");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Google Chrome", html);
+        Assert.Contains("value=\"goo\"", html);
+    }
+
+    [Fact]
     public async Task The_catalog_pages_are_closed_without_a_session()
     {
-        var anonymous = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var anonymous = TestDatabase.Browser(_factory);
 
         foreach (var path in new[] { "/admin/catalog", "/admin/catalog/new", "/admin/catalog/chrome" })
         {

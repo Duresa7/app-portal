@@ -1,3 +1,4 @@
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Data;
 
@@ -179,11 +180,11 @@ public sealed class CatalogStoreTests
                         { "id": "7-zip", "name": "7-Zip", "publisher": "Igor Pavlov", "category": "Utilities", "action1": { "packageId": "y" } } ] }
             """));
 
-        Assert.Equal("chrome", Assert.Single(store.Search("google")).Id);
-        Assert.Equal("chrome", Assert.Single(store.Search("Browsers")).Id);
-        Assert.Equal("7-zip", Assert.Single(store.Search("pavlov")).Id);
-        Assert.Equal(2, store.Search("").Count);
-        Assert.Empty(store.Search("nothing here"));
+        Assert.Equal("chrome", Assert.Single(Listed(store, "google")).Id);
+        Assert.Equal("chrome", Assert.Single(Listed(store, "Browsers")).Id);
+        Assert.Equal("7-zip", Assert.Single(Listed(store, "pavlov")).Id);
+        Assert.Equal(2, Listed(store, "").Count);
+        Assert.Empty(Listed(store, "nothing here"));
     }
 
     private static string CheckedInCatalog
@@ -200,4 +201,7 @@ public sealed class CatalogStoreTests
             return Path.Combine(directory.FullName, "deploy", "config", "catalog.json");
         }
     }
+
+    private static IReadOnlyList<CatalogEntry> Listed(CatalogStore store, string term)
+        => store.List(new SearchFilter(term), ListQuery.All).Rows;
 }

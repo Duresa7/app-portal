@@ -1,3 +1,4 @@
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Data;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Requests;
@@ -52,7 +53,7 @@ public sealed class RequestHistoryMigrationTests
 
         database.Migrate();
         Assert.True(new DeviceStore(database).Remove("OLD-PC"));
-        var request = Assert.Single(new AppRequestStore(database).ListByStatus(null, 50, 0));
+        var request = Assert.Single(new AppRequestStore(database).List(RequestFilter.Everything, ListQuery.All).Rows);
         Assert.Equal("OLD-PC", request.DeviceName);
         Assert.Equal("alice", request.RequestedBy);
         Assert.Equal("Drawing app", request.Text);

@@ -1,4 +1,14 @@
-@model RequestTableView
+@using AppPortal.Server.Admin.Lists
+@using AppPortal.Server.Requests
+@model Slice<AppRequestRecord>
+@{
+    var list = ViewData.Page<IndexModel>();
+    var number = list.Paging.PageNumber(Model.Offset);
+    // Swapped in by htmx, the table has to carry what a whole page would have shown elsewhere: the
+    // pending count for the navigation badge and whatever the decision had to say. Both ride along
+    // as out-of-band swaps; rendering them inside the full page would put a second badge on the screen.
+    var swap = ViewData.IsSwap();
+}
 <table id="request-table">
     <thead>
     <tr>
@@ -11,44 +21,48 @@
     </tr>
     </thead>
     <tbody>
-    @if (Model.Requests.Count == 0)
+    @if (Model.Rows.Count == 0)
     {
         <tr>
             <td colspan="6" class="muted">Nothing here.</td>
         </tr>
     }
-    @foreach (var request in Model.Requests)
+    @foreach (var request in Model.Rows)
     {
-        <partial name="Shared/_RequestRow" model="new RequestRowView(request, Model.Tab, Model.PageNumber)" />
+        <partial name="Shared/_RequestRow" model="new RequestRowView(request, list.Filter.Tab, number)" />
     }
     </tbody>
 </table>
 @* Keep the target even when empty: a decision can remove or reveal the next page. *@
-<div id="request-pager" hx-swap-oob="@(Model.OutOfBand ? "true" : null)">
-    @if (Model.PageNumber > 1 || Model.HasNextPage)
+<div id="request-pager" hx-swap-oob="@(swap ? "true" : null)">
+    @if (Model.Offset > 0 || Model.HasMore)
     {
         <div class="actions">
-            @if (Model.PageNumber > 1)
+            @if (Model.Offset > 0)
             {
-                <a class="nav-item" href="/admin/requests?tab=@Model.Tab&amp;p=@(Model.PageNumber - 1)">Previous</a>
+                <a class="nav-item" href="/admin/requests@(list.LinkTo(Model.Offset - IndexModel.PageSize))">Previous</a>
             }
-            <span class="muted">Page @Model.PageNumber</span>
-            @if (Model.HasNextPage)
+            <span class="muted">Page @number</span>
+            @if (Model.HasMore)
             {
-                <a class="nav-item" href="/admin/requests?tab=@Model.Tab&amp;p=@(Model.PageNumber + 1)">Next</a>
+                <a class="nav-item" href="/admin/requests@(list.LinkTo(Model.Offset + Model.Rows.Count))">Next</a>
             }
         </div>
     }
 </div>
-@if (Model.OutOfBand)
+@if (swap)
 {
     @* Swapped by id wherever they sit, so one decision updates the badge in the navigation pane and
        the message above the table without either of them being the target of the request. *@
-    <span id="pending-badge" class="pill" hx-swap-oob="true">@Model.PendingCount</span>
+    <span id="pending-badge" class="pill" hx-swap-oob="true">@list.PendingCount</span>
     <div id="decide-message" hx-swap-oob="true">
-        @if (Model.Message is not null)
+        @if (list.Error is not null)
         {
-            <div class="message @(Model.MessageIsError ? "error" : "ok")">@Model.Message</div>
+            <div class="message error">@list.Error</div>
+        }
+        else if (list.Notice is not null)
+        {
+            <div class="message ok">@list.Notice</div>
         }
     </div>
 }

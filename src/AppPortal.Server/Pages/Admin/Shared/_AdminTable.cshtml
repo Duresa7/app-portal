@@ -1,4 +1,5 @@
-@model IReadOnlyList<AppPortal.Server.Admin.AdminRecord>
+@using AppPortal.Server.Admin.Lists
+@model Slice<AdminRecord>
 <table id="admin-table">
     <thead>
     <tr>
@@ -10,7 +11,7 @@
     </tr>
     </thead>
     <tbody>
-    @foreach (var admin in Model)
+    @foreach (var admin in Model.Rows)
     {
         <tr>
             <td>@admin.Username</td>

@@ -1,3 +1,6 @@
+using System.Globalization;
+
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Data;
 using AppPortal.Shared;
 
@@ -48,18 +51,44 @@ public sealed class InstallRecord
 
 /// <summary>Install history, one row per request, in the database under the data directory.</summary>
 /// <summary>
-/// What the installs page is asking for. Every field is optional and they combine with AND, which is
-/// how the filter row on the page reads: each control the administrator fills in narrows the result.
+/// What the install history is narrowed by. Every field is optional and they combine with AND, which
+/// is how the filter row on the page reads: each control the administrator fills in narrows the result.
+/// The dates are days as typed into the picker; the store turns them into a range, so the filter
+/// round-trips through a URL exactly as it was written.
 /// </summary>
 public sealed record InstallFilter(
     string? Device = null,
     string? AppId = null,
     InstallState? State = null,
     string? Requester = null,
-    DateTimeOffset? From = null,
-    DateTimeOffset? To = null)
+    DateOnly? From = null,
+    DateOnly? To = null) : IListFilter<InstallFilter>
 {
     public static readonly InstallFilter None = new();
+
+    public void Write(IDictionary<string, string?> query)
+    {
+        query.Put("Device", Device);
+        query.Put("App", AppId);
+        query.Put("State", State?.ToString());
+        query.Put("Requester", Requester);
+        query.Put("From", Day(From));
+        query.Put("To", Day(To));
+    }
+
+    public static InstallFilter Read(IReadOnlyDictionary<string, string?> query) => new(
+        query.Get("Device"),
+        query.Get("App"),
+        Enum.TryParse<InstallState>(query.Get("State"), ignoreCase: true, out var state) ? state : null,
+        query.Get("Requester"),
+        ParseDay(query.Get("From")),
+        ParseDay(query.Get("To")));
+
+    /// <summary>The form a date input speaks, and nothing else: a day is not a moment.</summary>
+    public static string? Day(DateOnly? day) => day?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static DateOnly? ParseDay(string? text)
+        => DateOnly.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null;
 }
 
 public sealed class InstallStore(Database database)
@@ -82,23 +111,24 @@ public sealed class InstallStore(Database database)
     }
 
     /// <summary>
-    /// Fleet-wide history, newest first, narrowed by whatever the administrator filled in. Every clause
-    /// is optional; the ordering rides the installs_requested index.
+    /// The slice of the fleet-wide history a filter leaves, newest first unless the query sorts
+    /// otherwise; the default ordering rides the installs_requested index. The total is counted only
+    /// when asked for, because it is a second query; the installs page asks, since its pager shows it.
     /// </summary>
-    public IReadOnlyList<InstallRecord> ListRecent(InstallFilter filter, int limit, int offset)
+    public Slice<InstallRecord> List(InstallFilter filter, ListQuery query)
     {
+        var orderBy = Sorts.OrderBy(query.Sort);
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = Select + Where(command, filter) + " ORDER BY i.requested_at DESC LIMIT @limit OFFSET @offset;";
-        command.Parameters.AddWithValue("@limit", limit);
-        command.Parameters.AddWithValue("@offset", offset);
-        return Read(command);
+        command.CommandText = Select + Where(command, filter) + orderBy + " LIMIT @limit OFFSET @offset;";
+        command.Parameters.AddWithValue("@limit", Slice.Lookahead(query));
+        command.Parameters.AddWithValue("@offset", query.Offset);
+        var window = Read(command);
+        return Slice.FromLookahead(window, query, query.WantTotal ? Count(connection, filter) : null);
     }
 
-    /// <summary>How many installs match, so the page knows whether there is another one to show.</summary>
-    public int CountMatching(InstallFilter filter)
+    private static int Count(SqliteConnection connection, InstallFilter filter)
     {
-        using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM installs i LEFT JOIN devices d ON d.id = i.device_id" + Where(command, filter) + ";";
         return Convert.ToInt32(command.ExecuteScalar());
@@ -165,20 +195,39 @@ public sealed class InstallStore(Database database)
             command.Parameters.AddWithValue("@requester", "%" + Escape(filter.Requester.Trim()) + "%");
         }
 
-        if (filter.From is not null)
+        if (filter.From is { } from)
         {
             clauses.Add("i.requested_at >= @from");
-            command.Parameters.AddWithValue("@from", SqlTime.From(filter.From.Value));
+            command.Parameters.AddWithValue("@from", SqlTime.From(StartOfDay(from)));
         }
 
-        if (filter.To is not null)
+        if (filter.To is { } to)
         {
+            // A day in the To box means the whole of that day, so the range runs to the next midnight.
             clauses.Add("i.requested_at < @to");
-            command.Parameters.AddWithValue("@to", SqlTime.From(filter.To.Value));
+            command.Parameters.AddWithValue("@to", SqlTime.From(StartOfDay(to.AddDays(1))));
         }
 
         return clauses.Count == 0 ? "" : " WHERE " + string.Join(" AND ", clauses);
     }
+
+    /// <summary>
+    /// A day out of the picker has no offset, and it means a day where the administrator is, which is
+    /// the same clock the table's times are rendered on. Assuming UTC would slide the boundary by the
+    /// server's offset and quietly drop or add a few hours' worth of rows at each end.
+    /// </summary>
+    private static DateTimeOffset StartOfDay(DateOnly day)
+        => new(day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Local));
+
+    /// <summary>Newest first is how the history reads; every other order is by request.</summary>
+    private static readonly SortColumns Sorts = new(
+        "i.requested_at DESC",
+        ("requested", "i.requested_at"),
+        ("device", "device_name"),
+        ("requester", "i.requested_by"),
+        ("app", "i.app_name"),
+        ("state", "i.state"),
+        ("completed", "i.completed_at"));
 
     /// <summary>A name with a wildcard in it should match that character, not every character.</summary>
     private static string Escape(string term)

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Data;
 
 using Microsoft.Data.Sqlite;
@@ -87,13 +88,26 @@ public sealed class EnrollmentKeyStore(Database database)
 
     private const string Base32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
-    public IReadOnlyList<EnrollmentKeyRecord> List()
+    /// <summary>Every key, newest first. What the command line prints and the device list names keys by.</summary>
+    public IReadOnlyList<EnrollmentKeyRecord> List() => List(NoFilter.Instance, ListQuery.All).Rows;
+
+    /// <summary>The keys, newest first unless the query sorts otherwise. Nothing narrows this list.</summary>
+    public Slice<EnrollmentKeyRecord> List(NoFilter filter, ListQuery query)
     {
+        var orderBy = Sorts.OrderBy(query.Sort);
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = Select + " ORDER BY created_at DESC;";
-        return Read(command);
+        command.CommandText = Select + orderBy + ";";
+        return Slice.Of(Read(command), query);
     }
+
+    /// <summary>Newest first, so the key just created is at the top; every other order is by request.</summary>
+    private static readonly SortColumns Sorts = new(
+        "created_at DESC",
+        ("name", "name"),
+        ("created", "created_at"),
+        ("expires", "expires_at"),
+        ("uses", "uses"));
 
     public EnrollmentKeyRecord? Find(string id)
     {

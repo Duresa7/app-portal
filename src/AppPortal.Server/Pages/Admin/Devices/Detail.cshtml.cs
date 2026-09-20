@@ -106,7 +106,7 @@ public sealed class DetailModel(DeviceStore devices, InstallStore installs, AppR
 
         if (devices.RemoveById(Device.Id))
         {
-            if (Request.Headers["HX-Request"] == "true")
+            if (AdminListPage.IsHtmx(Request))
             {
                 Response.Headers["HX-Redirect"] = "/admin/devices";
                 return new EmptyResult();

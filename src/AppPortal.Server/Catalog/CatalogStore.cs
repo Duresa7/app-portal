@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Data;
 using AppPortal.Server.Options;
 using AppPortal.Shared;
@@ -127,20 +128,20 @@ public sealed class CatalogStore
         return Read(connection, id).FirstOrDefault();
     }
 
-    /// <summary>Apps whose id, name, publisher or category contains the term. An empty term is everything.</summary>
-    public IReadOnlyList<CatalogEntry> Search(string? term)
+    /// <summary>
+    /// Apps whose id, name, publisher or category contains the search term, in catalog order unless the
+    /// query sorts otherwise. The catalog is small and the match is a substring, so it is read whole
+    /// and narrowed here rather than in SQL.
+    /// </summary>
+    public Slice<CatalogEntry> List(SearchFilter filter, ListQuery query)
     {
-        var needle = (term ?? "").Trim();
-        if (needle.Length == 0)
-        {
-            return Entries;
-        }
-
-        return [.. Entries.Where(e =>
-            e.Id.Contains(needle, StringComparison.OrdinalIgnoreCase)
-            || e.Name.Contains(needle, StringComparison.OrdinalIgnoreCase)
-            || e.Publisher.Contains(needle, StringComparison.OrdinalIgnoreCase)
-            || e.Category.Contains(needle, StringComparison.OrdinalIgnoreCase))];
+        var orderBy = Sorts.OrderBy(query.Sort);
+        using var connection = _database.Open();
+        var entries = Read(connection, null, orderBy: orderBy);
+        var matching = filter.IsEmpty
+            ? entries
+            : entries.Where(e => filter.Matches(e.Id, e.Name, e.Publisher, e.Category)).ToList();
+        return Slice.Of(matching, query);
     }
 
     public int Count()
@@ -349,7 +350,15 @@ public sealed class CatalogStore
     public string ExportJson()
         => JsonSerializer.Serialize(new CatalogFile { Apps = [.. Entries] }, Export);
 
-    private static List<CatalogEntry> Read(SqliteConnection connection, string? id, bool visibleOnly = false)
+    /// <summary>The order the catalog file listed the apps in; every other order is by request.</summary>
+    private static readonly SortColumns Sorts = new(
+        "a.rowid",
+        ("name", "a.name"),
+        ("id", "a.id"),
+        ("publisher", "a.publisher"),
+        ("category", "a.category"));
+
+    private static List<CatalogEntry> Read(SqliteConnection connection, string? id, bool visibleOnly = false, string? orderBy = null)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -358,7 +367,7 @@ public sealed class CatalogStore
             LEFT JOIN catalog_packages p ON p.app_id = a.id AND p.engine = 'action1'
             """
             + (id is null
-                ? (visibleOnly ? " WHERE a.hidden = 0 ORDER BY a.rowid;" : " ORDER BY a.rowid;")
+                ? (visibleOnly ? " WHERE a.hidden = 0" : "") + (orderBy ?? " ORDER BY a.rowid") + ";"
                 : " WHERE a.id = @id COLLATE NOCASE;");
         if (id is not null)
         {

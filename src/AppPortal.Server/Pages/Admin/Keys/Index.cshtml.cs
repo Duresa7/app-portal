@@ -1,23 +1,17 @@
 using System.Globalization;
 
 using AppPortal.Server.Admin;
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Enrollment;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace AppPortal.Server.Pages.Admin.Keys;
 
 [Authorize(Policy = AdminAuth.Policy)]
-public sealed class IndexModel(EnrollmentKeyStore keys, IAdminContext current) : PageModel
+public sealed class IndexModel(EnrollmentKeyStore keys, IAdminContext current) : AdminListPage<NoFilter, EnrollmentKeyRecord>
 {
-    public IReadOnlyList<EnrollmentKeyRecord> Keys { get; private set; } = [];
-
-    public string? Error { get; private set; }
-
-    public string? Notice { get; private set; }
-
     /// <summary>
     /// The plaintext of a key created by this very request. Set on no other path: the database holds
     /// only a hash, so once this response is gone the key cannot be shown again by anyone.
@@ -35,8 +29,6 @@ public sealed class IndexModel(EnrollmentKeyStore keys, IAdminContext current) :
 
     [BindProperty]
     public string NewEngine { get; set; } = "action1";
-
-    public void OnGet() => Load();
 
     public IActionResult OnPostCreate()
     {
@@ -72,13 +64,12 @@ public sealed class IndexModel(EnrollmentKeyStore keys, IAdminContext current) :
         Notice = keys.Revoke(id ?? "")
             ? "That key is revoked. Machines that have not enrolled with it yet no longer can."
             : "That key was already revoked.";
-        Load();
-        return Request.Headers.ContainsKey("HX-Request")
-            ? Partial("_KeyTable", Keys)
-            : Page();
+        return Done();
     }
 
-    private void Load() => Keys = keys.List();
+    protected override string TablePartial => "_KeyTable";
+
+    protected override void Load() => Slice = keys.List(Filter, Query);
 
     /// <summary>
     /// A bare date means the end of that day in UTC, not midnight at its start: someone typing

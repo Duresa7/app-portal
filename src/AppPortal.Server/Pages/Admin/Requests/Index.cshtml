@@ -1,5 +1,5 @@
 @page "/admin/requests"
-@model AppPortal.Server.Pages.Admin.Requests.IndexModel
+@model IndexModel
 @{
     ViewData["Title"] = "Requests";
     ViewData["Nav"] = "requests";
@@ -18,15 +18,13 @@
 
 <div class="card">
     <div class="actions" style="margin-top: 0">
-        @foreach (var tab in AppPortal.Server.Pages.Admin.Requests.IndexModel.Tabs)
+        @foreach (var tab in IndexModel.Tabs)
         {
-            <a class="@(Model.Tab == tab.Key ? "nav-item current" : "nav-item")" href="/admin/requests?tab=@tab.Key">@tab.Label</a>
+            <a class="@(Model.Filter == tab.Filter ? "nav-item current" : "nav-item")" href="/admin/requests?tab=@tab.Filter.Tab">@tab.Label</a>
         }
     </div>
 </div>
 
 <div class="card">
-    <partial name="_RequestTable" model="@(new AppPortal.Server.Pages.Admin.Requests.RequestTableView(
-                                              Model.Items, Model.Tab, Model.PageNumber, Model.HasNextPage, Model.PendingCount,
-                                              null, false, false))" />
+    <partial name="_RequestTable" model="Model.Slice" />
 </div>

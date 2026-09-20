@@ -15,7 +15,8 @@ public sealed record CatalogApp(
     bool Featured,
     string[] Engines,
     long? DownloadSizeBytes,
-    string? InstallScope = null)
+    string? InstallScope = null,
+    string? Engine = null)
 {
     public CatalogApp(string id, string name, string publisher, string description, string category, string? iconUrl, bool featured)
         : this(id, name, publisher, description, category, iconUrl, featured, ["action1"], null)
@@ -50,7 +51,8 @@ public sealed record InstallRequest(
     InstallState State,
     int PercentComplete,
     string? Detail,
-    string? RequestedBy);
+    string? RequestedBy,
+    string? Engine = null);
 
 /// <summary>Software the management plane reports as present on the device.</summary>
 public sealed record InstalledApp(

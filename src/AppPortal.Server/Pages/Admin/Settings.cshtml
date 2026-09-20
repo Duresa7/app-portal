@@ -1,0 +1,34 @@
+@page "/admin/settings"
+@model SettingsModel
+@{
+    ViewData["Title"] = "Settings";
+    ViewData["Nav"] = "settings";
+}
+@if (Model.Error is not null)
+{
+    <div class="message error">@Model.Error</div>
+}
+@if (Model.Saved is not null)
+{
+    <div class="message ok">@Model.Saved</div>
+}
+
+<div class="card">
+    <h2>Default install engine</h2>
+    <p class="muted">
+        Which engine installs an app when a device could use either. It only decides between the two:
+        an app or a device that has one engine uses that one whatever this says.
+    </p>
+    <p class="muted">
+        A device set to prefer an engine wins over this. Failing that, an app set to prefer one wins.
+        Failing that, this setting decides.
+    </p>
+    <form method="post">
+        <label for="default-engine">Prefer</label>
+        <select id="default-engine" name="DefaultEngine">
+            <option value="action1" selected="@(Model.DefaultEngine == "action1")">Action1</option>
+            <option value="agent" selected="@(Model.DefaultEngine == "agent")">Agent</option>
+        </select>
+        <button type="submit">Save</button>
+    </form>
+</div>

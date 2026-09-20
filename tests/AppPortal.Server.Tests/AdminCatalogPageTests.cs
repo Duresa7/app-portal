@@ -302,8 +302,13 @@ public sealed class AdminCatalogPageTests : IDisposable
     [Theory]
     [InlineData("direct")]
     [InlineData("winget")]
-    public async Task Agent_only_apps_can_be_created_edited_and_served_to_action1_devices(string kind)
+    public async Task Agent_only_apps_can_be_created_edited_and_served_to_devices_with_an_agent(string kind)
     {
+        // An app only the agent can install reaches a device only once that device has an agent. It
+        // used to be served to every device, which M3-01 left for M3-05 to decide; this is that.
+        var devices = new DeviceStore(_test.Database);
+        devices.RecordHeartbeat(devices.FindByName("TESTPC")!.Id, "0.5.0");
+
         var admin = await SignedIn();
         var form = AgentForm(kind);
         form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");

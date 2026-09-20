@@ -3,6 +3,7 @@ using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Installs;
 using AppPortal.Server.Requests;
+using AppPortal.Server.Settings;
 using AppPortal.Shared;
 
 namespace AppPortal.Server.Api;
@@ -15,8 +16,19 @@ public static class PortalEndpoints
 
         // Hidden apps are withheld here rather than deleted, so a device stops being offered an app
         // the moment an administrator hides it while its install history stays intact.
-        api.MapGet("/catalog", (CatalogStore catalog) =>
-            Results.Ok(catalog.VisibleEntries.Select(e => e.ToPublic()).ToList()));
+        api.MapGet("/catalog", (HttpContext context, CatalogStore catalog, SettingsStore settings) =>
+        {
+            // An app no engine on this device can install is not offered here. Showing a button that
+            // can only fail is worse than not showing the app: the person cannot act on either, and
+            // only one of them wastes their time finding out.
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            var offered = catalog.VisibleEntries
+                .Select(entry => (Entry: entry, Engine: EngineSelector.Choose(device, entry, settings.DefaultEngine)))
+                .Where(candidate => candidate.Engine is not null)
+                .Select(candidate => candidate.Entry.ToPublic(candidate.Engine))
+                .ToList();
+            return Results.Ok(offered);
+        });
 
         api.MapGet("/device", async (HttpContext context, IAction1Client action1, CancellationToken ct) =>
         {

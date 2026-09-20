@@ -28,7 +28,10 @@ Constraints learned from the first deployment:
 - A user's UPN suffix need not match the AD DNS name (`user@example.com` inside `ad.example.com`), so a bare
   user name cannot be turned into a bind name by appending the domain. Down-level `DOMAIN\user` always works
   against AD's simple bind and is what the client already sends with installs.
-- `System.DirectoryServices.Protocols` on Linux needs OpenLDAP present in the image.
+- `System.DirectoryServices.Protocols` on Linux needs OpenLDAP present in the image, and its
+  `VerifyServerCertificate` callback is Windows-only: setting it on Linux throws *The LDAP server is
+  unavailable* before any connection is attempted. Certificate trust for the bind therefore comes from
+  OpenLDAP's `LDAPTLS_CACERT`, and pinning is done by the portal itself on a connection of its own.
 
 ## Scope
 
@@ -67,7 +70,8 @@ ALTER TABLE admins ADD COLUMN source TEXT NOT NULL DEFAULT 'local';   -- 'local'
   "UpnSuffix": "example.com",          // fallback bind form when no NetBIOS domain is set
   "BaseDn": "",                        // defaults to the RootDSE defaultNamingContext
   "RequiredGroup": "APP-AppPortal-Admins",   // sAMAccountName or full DN
-  "CertificateThumbprints": ["<sha-256 hex>"],
+  "CertificateThumbprints": ["<sha-256 hex>"],   // checked by the portal before the password is sent
+  "CertificateFile": "/app/config/dc-certs.pem", // what OpenLDAP validates the bind against
   "TimeoutSeconds": 10
 }
 ```

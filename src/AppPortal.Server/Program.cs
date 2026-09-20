@@ -69,6 +69,13 @@ var directory = builder.Configuration.GetSection(DirectoryOptions.Section).Get<D
 directory.Validate();
 if (directory.Enabled)
 {
+    if (!string.IsNullOrWhiteSpace(directory.CertificateFile))
+    {
+        // OpenLDAP performs the bind everywhere but Windows, and it reads its trust anchors from this
+        // variable rather than from the process. Set before the first connection or it is not read.
+        Environment.SetEnvironmentVariable("LDAPTLS_CACERT", directory.CertificateFile);
+    }
+
     builder.Services.AddSingleton<IDirectoryAuthenticator, LdapDirectoryAuthenticator>();
 }
 else

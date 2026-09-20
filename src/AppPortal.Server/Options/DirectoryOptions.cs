@@ -45,6 +45,13 @@ public sealed class DirectoryOptions
     /// </summary>
     public string[] CertificateThumbprints { get; set; } = [];
 
+    /// <summary>
+    /// PEM file holding the certificate of every controller in <see cref="Servers"/>, or the CA that issued
+    /// them. OpenLDAP does the bind on Linux and validates against this file; without it, a self-signed
+    /// controller certificate is refused by the TLS layer before the portal ever sees it.
+    /// </summary>
+    public string CertificateFile { get; set; } = "";
+
     public int TimeoutSeconds { get; set; } = 10;
 
     /// <summary>Throws when the section is on but cannot work, so the server refuses at startup, not at sign-in.</summary>

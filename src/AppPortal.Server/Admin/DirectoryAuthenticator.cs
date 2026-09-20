@@ -1,5 +1,7 @@
 using System.DirectoryServices.Protocols;
 using System.Net;
+using System.Net.Security;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -163,7 +165,19 @@ public sealed class LdapDirectoryAuthenticator(IOptions<DirectoryOptions> option
 
         connection.SessionOptions.ProtocolVersion = 3;
         connection.SessionOptions.SecureSocketLayer = true;
-        connection.SessionOptions.VerifyServerCertificate = (_, certificate) => Accept(certificate, host);
+
+        if (_options.CertificateThumbprints.Length > 0)
+        {
+            // Checked before the password is sent, and on every platform: the LDAP library's own callback
+            // is Windows-only, and OpenLDAP validates against a CA file rather than a fingerprint.
+            Pin(host, port);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            connection.SessionOptions.VerifyServerCertificate = (_, certificate) => Accept(certificate, host);
+        }
+
         connection.Bind(new NetworkCredential(bindName, password));
 
         var baseDn = string.IsNullOrWhiteSpace(_options.BaseDn) ? DefaultNamingContext(connection) : _options.BaseDn;
@@ -180,6 +194,40 @@ public sealed class LdapDirectoryAuthenticator(IOptions<DirectoryOptions> option
 
         var resolved = user with { Domain = string.IsNullOrEmpty(domain) ? _options.NetBiosDomain.ToUpperInvariant() : domain };
         return new DirectoryResult(DirectoryOutcome.Success, resolved);
+    }
+
+    /// <summary>
+    /// Opens the TLS connection first and compares what the controller presents with the pinned
+    /// thumbprints, so a substituted certificate is refused before any password is sent. The bind that
+    /// follows makes its own connection; this one exists to fail early and loudly.
+    /// </summary>
+    private void Pin(string host, int port)
+    {
+        using var client = new TcpClient();
+        if (!client.ConnectAsync(host, port).Wait(TimeSpan.FromSeconds(_options.TimeoutSeconds)))
+        {
+            throw new InvalidOperationException($"{host}:{port} did not accept a connection within the timeout.");
+        }
+
+        X509Certificate? presented = null;
+        using var stream = new SslStream(client.GetStream(), leaveInnerStreamOpen: false, (_, certificate, _, _) =>
+        {
+            presented = certificate;
+            return true;
+        });
+
+        stream.AuthenticateAsClient(host);
+        if (presented is null)
+        {
+            throw new InvalidOperationException($"{host}:{port} completed a TLS handshake without presenting a certificate.");
+        }
+
+        var thumbprint = Convert.ToHexStringLower(SHA256.HashData(presented.GetRawCertData()));
+        if (!_options.CertificateThumbprints.Any(t => Normalise(t) == thumbprint))
+        {
+            throw new InvalidOperationException(
+                $"{host} presented a certificate with SHA-256 {thumbprint}, which is not in Directory:CertificateThumbprints.");
+        }
     }
 
     private bool Accept(X509Certificate certificate, string host)

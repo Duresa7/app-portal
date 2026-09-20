@@ -123,6 +123,7 @@ The portal needs no directory. A deployment that already runs Active Directory c
   "NetBiosDomain": "EXAMPLE",
   "RequiredGroup": "APP-AppPortal-Admins",
   "CertificateThumbprints": ["<sha-256 of the controller certificate>"],
+  "CertificateFile": "/app/config/dc-certs.pem",
   "TimeoutSeconds": 10
 }
 ```
@@ -132,7 +133,7 @@ How it behaves:
 - **Local accounts are checked first**, so a directory that is unreachable cannot lock you out of your own portal. Keep one local account.
 - The bind is **LDAPS only** and uses the signing-in user's own credentials; the server holds no service account.
 - Only members of `RequiredGroup` are admitted, nested groups included. There is no default group: leaving it empty stops the server rather than admitting the whole directory.
-- A forest with no certificate authority gives its controllers self-signed certificates. List their SHA-256 thumbprints in `CertificateThumbprints` to pin them; with no thumbprints, ordinary chain validation applies and a self-signed certificate is refused.
+- A forest with no certificate authority gives its controllers self-signed certificates. List their SHA-256 thumbprints in `CertificateThumbprints`: the server opens the TLS connection and compares the certificate before any password is sent, and refuses a mismatch. On Linux the bind itself is performed by OpenLDAP, which validates separately against `CertificateFile`, a PEM holding the controller certificates; set both. With neither, ordinary chain validation applies and a self-signed certificate is refused.
 - The first successful sign-in creates an administrator row named `DOMAIN\user`, matching the requester label on installs. Disable it like any other account; its password stays in the directory and cannot be set here.
 - Every administrator is a full administrator. There is no group-to-role mapping, no directory sync, and the Windows client does not use this.
 

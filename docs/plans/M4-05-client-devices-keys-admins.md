@@ -1,6 +1,6 @@
 # M4-05: Client admin, devices, keys, admins, settings
 
-**Milestone:** 4 (0.6.0)
+**Milestone:** 4 (0.7.0)
 **Depends on:** M4-02
 **Unlocks:** M4-06
 

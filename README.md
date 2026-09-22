@@ -355,7 +355,21 @@ Device routes below need `Authorization: Bearer <device token>`. `/healthz` is p
 | `POST /api/v1/admin/session` | `{ "username": "...", "password": "..." }`; issue an `apa_` admin bearer token |
 | `DELETE /api/v1/admin/session` | Revoke the calling admin bearer token; 204 on success |
 
-The admin session API is available in 0.3.0; the full admin JSON API is planned for milestone 4. Browser administration lives under `/admin`.
+| Admin JSON API (`apa_` bearer token), under `/api/v1/admin` | Purpose |
+|---|---|
+| `GET /dashboard` | The five counts the dashboard shows |
+| `GET /installs`, `GET /installs/{id}`, `POST /installs/{id}/cancel` | Fleet install history with filters and paging, one install, stopping one the agent is running |
+| `GET /requests`, `POST /requests/{id}/approve`, `POST /requests/{id}/deny` | Software requests by status, and a decision with an optional reason |
+| `GET /catalog`, `GET`/`PUT`/`DELETE /catalog/{id}`, `POST /catalog/{id}/hidden` | The catalog, one app, saving every field of it, removing or hiding it |
+| `POST /catalog/import`, `GET /catalog/export` | The whole catalog as a file |
+| `POST /catalog/action1/search`, `POST /catalog/action1/verify`, `POST /catalog/package/hash`, `POST /catalog/package/winget` | The catalog page's helpers |
+| `GET`/`POST /devices`, `GET`/`PUT`/`DELETE /devices/{id}`, `POST /devices/{id}/rotate-token` | The fleet, one device with its package managers and history, adding, editing, removing, a new token |
+| `GET`/`POST /keys`, `GET /keys/{id}`, `POST /keys/{id}/revoke`, `GET /keys/{id}/events` | Enrollment keys and what was attempted with each |
+| `GET`/`POST /admins`, `POST /admins/{id}/disable`, `POST /admins/{id}/reset-password` | Administrator accounts |
+| `GET`/`PUT /settings` | The default install engine |
+| `GET /sessions`, `DELETE /sessions/{id}` | The calling administrator's own sessions |
+
+Browser administration lives under `/admin` and uses cookies, not these routes.
 
 [`docs/api.md`](docs/api.md) is the full reference: every route with its verb, authentication, body shapes and status codes.
 

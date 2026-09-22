@@ -495,6 +495,8 @@ Body `AdminDecision`, which may be left out: `{ "reason": "..." }`. `reason` is 
 
 ### Catalog
 
+Every catalog write runs the same checks: `PUT`, the import below, the web edit form, the import on the web catalog page, and `AppPortal.Server catalog import`. An app one of them refuses, all of them refuse, with the same message.
+
 #### GET /api/v1/admin/catalog
 
 Paged, in catalog order. `AdminPage<AdminCatalogApp>`. Hidden apps are included.
@@ -510,7 +512,7 @@ Paged, in catalog order. `AdminPage<AdminCatalogApp>`. Hidden apps are included.
 | 200 | `AdminCatalogApp`. |
 | 404 | No app with that id. |
 
-`GET /api/v1/admin/catalog/export` is a route of its own, so an app whose id is `export` cannot be read here.
+`GET /api/v1/admin/catalog/export` is a route of its own, so no write accepts the id `export`. An app stored under that id before the rule stays in the list, the export and the device catalog, and can be hidden or deleted by id, but it cannot be read here and cannot be saved again under that id.
 
 #### PUT /api/v1/admin/catalog/{id}
 
@@ -521,8 +523,8 @@ Body `AdminCatalogApp`. In this body `kind` must be the first property of `agent
 | Status | When |
 |---|---|
 | 200 | `AdminCatalogApp`, as stored. The same code for a create and a replace. |
-| 400 | The id is `new` (reserved for the web create form); the name is blank; the app has neither an Action1 package id nor an agent package; or the agent package fails its checks. |
-| 422 | A `requires` entry is not in the catalog, or the prerequisites would form a loop. |
+| 400 | The id is `new` (the web create form) or `export` (the export route), in any case; the name is blank; `requirements` is longer than 500 characters; `engineOverride` is not `action1`, `agent` or empty; the app has neither an Action1 package id nor an agent package; or the agent package fails its checks. |
+| 422 | A `requires` entry is not in the catalog, or the prerequisites would form a loop, an app that needs itself included. |
 
 #### DELETE /api/v1/admin/catalog/{id}
 
@@ -549,12 +551,15 @@ The body is a catalog file, the same shape `GET /api/v1/admin/catalog/export` wr
 { "apps": [ { "id": "...", "name": "...", "action1": { "packageId": "...", "version": "latest" } } ] }
 ```
 
-Each entry has the fields of `AdminCatalogApp`. Comments and trailing commas are allowed, and `kind` may appear anywhere in an agent definition. Apps are written by id: an app in the file replaces the stored one in every field, `hidden` included, so an entry without `hidden` makes the app visible. Apps the file does not name are left alone. The whole file is written in one transaction.
+Each entry has the fields of `AdminCatalogApp`. Comments and trailing commas are allowed, and `kind` may appear anywhere in an agent definition. Apps are written by id: an app in the file replaces the stored one in every field, `hidden` included, so an entry without `hidden` makes the app visible. Apps the file does not name are left alone. The whole file is checked before anything is written, and written in one transaction, so one refused entry writes none of the file.
+
+The prerequisites are checked on the catalog as the file would leave it. A `requires` entry may name an app later in the same file or one already in the catalog, and an app the file names takes its `requires` from the file.
 
 | Status | When |
 |---|---|
 | 200 | `AdminCatalogImported`: `{ "imported": 3 }`. |
-| 400 | The body is empty; it is not valid JSON; an entry has no id or name, or neither an Action1 package id nor an agent package; an agent definition has no kind or fails its checks; or an id appears twice. |
+| 400 | The body is empty; it is not valid JSON; an id appears twice; or an entry fails a check `PUT` answers with 400: a reserved id, no name, a `requirements` note longer than 500 characters, an unknown `engineOverride`, neither an Action1 package id nor an agent package, or an agent definition with no kind or that fails its checks. |
+| 422 | A `requires` entry names an app that is neither in the file nor in the catalog, or the prerequisites would form a loop. |
 | 413 | The body is larger than 4 MB. |
 
 #### GET /api/v1/admin/catalog/export
@@ -851,8 +856,8 @@ The records below are in `AppPortal.Shared`: `Contracts.cs`, `AdminContracts.cs`
 | `iconUrl` | string? | Optional |
 | `featured` | bool | Optional, default `false` |
 | `hidden` | bool | Optional, default `false` |
-| `engineOverride` | string? | Optional. `action1` or `agent` for an app both could install; null follows the server. |
-| `requirements` | string? | Optional |
+| `engineOverride` | string? | Optional. `action1` or `agent` for an app both could install; null or blank follows the server. Any case is accepted and stored in lower case; any other value is refused. |
+| `requirements` | string? | Optional. At most 500 characters. |
 | `requires` | string[]? | Optional. Ids of catalog apps to install first, in order. |
 | `userRemovable` | bool | Optional, default `false` |
 | `match` | `AdminMatchRule`? | Optional. `nameContains` and `nameEquals` (string?), matched against installed software names. |

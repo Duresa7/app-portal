@@ -94,15 +94,17 @@ public sealed class AppRequirementsTests : IDisposable
     }
 
     [Fact]
-    public void A_note_longer_than_the_limit_is_still_stored_whole_by_the_store()
+    public void A_note_longer_than_the_limit_is_refused_rather_than_cut_short()
     {
-        // The page is where the length is enforced. The store is not the place to silently truncate
-        // somebody's words, and an import of an older catalog must not fail on one.
+        // The store holds the limit so that the form, the API and an import all hold the same one: a
+        // note one of them accepted and the form then refused would be an app nobody could edit. It
+        // refuses rather than truncates, because cutting somebody's words off silently is worse.
         var long_note = new string('x', CatalogLimits.MaxRequirementsLength + 50);
 
-        _catalog.Upsert(Entry(long_note));
+        Assert.Throws<InvalidDataException>(() => _catalog.Upsert(Entry(long_note)));
+        Assert.Throws<InvalidDataException>(() => _catalog.Import([Entry(long_note)]));
 
-        Assert.Equal(long_note, _catalog.Entries.Single().Requirements);
+        Assert.Empty(_catalog.Entries);
     }
 
     private static CatalogEntry Entry(string? requirements) => new()

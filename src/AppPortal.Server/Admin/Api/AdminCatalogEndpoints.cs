@@ -27,20 +27,11 @@ public static class AdminCatalogEndpoints
 
         group.MapPut("/catalog/{id}", (string id, AdminCatalogApp body, CatalogStore catalog) =>
         {
-            var target = (id ?? "").Trim();
-            if (string.Equals(target, Pages.Admin.Catalog.EditModel.NewId, StringComparison.OrdinalIgnoreCase))
-            {
-                // The edit page routes /admin/catalog/new to its create form, so an app with that id
-                // could be written here and then never opened in a browser again.
-                return AdminApi.BadRequest($"'{Pages.Admin.Catalog.EditModel.NewId}' is reserved for the create form. Give the app another id.");
-            }
-
-            var entry = Read(target, body);
+            var entry = Read((id ?? "").Trim(), body);
             try
             {
-                // Before the save, the same as the form does it: a loop written into the catalog is a
-                // loop every install of those apps walks around, and only an administrator can undo it.
-                catalog.EnsureNoCycle(entry.Id, entry.Requires);
+                // The store holds every rule, the reserved ids and the prerequisites included, so this
+                // route refuses exactly what the form and an import refuse.
                 catalog.Upsert(entry);
             }
             catch (PrerequisiteException ex)
@@ -98,6 +89,12 @@ public static class AdminCatalogEndpoints
             try
             {
                 return Results.Ok(new AdminCatalogImported(catalog.Import(CatalogStore.Parse(json))));
+            }
+            catch (PrerequisiteException ex)
+            {
+                // The same status PUT gives the same fault: the file is well formed, and what it says
+                // cannot be held by the catalog it would land in.
+                return AdminApi.Problem(StatusCodes.Status422UnprocessableEntity, ex.Message);
             }
             catch (InvalidDataException ex)
             {

@@ -199,24 +199,27 @@ public sealed class PrerequisiteChainTests : IDisposable
         Chain("game", "launcher");
         Chain("launcher", "runtime");
 
-        var failure = Assert.Throws<PrerequisiteException>(() => _catalog.EnsureNoCycle("runtime", ["game"]));
+        var failure = Assert.Throws<PrerequisiteException>(() => Chain("runtime", "game"));
 
         Assert.Contains("loop", failure.Message);
         Assert.Contains("A Game", failure.Message);
+        Assert.Empty(_catalog.Find("runtime")!.Requires);
     }
 
     [Fact]
     public void An_app_that_needs_itself_is_refused()
     {
-        Assert.Throws<PrerequisiteException>(() => _catalog.EnsureNoCycle("game", ["launcher", "game"]));
+        Assert.Throws<PrerequisiteException>(() => Chain("game", "launcher", "game"));
+        Assert.Empty(_catalog.Find("game")!.Requires);
     }
 
     [Fact]
     public void Needing_something_that_is_not_in_the_catalog_is_refused()
     {
-        var failure = Assert.Throws<PrerequisiteException>(() => _catalog.EnsureNoCycle("game", ["absent"]));
+        var failure = Assert.Throws<PrerequisiteException>(() => Chain("game", "absent"));
 
         Assert.Contains("'absent' is not in the catalog", failure.Message);
+        Assert.Empty(_catalog.Find("game")!.Requires);
     }
 
     [Fact]

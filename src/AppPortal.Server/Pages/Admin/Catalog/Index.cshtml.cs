@@ -53,7 +53,7 @@ public sealed class IndexModel(CatalogStore catalog) : AdminListPage<SearchFilte
             var count = catalog.Import(CatalogStore.Parse(reader.ReadToEnd()));
             Notice = $"Imported {count} app{(count == 1 ? "" : "s")}.";
         }
-        catch (InvalidDataException ex)
+        catch (Exception ex) when (ex is InvalidDataException or PrerequisiteException)
         {
             Error = ex.Message;
         }

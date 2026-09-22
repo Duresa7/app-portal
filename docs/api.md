@@ -88,7 +88,7 @@ Body `EnrollRequest`:
 | `action1EndpointId` | string? | Required when the key enrolls for `action1` or `both` |
 | `agentVersion` | string? | |
 
-The key is spent before the checks that follow the 401. A refusal with 400 for a missing `action1EndpointId`, 403 or 409 has used one of the key's uses.
+A use of the key is spent only when the enrollment succeeds, in the same transaction that writes the device. A refusal of any kind leaves the key's use count as it was. When several machines race for a key's last uses, each use goes to exactly one of them, and the others get 401.
 
 | Status | When |
 |---|---|

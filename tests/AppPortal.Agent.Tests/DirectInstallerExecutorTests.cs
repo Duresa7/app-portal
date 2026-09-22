@@ -139,7 +139,64 @@ public sealed class DirectInstallerExecutorTests : IDisposable
         Assert.Contains("exit 0", log);
     }
 
-    private DirectInstallerExecutor Executor(IProcessRunner processes, IUserSessionLauncher? sessions = null)
+    [Fact]
+    public void A_per_user_removal_asks_for_that_persons_copy_and_not_the_machines()
+    {
+        // The agent runs as LocalSystem, so its own HKEY_CURRENT_USER is the service account's. A
+        // per-user application writes its uninstall entry into the profile of the person who installed
+        // it, and a lookup that does not name them reads the machine and finds nothing.
+        var registry = new FakeRegistry(@"C:\Users\ada\App\uninstall.exe /S");
+        var command = DirectInstallerExecutor.UninstallCommand(
+            Definition with { Scope = "user", UninstallKey = "TheApp" }, registry, @"CORP\ada");
+
+        Assert.Equal(@"CORP\ada", Assert.Single(registry.Asked).Account);
+        Assert.Equal("TheApp", Assert.Single(registry.Asked).Key);
+        Assert.Equal(@"C:\Users\ada\App\uninstall.exe", command!.Value.File);
+        Assert.Equal("/S", command.Value.Arguments);
+    }
+
+    [Fact]
+    public void A_machine_wide_removal_names_nobody()
+    {
+        var registry = new FakeRegistry(@"""C:\Program Files\App\uninstall.exe"" --silent");
+        var command = DirectInstallerExecutor.UninstallCommand(
+            Definition with { UninstallKey = "TheApp" }, registry);
+
+        Assert.Null(Assert.Single(registry.Asked).Account);
+        Assert.Equal(@"C:\Program Files\App\uninstall.exe", command!.Value.File);
+        Assert.Equal("--silent", command.Value.Arguments);
+    }
+
+    [Fact]
+    public async Task A_per_user_removal_that_does_not_say_who_fails_before_it_reads_anything()
+    {
+        var registry = new FakeRegistry(@"C:\Users\ada\App\uninstall.exe /S");
+        var executor = Executor(new FakeProcesses((_, _) => new ProcessResult(0, "")), registry: registry);
+        var result = await executor.UninstallAsync(new JobContext("job-1", null, InstallKind.Uninstall),
+            Definition with { Scope = "user", UninstallKey = "TheApp" }, new Progress(), CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Contains("does not say who", result.Detail);
+        Assert.Empty(registry.Asked);
+    }
+
+    [Fact]
+    public async Task A_per_user_removal_runs_in_that_persons_session()
+    {
+        var registry = new FakeRegistry(@"C:\Users\ada\App\uninstall.exe /S");
+        var sessions = new FakeSessions(@"CORP\ada");
+        var executor = Executor(new FakeProcesses((_, _) => new ProcessResult(0, "")), sessions, registry);
+        var result = await executor.UninstallAsync(new JobContext("job-1", @"CORP\ada", InstallKind.Uninstall),
+            Definition with { Scope = "user", UninstallKey = "TheApp" }, new Progress(), CancellationToken.None);
+
+        Assert.True(result.Ok);
+        var started = Assert.Single(sessions.Started);
+        Assert.Equal(@"CORP\ada", started.Account);
+        Assert.Equal(@"C:\Users\ada\App\uninstall.exe", started.File);
+    }
+
+    private DirectInstallerExecutor Executor(IProcessRunner processes, IUserSessionLauncher? sessions = null,
+        IUninstallRegistry? registry = null)
     {
         var downloads = Path.Combine(_root, "downloads");
         Directory.CreateDirectory(downloads);
@@ -149,7 +206,8 @@ public sealed class DirectInstallerExecutorTests : IDisposable
         File.WriteAllBytes(cache.PathFor(Definition.Sha256, "exe"), _body);
         return new DirectInstallerExecutor(
             new ResumableDownload(new HttpClient(), cache, NullLogger.Instance),
-            processes, NullLogger<DirectInstallerExecutor>.Instance, _root, sessions ?? new FakeSessions(), new NoUninstallRegistry());
+            processes, NullLogger<DirectInstallerExecutor>.Instance, _root, sessions ?? new FakeSessions(),
+            registry ?? new NoUninstallRegistry());
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
@@ -157,6 +215,18 @@ public sealed class DirectInstallerExecutorTests : IDisposable
     private sealed class Progress(Action<(int percent, string detail)>? report = null) : IProgress<(int percent, string detail)>
     {
         public void Report((int percent, string detail) value) => report?.Invoke(value);
+    }
+
+    /// <summary>Answers with one quiet command, and records what it was asked for.</summary>
+    private sealed class FakeRegistry(string? quiet) : IUninstallRegistry
+    {
+        public List<(string Key, string? Account)> Asked { get; } = [];
+
+        public string? QuietUninstallString(string uninstallKey, string? account = null)
+        {
+            Asked.Add((uninstallKey, account));
+            return quiet;
+        }
     }
 
     private sealed class FakeProcesses(Func<string, string, ProcessResult> run, params string[] lines) : IProcessRunner

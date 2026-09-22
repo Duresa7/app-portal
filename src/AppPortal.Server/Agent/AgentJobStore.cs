@@ -8,6 +8,19 @@ using Microsoft.Data.Sqlite;
 
 namespace AppPortal.Server.Agent;
 
+/// <summary>What a progress or completion report did to the job it named.</summary>
+public enum JobUpdate
+{
+    /// <summary>The report was written.</summary>
+    Applied,
+
+    /// <summary>The job is the agent's, and the report told it nothing it did not already know.</summary>
+    Ignored,
+
+    /// <summary>The job is not leased to this device on this attempt. The agent must stop.</summary>
+    NotLeased,
+}
+
 public sealed class AgentJobStore(Database database, TimeProvider? timeProvider = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -135,7 +148,7 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
         return resumed.Count;
     }
 
-    public bool Progress(string deviceId, string id, AgentJobProgress progress, int? attempt = null)
+    public JobUpdate Progress(string deviceId, string id, AgentJobProgress progress, int? attempt = null)
         => Update(deviceId, id, progress.State, progress.Percent, progress.Detail, attempt);
 
     public bool Complete(string deviceId, string id, AgentJobCompletion completion, int? attempt = null)
@@ -152,20 +165,20 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
         if (completion.Ok && completion.NeedsRestart)
         {
             return Update(deviceId, id, "succeeded", null, RebootState.WaitingDetail, attempt,
-                reboot: RebootState.Pending, installState: InstallState.Running);
+                reboot: RebootState.Pending, installState: InstallState.Running) is JobUpdate.Applied;
         }
 
-        return Update(deviceId, id, completion.Ok ? "succeeded" : "failed", null, detail, attempt);
+        return Update(deviceId, id, completion.Ok ? "succeeded" : "failed", null, detail, attempt) is JobUpdate.Applied;
     }
 
-    private bool Update(string deviceId, string id, string state, int? percent, string? detail, int? attempt,
+    private JobUpdate Update(string deviceId, string id, string state, int? percent, string? detail, int? attempt,
         string? reboot = null, InstallState? installState = null)
     {
         if (state is not ("queued" or "downloading" or "installing" or "waiting_for_user"
                           or "succeeded" or "failed" or "cancelled")
             || percent is < 0 or > 100)
         {
-            return false;
+            return JobUpdate.NotLeased;
         }
 
         var now = _time.GetUtcNow();
@@ -217,8 +230,32 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
             MirrorStep(connection, transaction, installId, id, state, detail);
         }
 
+        var outcome = installId is not null ? JobUpdate.Applied : Outcome(connection, transaction, deviceId, id, attempt);
         transaction.Commit();
-        return installId is not null;
+        return outcome;
+    }
+
+    /// <summary>
+    /// The update matched no row, and there are two reasons for that. The lease may be gone, which the
+    /// agent has to hear about. Or the guard above dropped a report that moved the state backwards,
+    /// which is deliberate and is not the agent's fault. One <c>false</c> for both is what turned every
+    /// machine-scope winget install into an endless retry: the agent read the conflict as fatal,
+    /// abandoned the run and queued it again, for ever.
+    /// </summary>
+    private static JobUpdate Outcome(SqliteConnection connection, SqliteTransaction transaction,
+        string deviceId, string id, int? attempt)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT 1 FROM agent_jobs
+            WHERE id = @id AND device_id = @device AND state IN ('leased', 'downloading', 'installing')
+              AND (@attempt IS NULL OR attempt = @attempt);
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@device", deviceId);
+        command.Parameters.AddWithValue("@attempt", (object?)attempt ?? DBNull.Value);
+        return command.ExecuteScalar() is not null ? JobUpdate.Ignored : JobUpdate.NotLeased;
     }
 
     public void RequeueExpired()

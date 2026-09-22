@@ -132,6 +132,23 @@ public sealed class PrerequisiteChainTests : IDisposable
     }
 
     [Fact]
+    public async Task A_hidden_app_cannot_be_asked_for_but_still_installs_as_a_prerequisite()
+    {
+        var runtime = _catalog.Find("runtime")!;
+        runtime.Hidden = true;
+        _catalog.Upsert(runtime);
+        Chain("game", "runtime");
+        using var client = Client();
+
+        var direct = await client.PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest("runtime"));
+        Assert.Equal(HttpStatusCode.NotFound, direct.StatusCode);
+
+        var install = await Start(client, "game");
+        Assert.Equal(2, install.StepCount);
+        Assert.Equal("A Runtime", install.StepName);
+    }
+
+    [Fact]
     public async Task The_app_somebody_asked_for_is_installed_even_if_the_device_thinks_it_has_it()
     {
         // Pressing Install and being told nothing happened helps nobody, whatever the inventory says.

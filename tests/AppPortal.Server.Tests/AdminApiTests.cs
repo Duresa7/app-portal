@@ -525,6 +525,25 @@ public sealed class AdminApiTests : IDisposable
     }
 
     [Fact]
+    public async Task An_agent_definition_is_read_with_its_kind_anywhere_and_refused_without_one()
+    {
+        var client = await Admin();
+
+        // A script or a hand-written body does not keep "kind" first.
+        var late = await client.PutAsync("/api/v1/admin/catalog/late", new StringContent("""
+            { "id": "late", "name": "Late kind",
+              "agent": { "manager": "choco", "id": "7zip", "scope": "machine", "kind": "managed" } }
+            """, System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, late.StatusCode);
+
+        // No kind at all is a mistake in the body, not a fault in the server.
+        var none = await client.PutAsync("/api/v1/admin/catalog/none", new StringContent("""
+            { "id": "none", "name": "No kind", "agent": { "id": "7zip", "scope": "machine" } }
+            """, System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, none.StatusCode);
+    }
+
+    [Fact]
     public async Task A_catalog_write_is_refused_when_it_is_incomplete_or_makes_a_loop()
     {
         var client = await Admin();

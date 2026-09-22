@@ -169,8 +169,12 @@ public sealed class InstallService(
 
     private async Task<InstallRecord> CreateCoreAsync(DeviceRecord device, string appId, string? requestedBy, CancellationToken ct)
     {
-        var app = catalog.Find(appId)
-                  ?? throw new InstallRejectedException(InstallRejection.UnknownApp, $"'{appId}' is not in the catalog.");
+        // A hidden app is no longer offered, so asking for it by id gets the same answer as an app that
+        // was never there. It can still be installed as another app's prerequisite: hiding a package
+        // manager keeps it off the list without breaking the apps that need it.
+        var app = catalog.Find(appId) is { Hidden: false } found
+            ? found
+            : throw new InstallRejectedException(InstallRejection.UnknownApp, $"'{appId}' is not in the catalog.");
 
         var existing = store.ForDeviceId(device.Id);
         if (existing.Any(r => r.IsActive && string.Equals(r.AppId, app.Id, StringComparison.OrdinalIgnoreCase)))

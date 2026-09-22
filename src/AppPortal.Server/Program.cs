@@ -1,5 +1,6 @@
 using AppPortal.Server.Action1;
 using AppPortal.Server.Admin;
+using AppPortal.Server.Admin.Api;
 using AppPortal.Server.Agent;
 using AppPortal.Server.Api;
 using AppPortal.Server.Catalog;
@@ -184,6 +185,7 @@ app.MapPortalApi();
 app.MapEnrollmentApi();
 app.MapAgentApi();
 app.MapAdminSessionApi();
+app.MapAdminApi();
 app.MapRazorPages();
 
 app.Run();

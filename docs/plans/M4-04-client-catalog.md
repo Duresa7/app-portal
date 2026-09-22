@@ -1,6 +1,6 @@
 # M4-04: Client admin, catalog
 
-**Milestone:** 4 (0.7.0)
+**Milestone:** 4 (0.8.0)
 **Depends on:** M4-02
 **Unlocks:** M4-06
 

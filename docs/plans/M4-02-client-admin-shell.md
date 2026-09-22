@@ -1,6 +1,6 @@
 # M4-02: Client admin sign-in and navigation
 
-**Milestone:** 4 (0.7.0)
+**Milestone:** 4 (0.8.0)
 **Depends on:** M4-01
 **Unlocks:** M4-03, M4-04, M4-05
 

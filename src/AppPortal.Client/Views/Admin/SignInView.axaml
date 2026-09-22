@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AppPortal.Client.ViewModels"
+             x:Class="AppPortal.Client.Views.Admin.SignInView"
+             x:DataType="vm:MainViewModel">
+    <!-- A dialog drawn inside the window, as a Windows 11 ContentDialog is: a smoke layer over the whole
+         window and a card in the middle. Inside the window rather than a second one, so a screenshot of
+         the window shows it and nothing can open it behind the app. -->
+    <Panel>
+        <!-- SmokeFillColorDefault, the same in both themes. -->
+        <Border Background="#4D000000" />
+        <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center"
+                Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                CornerRadius="{DynamicResource OverlayCornerRadius}" BoxShadow="0 8 32 0 #40000000" ClipToBounds="True">
+            <Grid RowDefinitions="*,Auto">
+                <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <PathIcon Data="{DynamicResource IconShield}" Width="20" Height="20" Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+                        <TextBlock Classes="subtitle" Text="Sign in to Admin" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Classes="secondary" TextWrapping="Wrap"
+                               Text="Use your App Portal administrator account. You stay signed in on this PC, for this Windows account only, until you sign out." />
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="caption" Text="User name" />
+                        <TextBox Text="{Binding SignInUsername}" IsEnabled="{Binding !IsSigningIn}" />
+                    </StackPanel>
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="caption" Text="Password" />
+                        <TextBox Text="{Binding SignInPassword}" PasswordChar="&#x2022;" IsEnabled="{Binding !IsSigningIn}" />
+                    </StackPanel>
+                    <ProgressBar Classes="thin" IsIndeterminate="True" IsVisible="{Binding IsSigningIn}" />
+                    <Border Classes="infoBar critical" IsVisible="{Binding SignInError, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                            <TextBlock Grid.Column="1" Text="{Binding SignInError}" TextWrapping="Wrap" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Classes="caption" TextWrapping="Wrap" IsVisible="{Binding IsDemo}"
+                               Text="Demo mode: sign in as admin with the password demo." />
+                </StackPanel>
+
+                <!-- The button row sits on the layer colour, as a ContentDialog's footer does. -->
+                <Border Grid.Row="1" Background="{DynamicResource LayerFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="24">
+                    <Grid ColumnDefinitions="*,8,*">
+                        <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" IsDefault="True"
+                                Content="Sign in" Command="{Binding SubmitSignInCommand}" IsEnabled="{Binding !IsSigningIn}" />
+                        <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="True"
+                                Content="Cancel" Command="{Binding CancelSignInCommand}" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+    </Panel>
+</UserControl>

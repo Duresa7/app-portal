@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using AppPortal.Client.Services;
+using AppPortal.Client.ViewModels.Admin;
 using AppPortal.Shared;
 
 using Avalonia;
@@ -24,6 +25,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "The update could not be requested. An administrator can check that the App Portal Agent service is running on this PC.";
 
     private readonly IPortalApiClient? _api;
+    private readonly IAdminSession? _adminSession;
     private readonly DispatcherTimer _timer;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private readonly IconCache _icons = new();
@@ -33,9 +35,21 @@ public sealed partial class MainViewModel : ViewModelBase
     {
     }
 
-    public MainViewModel(IPortalApiClient? api, ClientSettings settings, bool isDemo = false)
+    /// <param name="adminSession">Null when there is no server to sign in to, which hides the Admin item.</param>
+    public MainViewModel(IPortalApiClient? api, ClientSettings settings, bool isDemo = false, IAdminSession? adminSession = null)
     {
         _api = api;
+        _adminSession = adminSession;
+        if (adminSession is not null)
+        {
+            adminSession.Ended += OnAdminSessionEnded;
+            // A session kept from the last run opens the admin area straight away. Whether the server
+            // still honours it is found out by the first call, which ends it with a notice if not.
+            if (adminSession.IsSignedIn)
+            {
+                AdminArea = new AdminAreaViewModel(adminSession.Api, NavigateTo);
+            }
+        }
         IsDemo = isDemo;
         IsConfigured = api is not null && (settings.IsConfigured || isDemo);
         ConfigPath = ClientSettings.DefaultPath;
@@ -110,8 +124,10 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private DateTimeOffset? _lastRefreshed;
 
+    /// <summary>0 to 3 are the user sections; <see cref="AdminSections"/> numbers the admin pages from 10.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowApps), nameof(ShowInstalled), nameof(ShowActivity), nameof(ShowRequests))]
+    [NotifyPropertyChangedFor(nameof(ShowApps), nameof(ShowInstalled), nameof(ShowActivity), nameof(ShowRequests),
+        nameof(CurrentAdminPage), nameof(ShowAdmin))]
     private int _selectedSection;
 
     [ObservableProperty] private string _searchText = "";
@@ -126,6 +142,35 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool ShowInstalled => SelectedSection == 1;
     public bool ShowActivity => SelectedSection == 2;
     public bool ShowRequests => SelectedSection == 3;
+
+    /// <summary>Every admin page, while an administrator is signed in; null otherwise.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAdminSignedIn), nameof(ShowAdminEntry), nameof(AdminUsername),
+        nameof(CurrentAdminPage), nameof(ShowAdmin))]
+    private AdminAreaViewModel? _adminArea;
+
+    [ObservableProperty] private bool _isSignInOpen;
+    [ObservableProperty] private bool _isSigningIn;
+    [ObservableProperty] private string _signInUsername = "";
+    [ObservableProperty] private string _signInPassword = "";
+    [ObservableProperty] private string? _signInError;
+
+    /// <summary>Why the admin area closed without anybody asking it to. Stays until read and dismissed.</summary>
+    [ObservableProperty] private string? _adminNotice;
+
+    /// <summary>The Admin item needs a server to sign in to; a PC with no address configured has none.</summary>
+    public bool CanAdminister => _adminSession is not null;
+
+    public bool IsAdminSignedIn => AdminArea is not null;
+
+    /// <summary>The footer item that opens the sign-in. Once signed in, the admin group takes its place.</summary>
+    public bool ShowAdminEntry => CanAdminister && !IsAdminSignedIn;
+
+    public string AdminUsername => _adminSession?.Username ?? "";
+
+    public AdminPageViewModel? CurrentAdminPage => AdminArea?.PageFor(SelectedSection);
+
+    public bool ShowAdmin => CurrentAdminPage is not null;
 
     public string DeviceTitle => Device?.DeviceName ?? Environment.MachineName;
 
@@ -152,6 +197,10 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     partial void OnSearchTextChanged(string value) => ApplyFilter();
+
+    partial void OnSelectedSectionChanged(int value) => ShowAdminPage();
+
+    partial void OnAdminAreaChanged(AdminAreaViewModel? value) => ShowAdminPage();
 
     partial void OnSelectedCategoryChanged(string value) => ApplyFilter();
 
@@ -265,6 +314,98 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private void OpenSignIn()
+    {
+        SignInError = null;
+        SignInPassword = "";
+        IsSignInOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelSignIn()
+    {
+        IsSignInOpen = false;
+        SignInError = null;
+        SignInPassword = "";
+        // Asked for an admin page while signed out and then thought better of it: back to the apps
+        // rather than an empty page with no navigation item lit.
+        if (AdminArea is null && SelectedSection >= AdminSections.Dashboard)
+        {
+            SelectedSection = 0;
+        }
+    }
+
+    [RelayCommand]
+    private Task SubmitSignInAsync() => SignInAdminAsync(SignInUsername, SignInPassword);
+
+    /// <summary>
+    /// Signs an administrator in and opens the admin area on the page that was asked for, or on the
+    /// dashboard. False, with <see cref="SignInError"/> set, when the server says no.
+    /// </summary>
+    public async Task<bool> SignInAdminAsync(string username, string password)
+    {
+        if (_adminSession is null)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
+        {
+            SignInError = "Enter your administrator user name and password.";
+            return false;
+        }
+
+        IsSigningIn = true;
+        SignInError = null;
+        try
+        {
+            await _adminSession.SignInAsync(username, password, CancellationToken.None);
+        }
+        catch (PortalApiException ex)
+        {
+            SignInError = ex.Message;
+            return false;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SignInError = "Something went wrong signing in. " + ex.Message;
+            return false;
+        }
+        finally
+        {
+            IsSigningIn = false;
+            // Not kept a moment longer than the attempt, whichever way it went.
+            SignInPassword = "";
+        }
+
+        IsSignInOpen = false;
+        AdminNotice = null;
+        // The area first, then the page: a section of 10 or more with no area is what opens this dialog.
+        AdminArea = new AdminAreaViewModel(_adminSession.Api, NavigateTo);
+        if (SelectedSection < AdminSections.Dashboard)
+        {
+            SelectedSection = AdminSections.Dashboard;
+        }
+
+        return true;
+    }
+
+    [RelayCommand]
+    private async Task SignOutAsync()
+    {
+        if (_adminSession is null)
+        {
+            return;
+        }
+
+        await _adminSession.SignOutAsync(CancellationToken.None);
+        LeaveAdmin();
+    }
+
+    [RelayCommand]
+    private void DismissAdminNotice() => AdminNotice = null;
+
     /// <summary>Asks the agent to look for an update. It downloads and installs; this app only asks.</summary>
     [RelayCommand]
     private void UpdateNow()
@@ -301,6 +442,70 @@ public sealed partial class MainViewModel : ViewModelBase
 
         await Task.Delay(300);
         (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+    }
+
+    private void NavigateTo(int section) => SelectedSection = section;
+
+    /// <summary>
+    /// The session ended under a page: revoked on the web, expired, or the account disabled. Whatever
+    /// the page was doing is moot, so the admin area closes and the person is told why.
+    /// </summary>
+    private void OnAdminSessionEnded(object? sender, string message)
+    {
+        LeaveAdmin();
+        AdminNotice = message;
+    }
+
+    private void LeaveAdmin()
+    {
+        // The page first, then the area, the reverse of signing in: an admin section with no area
+        // left behind it would open the sign-in dialog again.
+        if (SelectedSection >= AdminSections.Dashboard)
+        {
+            SelectedSection = 0;
+        }
+
+        AdminArea = null;
+    }
+
+    /// <summary>Lights the page's navigation item and has the page load what it shows.</summary>
+    private void ShowAdminPage()
+    {
+        if (AdminArea is null)
+        {
+            // An admin page asked for by number, from --screenshot, while nobody is signed in.
+            if (SelectedSection >= AdminSections.Dashboard && CanAdminister)
+            {
+                IsSignInOpen = true;
+            }
+
+            return;
+        }
+
+        var current = AdminArea.PageFor(SelectedSection);
+        foreach (var page in AdminArea.Pages)
+        {
+            page.IsSelected = page == current;
+        }
+
+        if (current is not null)
+        {
+            _ = ActivateAsync(current);
+        }
+    }
+
+    private static async Task ActivateAsync(AdminPageViewModel page)
+    {
+        try
+        {
+            await page.ActivateAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Fire and forget from a click, so anything a page did not catch would otherwise reach
+            // the dispatcher and end the process.
+            page.ErrorMessage = "Something went wrong talking to the App Portal server. " + ex.Message;
+        }
     }
 
     private void ReadUpdateStatus()

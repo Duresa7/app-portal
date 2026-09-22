@@ -200,7 +200,7 @@ $catalogFile = Join-Path $LogDirectory 'ci-catalog.json'
         id = 'ci-managed'
         name = 'CI managed package'
         userRemovable = $true
-        agent = @{ kind = 'managed'; manager = 'powershell5-module'; id = $managedModule; scope = 'machine' }
+        agent = [ordered]@{ kind = 'managed'; manager = 'powershell5-module'; id = $managedModule; scope = 'machine' }
     })
 } | ConvertTo-Json -Depth 5 | Set-Content -Path $catalogFile -Encoding utf8
 dotnet $ServerDll catalog import $catalogFile

@@ -19,6 +19,18 @@ public sealed class CatalogStoreTests
     }
 
     [Fact]
+    public void An_agent_definition_may_name_its_kind_anywhere()
+    {
+        // A PowerShell hashtable, or a person editing by hand, does not keep "kind" first.
+        var app = Assert.Single(CatalogStore.Parse("""
+            { "apps": [ { "id": "yaml", "name": "YAML",
+              "agent": { "manager": "powershell5-module", "id": "powershell-yaml", "scope": "machine", "kind": "managed" } } ] }
+            """));
+
+        Assert.Equal("powershell-yaml", Assert.IsType<ManagedPackageDefinition>(app.Agent).Id);
+    }
+
+    [Fact]
     public void Match_rules_fall_back_to_the_app_name()
     {
         var entries = CatalogStore.Parse("""

@@ -185,6 +185,9 @@ public sealed class CatalogStore
     {
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
+        // A catalog is written by hand or by a script, and neither keeps "kind" first in an agent
+        // definition. Without this, a kind anywhere else reads as no kind at all.
+        AllowOutOfOrderMetadataProperties = true,
         Converters = { new JsonStringEnumConverter() },
     };
 

@@ -74,6 +74,8 @@ public sealed class DemoAdminApiClient : IAdminApiClient
             AppRequestStatus.Approved, "Added to the catalog, it should appear within the hour.", DemoUsername, now.AddDays(-4), now.AddDays(-3)));
         _requests.Add(new AdminRequest("req-4", "A licence for the full Acrobat", "FINANCE-LT-04", @"CONTOSO\pkaur",
             AppRequestStatus.Denied, "We have no spare licences this quarter.", "helpdesk", now.AddDays(-9), now.AddDays(-8)));
+
+        AddInstallAndRequestHistory(now);
     }
 
     public string? Token { get; set; }
@@ -117,7 +119,8 @@ public sealed class DemoAdminApiClient : IAdminApiClient
 
     public Task<AdminPage<AdminInstall>> GetInstallsAsync(AdminInstallFilter filter, int offset, int limit, CancellationToken ct)
         => Guarded(() => Page(_installs
-            .Where(i => filter.Device is null || i.DeviceName.Contains(filter.Device, StringComparison.OrdinalIgnoreCase))
+            // The whole name, as the server matches it: the web page picks a device from a list, not by typing part of one.
+            .Where(i => filter.Device is null || string.Equals(i.DeviceName, filter.Device, StringComparison.OrdinalIgnoreCase))
             .Where(i => filter.AppId is null || string.Equals(i.AppId, filter.AppId, StringComparison.OrdinalIgnoreCase))
             .Where(i => filter.State is null || i.State == filter.State)
             .Where(i => filter.Requester is null || (i.RequestedBy ?? "").Contains(filter.Requester, StringComparison.OrdinalIgnoreCase))
@@ -132,17 +135,23 @@ public sealed class DemoAdminApiClient : IAdminApiClient
     public Task<AdminInstall> CancelInstallAsync(string id, CancellationToken ct)
         => Guarded(() =>
         {
+            // The server's rules and words, so the page meets the same refusals here as it would there.
             var install = Find(_installs, i => i.Id == id, "No such install.");
             if (install.State is not (InstallState.Queued or InstallState.Running))
             {
-                throw new PortalApiException("That install has already finished.", HttpStatusCode.Conflict);
+                throw new PortalApiException($"{install.AppName} has already finished, so there is nothing to stop.", HttpStatusCode.Conflict);
+            }
+
+            if (install.Engine != EngineLabel.Agent)
+            {
+                throw new PortalApiException($"{install.AppName} is being installed by Action1 and has to be stopped there.", HttpStatusCode.Conflict);
             }
 
             return Replace(_installs, install, install with
             {
                 State = InstallState.Cancelled,
                 CompletedAt = DateTimeOffset.Now,
-                Detail = $"Cancelled by {DemoUsername}.",
+                Detail = $"Stopped by {DemoUsername}.",
             });
         });
 
@@ -483,15 +492,47 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         => _catalog.Add(new AdminCatalogApp(id, name, publisher, $"{name}, installed the same way on every device.", category,
             Featured: featured, Hidden: hidden, Action1: new AdminAction1Package(id)));
 
-    private void AddInstall(string deviceId, string appId, InstallState state, DateTimeOffset requestedAt, int percent, string detail)
+    private void AddInstall(string deviceId, string appId, InstallState state, DateTimeOffset requestedAt, int percent, string detail,
+        string requestedBy = @"CONTOSO\alee", string kind = InstallKind.Install)
     {
         var device = _devices.First(d => d.Id == deviceId);
         var app = _catalog.First(a => a.Id == appId);
-        var finished = state is InstallState.Succeeded or InstallState.Failed ? requestedAt.AddMinutes(2) : (DateTimeOffset?)null;
-        _installs.Add(new AdminInstall("ins-" + (_installs.Count + 1), app.Id, app.Name, device.Id, device.Name, device.EndpointId,
-            @"CONTOSO\alee", device.HasAgent ? EngineLabel.Agent : EngineLabel.Action1, InstallKind.Install, state, percent, detail,
-            null, null, 0, 0, requestedAt, finished, finished ?? DateTimeOffset.Now, null));
+        var finished = state is InstallState.Succeeded or InstallState.Failed or InstallState.Cancelled
+            ? requestedAt.AddMinutes(2)
+            : (DateTimeOffset?)null;
+        var engine = device.HasAgent ? EngineLabel.Agent : EngineLabel.Action1;
+        var number = _installs.Count + 1;
+        // Only Action1 runs an install under an automation of its own, so only its rows carry a reference.
+        _installs.Add(new AdminInstall("ins-" + number, app.Id, app.Name, device.Id, device.Name, device.EndpointId,
+            requestedBy, engine, kind, state, percent, detail,
+            null, null, 0, 0, requestedAt, finished, finished ?? DateTimeOffset.Now,
+            engine == EngineLabel.Action1 ? $"auto-{number:D4}" : null));
         var index = _devices.IndexOf(device);
         _devices[index] = device with { InstallCount = device.InstallCount + 1 };
+    }
+
+    /// <summary>
+    /// History for the installs and requests pages, beyond what the dashboard needs: more than one
+    /// requester and every state, a removal, an Action1 install that cannot be stopped from here, and
+    /// more than one pending request to work through.
+    /// </summary>
+    private void AddInstallAndRequestHistory(DateTimeOffset now)
+    {
+        AddInstall("dev-3", "vscode", InstallState.Running, now.AddMinutes(-8), 70, "Running the installer.", @"CONTOSO\mjones");
+        AddInstall("dev-4", "google-chrome", InstallState.Running, now.AddMinutes(-12), 30, "Action1 is deploying the package.", @"CONTOSO\tbrown");
+        AddInstall("dev-2", "obs", InstallState.Cancelled, now.AddHours(-3), 20, "Stopped by helpdesk.", @"CONTOSO\pkaur");
+        AddInstall("dev-5", "obs", InstallState.Succeeded, now.AddHours(-30), 100, "The packages have been removed successfully.",
+            @"CONTOSO\alee", InstallKind.Uninstall);
+        AddInstall("dev-3", "mozilla-firefox", InstallState.Succeeded, now.AddDays(-3), 100, "The packages have been installed successfully.", @"CONTOSO\mjones");
+        AddInstall("dev-1", "7-zip", InstallState.Failed, now.AddDays(-6), 0, "The download failed: the connection was reset.", @"CONTOSO\tbrown");
+        AddInstall("dev-4", "7-zip", InstallState.Succeeded, now.AddDays(-12), 100, "The packages have been installed successfully.", @"CONTOSO\tbrown");
+        AddInstall("dev-2", "google-chrome", InstallState.Succeeded, now.AddDays(-13), 100, "The packages have been installed successfully.", @"CONTOSO\pkaur");
+
+        _requests.Add(new AdminRequest("req-5", "Zoom Workplace, for customer calls", "WAREHOUSE-TAB-1", @"CONTOSO\tbrown",
+            AppRequestStatus.Pending, null, null, now.AddMinutes(-40), null));
+        _requests.Add(new AdminRequest("req-6", "Power BI Desktop, for the monthly figures", "FINANCE-LT-04", null,
+            AppRequestStatus.Approved, null, "helpdesk", now.AddDays(-6), now.AddDays(-6).AddHours(2)));
+        _requests.Add(new AdminRequest("req-7", "A game for the break room PC", "RECEPTION-01", @"CONTOSO\alee",
+            AppRequestStatus.Denied, "Work devices only run work software.", DemoUsername, now.AddDays(-15), now.AddDays(-15).AddMinutes(20)));
     }
 }

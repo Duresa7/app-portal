@@ -1,9 +1,324 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:admin="using:AppPortal.Client.ViewModels.Admin"
-             xmlns:views="using:AppPortal.Client.Views.Admin"
              x:Class="AppPortal.Client.Views.Admin.InstallsView"
              x:DataType="admin:InstallsViewModel">
-    <!-- Placeholder until M4-03 builds this page. -->
-    <views:ComingSoonPanel />
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Escape" Command="{Binding CloseDetailCommand}" />
+    </UserControl.KeyBindings>
+
+    <UserControl.Styles>
+        <Style Selector="Border.infoBar.success">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+        </Style>
+
+        <!-- The state as a dot, the colours Activity uses for the same states. -->
+        <Style Selector="Border.state">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+        </Style>
+        <Style Selector="Border.state.succeeded">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+        </Style>
+        <Style Selector="Border.state.failed">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+        </Style>
+        <Style Selector="Border.state.cancelled">
+            <Setter Property="Background" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+        </Style>
+
+        <!-- The table sits in a card, so it draws no frame or fill of its own. -->
+        <Style Selector="DataGrid.fleet">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="RowBackground" Value="Transparent" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource DividerStrokeColorDefaultBrush}" />
+        </Style>
+        <!-- The header template keeps room on the right for a sort arrow. Sorting is the server's here, so
+             the right padding goes instead, to keep the header words whole. -->
+        <Style Selector="DataGrid.fleet DataGridColumnHeader">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="12,0,0,0" />
+        </Style>
+        <Style Selector="DataGrid.fleet TextBlock.cell">
+            <Setter Property="Margin" Value="12,8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <!-- One label and value in the flyout, as the web detail page's definition list. -->
+        <Style Selector="StackPanel.field">
+            <Setter Property="Spacing" Value="2" />
+        </Style>
+        <Style Selector="StackPanel.field > TextBlock">
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="0,0,0,20">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Grid.Column="0" Classes="title" Text="Installs" />
+            <ProgressBar Grid.Column="1" IsIndeterminate="True" Classes="thin" Width="80" HorizontalAlignment="Left"
+                         VerticalAlignment="Center" Margin="12,8,0,0" IsVisible="{Binding IsBusy}" />
+            <Button Grid.Column="2" Classes="standard" Command="{Binding RefreshCommand}" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <PathIcon Data="{DynamicResource IconRefresh}" />
+                    <TextBlock Text="Refresh" />
+                </StackPanel>
+            </Button>
+        </Grid>
+        <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,16" TextWrapping="Wrap"
+                   Text="Every install and removal across the fleet, newest first. Active rows update every 30 seconds." />
+
+        <StackPanel Grid.Row="2" Spacing="8">
+            <Border Classes="infoBar critical" Margin="0,0,0,8"
+                    IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+            <Border Classes="infoBar success" Margin="0,0,0,8"
+                    IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <PathIcon Grid.Column="0" Data="{DynamicResource IconCheck}" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Notice}" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+        </StackPanel>
+
+        <!-- The web page's filter row: each box narrows the result, and nothing applies until Filter. -->
+        <Border Grid.Row="3" Classes="card" Padding="16,12,4,4" Margin="0,0,0,12">
+            <WrapPanel Orientation="Horizontal">
+                <StackPanel Spacing="6" Margin="0,0,12,8" Width="170">
+                    <TextBlock Classes="caption" Text="Device" />
+                    <ComboBox Classes="filter" HorizontalAlignment="Stretch" ItemsSource="{Binding DeviceOptions}" SelectedItem="{Binding SelectedDevice}" />
+                </StackPanel>
+                <StackPanel Spacing="6" Margin="0,0,12,8" Width="190">
+                    <TextBlock Classes="caption" Text="App" />
+                    <ComboBox Classes="filter" HorizontalAlignment="Stretch" ItemsSource="{Binding AppOptions}" SelectedItem="{Binding SelectedApp}" />
+                </StackPanel>
+                <StackPanel Spacing="6" Margin="0,0,12,8" Width="130">
+                    <TextBlock Classes="caption" Text="State" />
+                    <ComboBox Classes="filter" HorizontalAlignment="Stretch" ItemsSource="{Binding StateOptions}" SelectedItem="{Binding SelectedState}" />
+                </StackPanel>
+                <StackPanel Spacing="6" Margin="0,0,12,8" Width="170">
+                    <TextBlock Classes="caption" Text="Requested by" />
+                    <TextBox Classes="search" Text="{Binding Requester}" PlaceholderText="Any">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Gesture="Enter" Command="{Binding ApplyFilterCommand}" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                </StackPanel>
+                <StackPanel Spacing="6" Margin="0,0,12,8" Width="150">
+                    <TextBlock Classes="caption" Text="From" />
+                    <CalendarDatePicker HorizontalAlignment="Stretch" SelectedDate="{Binding From}" PlaceholderText="Any day" />
+                </StackPanel>
+                <StackPanel Spacing="6" Margin="0,0,12,8" Width="150">
+                    <TextBlock Classes="caption" Text="To" />
+                    <CalendarDatePicker HorizontalAlignment="Stretch" SelectedDate="{Binding To}" PlaceholderText="Any day" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,12,8" VerticalAlignment="Bottom">
+                    <Button Classes="accent" Content="Filter" Command="{Binding ApplyFilterCommand}" />
+                    <Button Classes="standard" Content="Clear" Command="{Binding ClearFiltersCommand}" />
+                </StackPanel>
+            </WrapPanel>
+        </Border>
+
+        <Grid Grid.Row="4">
+            <Border Classes="card" Padding="4">
+                <Panel>
+                    <DataGrid Classes="fleet" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                              IsReadOnly="True" SelectionMode="Single" HeadersVisibility="Column"
+                              CanUserSortColumns="False" CanUserReorderColumns="False" CanUserResizeColumns="True">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Requested" Width="112">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:InstallRowViewModel">
+                                        <TextBlock Classes="cell secondary" TextWrapping="Wrap" Text="{Binding RequestedText}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <!-- Device and requester share a column, as App and its id do: the web table's
+                                 seven columns do not fit beside the navigation pane at the default size. -->
+                            <DataGridTemplateColumn Header="Device" Width="*" MinWidth="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:InstallRowViewModel">
+                                        <StackPanel Margin="12,8" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DeviceName}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Classes="caption" Text="{Binding RequesterText, StringFormat='by {0}'}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="App" Width="*" MinWidth="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:InstallRowViewModel">
+                                        <StackPanel Margin="12,8" Spacing="0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding AppName}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Classes="caption" Text="{Binding AppId}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Engine" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:InstallRowViewModel">
+                                        <TextBlock Classes="cell secondary" Text="{Binding EngineText}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="State" Width="*" MinWidth="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:InstallRowViewModel">
+                                        <StackPanel Margin="12,8" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Classes="state" Classes.succeeded="{Binding IsSucceeded}"
+                                                        Classes.failed="{Binding IsFailed}" Classes.cancelled="{Binding IsCancelled}" />
+                                                <TextBlock Text="{Binding StateText}" />
+                                            </StackPanel>
+                                            <TextBlock Classes="caption" Text="{Binding DetailText}" IsVisible="{Binding HasDetail}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Completed" Width="112">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:InstallRowViewModel">
+                                        <TextBlock Classes="cell secondary" TextWrapping="Wrap" Text="{Binding CompletedText}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock Classes="secondary" Margin="12,48,12,12" Text="No installs match."
+                               IsVisible="{Binding !HasRows}" />
+                </Panel>
+            </Border>
+
+            <!-- The web detail page as a flyout over the right of the table, so the list stays in view
+                 behind it and the arrow keys walk the rows while it follows. -->
+            <Border Width="360" HorizontalAlignment="Right" Margin="0,0,0,0" IsVisible="{Binding IsDetailOpen}"
+                    Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                    CornerRadius="{DynamicResource OverlayCornerRadius}" BoxShadow="0 8 24 0 #33000000" ClipToBounds="True">
+                <Grid RowDefinitions="Auto,*,Auto" DataContext="{Binding SelectedRow}" x:DataType="admin:InstallRowViewModel">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="20,16,12,8">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Classes="subtitle" Text="{Binding AppName}" TextWrapping="Wrap" />
+                            <TextBlock Classes="caption" Text="{Binding AppId}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="standard" Content="Close" VerticalAlignment="Top"
+                                Command="{Binding $parent[UserControl].((admin:InstallsViewModel)DataContext).CloseDetailCommand}" />
+                    </Grid>
+
+                    <ScrollViewer Grid.Row="1" Padding="20,4,20,12">
+                        <StackPanel Spacing="12">
+                            <StackPanel Classes="field">
+                                <TextBlock Classes="caption" Text="State" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Classes="state" Classes.succeeded="{Binding IsSucceeded}"
+                                            Classes.failed="{Binding IsFailed}" Classes.cancelled="{Binding IsCancelled}" />
+                                    <TextBlock Classes="bodyStrong" Text="{Binding StateText}" />
+                                </StackPanel>
+                                <TextBlock Classes="secondary" Text="{Binding StepText}" IsVisible="{Binding HasStep}" />
+                            </StackPanel>
+                            <StackPanel Classes="field">
+                                <TextBlock Classes="caption" Text="Detail" />
+                                <TextBlock Text="{Binding DetailText}" IsVisible="{Binding HasDetail}" />
+                                <TextBlock Text="—" IsVisible="{Binding !HasDetail}" />
+                            </StackPanel>
+                            <UniformGrid Columns="2">
+                                <StackPanel Classes="field" Margin="0,0,12,12">
+                                    <TextBlock Classes="caption" Text="Device" />
+                                    <TextBlock Text="{Binding DeviceName}" />
+                                </StackPanel>
+                                <StackPanel Classes="field" Margin="0,0,0,12">
+                                    <TextBlock Classes="caption" Text="Requested by" />
+                                    <TextBlock Text="{Binding RequesterText}" />
+                                </StackPanel>
+                                <StackPanel Classes="field" Margin="0,0,12,12">
+                                    <TextBlock Classes="caption" Text="Kind" />
+                                    <TextBlock Text="{Binding KindText}" />
+                                </StackPanel>
+                                <StackPanel Classes="field" Margin="0,0,0,12">
+                                    <TextBlock Classes="caption" Text="Engine" />
+                                    <TextBlock Text="{Binding EngineText}" />
+                                </StackPanel>
+                                <StackPanel Classes="field" Margin="0,0,12,12">
+                                    <TextBlock Classes="caption" Text="Requested at" />
+                                    <TextBlock Text="{Binding RequestedText}" />
+                                </StackPanel>
+                                <StackPanel Classes="field" Margin="0,0,0,12">
+                                    <TextBlock Classes="caption" Text="Completed at" />
+                                    <TextBlock Text="{Binding CompletedText}" />
+                                </StackPanel>
+                                <StackPanel Classes="field" Margin="0,0,12,0">
+                                    <TextBlock Classes="caption" Text="Last checked" />
+                                    <TextBlock Text="{Binding LastCheckedText}" />
+                                </StackPanel>
+                            </UniformGrid>
+                            <StackPanel Classes="field">
+                                <TextBlock Classes="caption" Text="Action1 endpoint" />
+                                <SelectableTextBlock Text="{Binding EndpointText}" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Classes="field">
+                                <TextBlock Classes="caption" Text="External reference" />
+                                <SelectableTextBlock Text="{Binding ReferenceText}" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12" />
+                                <TextBlock Classes="caption" Text="The automation instance Action1 is running this under." />
+                            </StackPanel>
+                            <StackPanel Classes="field">
+                                <TextBlock Classes="caption" Text="Id" />
+                                <SelectableTextBlock Text="{Binding Install.Id}" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- The footer sits on the layer colour, as the sign-in dialog's does. -->
+                    <Border Grid.Row="2" Background="{DynamicResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="20,14">
+                        <StackPanel Spacing="10">
+                            <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding StopUnavailableText}"
+                                       IsVisible="{Binding StopUnavailableText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <StackPanel Spacing="8"
+                                        IsVisible="{Binding $parent[UserControl].((admin:InstallsViewModel)DataContext).IsConfirmingStop}">
+                                <TextBlock TextWrapping="Wrap"
+                                           Text="Stop this install? An installer already running on the PC will finish there." />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="accent" Content="Stop"
+                                            Command="{Binding $parent[UserControl].((admin:InstallsViewModel)DataContext).StopCommand}" />
+                                    <Button Classes="standard" Content="Keep running"
+                                            Command="{Binding $parent[UserControl].((admin:InstallsViewModel)DataContext).KeepRunningCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <WrapPanel Orientation="Horizontal"
+                                       IsVisible="{Binding !$parent[UserControl].((admin:InstallsViewModel)DataContext).IsConfirmingStop}">
+                                <Button Classes="standard" Content="Stop this install" Margin="0,0,8,0" IsVisible="{Binding CanStop}"
+                                        IsEnabled="{Binding !$parent[UserControl].((admin:InstallsViewModel)DataContext).IsStopping}"
+                                        Command="{Binding $parent[UserControl].((admin:InstallsViewModel)DataContext).AskToStopCommand}" />
+                                <Button Classes="standard" Content="Everything on this device"
+                                        Command="{Binding $parent[UserControl].((admin:InstallsViewModel)DataContext).ShowDeviceInstallsCommand}" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- The web pager: where this page sits in the whole, and a step either way. -->
+        <Grid Grid.Row="5" ColumnDefinitions="*,Auto,Auto" Margin="0,10,0,0" IsVisible="{Binding HasPager}">
+            <TextBlock Grid.Column="0" Classes="secondary" VerticalAlignment="Center" Text="{Binding PagerText}" />
+            <Button Grid.Column="1" Classes="standard" Content="Newer" Margin="0,0,8,0" Command="{Binding NewerCommand}" />
+            <Button Grid.Column="2" Classes="standard" Content="Older" Command="{Binding OlderCommand}" />
+        </Grid>
+    </Grid>
 </UserControl>

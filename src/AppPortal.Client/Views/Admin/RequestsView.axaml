@@ -1,9 +1,203 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:admin="using:AppPortal.Client.ViewModels.Admin"
-             xmlns:views="using:AppPortal.Client.Views.Admin"
              x:Class="AppPortal.Client.Views.Admin.RequestsView"
              x:DataType="admin:RequestsViewModel">
-    <!-- Placeholder until M4-03 builds this page. -->
-    <views:ComingSoonPanel />
+
+    <UserControl.Styles>
+        <Style Selector="Border.infoBar.success">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+        </Style>
+
+        <!-- The decision as a dot, the colours the user's own Requests page gives the same statuses. -->
+        <Style Selector="Border.status">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+        </Style>
+        <Style Selector="Border.status.approved">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+        </Style>
+        <Style Selector="Border.status.denied">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+        </Style>
+
+        <Style Selector="DataGrid.queue">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="RowBackground" Value="Transparent" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource DividerStrokeColorDefaultBrush}" />
+        </Style>
+        <!-- The header template keeps room on the right for a sort arrow. Sorting is the server's here, so
+             the right padding goes instead, to keep the header words whole. -->
+        <Style Selector="DataGrid.queue DataGridColumnHeader">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="12,0,0,0" />
+        </Style>
+        <Style Selector="DataGrid.queue TextBlock.cell">
+            <Setter Property="Margin" Value="12,8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="0,0,0,20">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Classes="title" Text="Requests" />
+                <ProgressBar Grid.Column="1" IsIndeterminate="True" Classes="thin" Width="80" HorizontalAlignment="Left"
+                             VerticalAlignment="Center" Margin="12,8,0,0" IsVisible="{Binding IsBusy}" />
+                <Button Grid.Column="2" Classes="standard" Command="{Binding RefreshCommand}" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <PathIcon Data="{DynamicResource IconRefresh}" />
+                        <TextBlock Text="Refresh" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,16" TextWrapping="Wrap"
+                       Text="Software people have asked for. Approve or deny each one, with a reason they will see on their device." />
+
+            <StackPanel Grid.Row="2">
+                <Border Classes="infoBar critical" Margin="0,0,0,12"
+                        IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                        <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+                    </Grid>
+                </Border>
+                <Border Classes="infoBar success" Margin="0,0,0,12"
+                        IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <PathIcon Grid.Column="0" Data="{DynamicResource IconCheck}" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Notice}" TextWrapping="Wrap" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <!-- The web page's four tabs. A TabStrip, so the arrow keys move between them. -->
+            <TabStrip Grid.Row="3" Margin="-12,0,0,8" ItemsSource="{Binding TabItems}" SelectedItem="{Binding SelectedTab}">
+                <TabStrip.ItemTemplate>
+                    <DataTemplate x:DataType="admin:RequestTab">
+                        <TextBlock Text="{Binding Label}" FontSize="14" />
+                    </DataTemplate>
+                </TabStrip.ItemTemplate>
+            </TabStrip>
+
+            <Border Grid.Row="4" Classes="card" Padding="4">
+                <Panel>
+                    <DataGrid Classes="queue" ItemsSource="{Binding Rows}" IsReadOnly="True" SelectionMode="Single"
+                              HeadersVisibility="Column" CanUserSortColumns="False" CanUserReorderColumns="False">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Submitted" Width="112">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:RequestRowViewModel">
+                                        <TextBlock Classes="cell secondary" TextWrapping="Wrap" Text="{Binding SubmittedText}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <!-- Device and requester share a column, and the decision column carries the two
+                                 buttons: the web table's six columns do not fit beside the navigation pane. -->
+                            <DataGridTemplateColumn Header="Device" Width="*" MinWidth="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:RequestRowViewModel">
+                                        <StackPanel Margin="12,8" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DeviceName}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Classes="caption" Text="{Binding RequesterText, StringFormat='by {0}'}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="What was asked for" Width="1.5*" MinWidth="170">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:RequestRowViewModel">
+                                        <TextBlock Margin="12,8" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding Text}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Decision" Width="*" MinWidth="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="admin:RequestRowViewModel">
+                                        <StackPanel Margin="12,8" VerticalAlignment="Center" Spacing="2">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Classes="status" Classes.approved="{Binding IsApproved}" Classes.denied="{Binding IsDenied}" />
+                                                <TextBlock Text="{Binding StatusText}" />
+                                            </StackPanel>
+                                            <TextBlock Classes="caption" Text="{Binding ReasonText}" TextWrapping="Wrap" IsVisible="{Binding !IsPending}" />
+                                            <TextBlock Classes="caption" Text="{Binding DecidedText}" TextWrapping="Wrap" IsVisible="{Binding !IsPending}" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0" IsVisible="{Binding CanDecide}">
+                                                <Button Classes="accent" Content="Approve" Command="{Binding ApproveCommand}" />
+                                                <Button Classes="standard" Content="Deny" Command="{Binding DenyCommand}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock Classes="secondary" Margin="12,48,12,12" Text="Nothing here." IsVisible="{Binding !HasRows}" />
+                </Panel>
+            </Border>
+
+            <!-- The web pager: no total, only whether there is another page, as the web shows it. -->
+            <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0" HorizontalAlignment="Right"
+                        IsVisible="{Binding HasPager}">
+                <Button Classes="standard" Content="Previous" Command="{Binding PreviousCommand}" />
+                <TextBlock Classes="secondary" VerticalAlignment="Center" Margin="4,0" Text="{Binding PageText}" />
+                <Button Classes="standard" Content="Next" Command="{Binding NextCommand}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- The decision, as a ContentDialog: a smoke layer over the whole window and a card in the middle,
+             like the sign-in. A page cannot draw past its own edges, so this goes to the window's overlay
+             layer, which is still inside the window: a screenshot shows it and nothing opens behind the app.
+             The reason is optional and reaches the person who asked. -->
+        <Popup Name="DecisionPopup" IsOpen="{Binding IsDecisionOpen}" ShouldUseOverlayLayer="True" IsLightDismissEnabled="False"
+               PlacementTarget="{Binding $parent[Window]}" Placement="Center">
+            <Panel Width="{Binding $parent[Window].Bounds.Width, FallbackValue=0}" Height="{Binding $parent[Window].Bounds.Height, FallbackValue=0}">
+                <!-- SmokeFillColorDefault, the same in both themes. -->
+                <Border Background="#4D000000" />
+                <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                        CornerRadius="{DynamicResource OverlayCornerRadius}" BoxShadow="0 8 32 0 #40000000" ClipToBounds="True">
+                    <Grid RowDefinitions="*,Auto">
+                        <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                            <TextBlock Classes="subtitle" Text="{Binding DecisionTitle}" />
+                            <Border Classes="card" Padding="12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="{Binding Deciding.Text, FallbackValue=''}" TextWrapping="Wrap" />
+                                    <TextBlock Classes="caption" TextWrapping="Wrap">
+                                        <Run Text="{Binding Deciding.RequesterText, FallbackValue=''}" />
+                                        <Run Text=" on " />
+                                        <Run Text="{Binding Deciding.DeviceName, FallbackValue=''}" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="caption" Text="Reason (optional)" />
+                                <TextBox Name="ReasonBox" Text="{Binding Reason}" AcceptsReturn="False" TextWrapping="Wrap" MinHeight="64"
+                                         MaxLength="{Binding ReasonMaxLength}" PlaceholderText="Shown to whoever asked" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border Grid.Row="1" Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="24">
+                            <Grid ColumnDefinitions="*,8,*">
+                                <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" IsDefault="True"
+                                        Content="{Binding DecisionButtonText}" Command="{Binding ConfirmDecisionCommand}" />
+                                <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="True"
+                                        Content="Cancel" Command="{Binding CancelDecisionCommand}" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Panel>
+        </Popup>
+    </Panel>
 </UserControl>

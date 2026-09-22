@@ -157,12 +157,15 @@
                             </Grid>
                         </Button>
                         <Button Classes="nav" Classes.selected="{Binding AdminArea.Requests.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="13">
-                            <Grid ColumnDefinitions="Auto,*">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
                                 <Border Classes="indicator" Grid.Column="0" />
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
                                     <PathIcon Data="{StaticResource IconRequests}" />
                                     <TextBlock Text="Requests" VerticalAlignment="Center" />
                                 </StackPanel>
+                                <Border Grid.Column="2" Classes="infoBadge" Margin="0,0,12,0" IsVisible="{Binding AdminArea.Requests.HasPending, FallbackValue=False}">
+                                    <TextBlock Text="{Binding AdminArea.Requests.PendingCount, FallbackValue=''}" />
+                                </Border>
                             </Grid>
                         </Button>
                         <Button Classes="nav" Classes.selected="{Binding AdminArea.Devices.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="14">

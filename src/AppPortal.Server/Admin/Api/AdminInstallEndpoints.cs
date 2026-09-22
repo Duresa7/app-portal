@@ -3,7 +3,7 @@ using AppPortal.Shared;
 
 namespace AppPortal.Server.Admin.Api;
 
-/// <summary>The fleet install history, read-only, with the filters the installs page offers.</summary>
+/// <summary>The fleet install history, with the filters the installs page offers.</summary>
 public static class AdminInstallEndpoints
 {
     public static void MapAdminInstallEndpoints(this IEndpointRouteBuilder group)
@@ -21,6 +21,20 @@ public static class AdminInstallEndpoints
             installs.Find(id) is { } record
                 ? Results.Ok(Project(record))
                 : AdminApi.NotFound("No such install."));
+
+        group.MapPost("/installs/{id}/cancel", (string id, HttpContext context, InstallService service) =>
+        {
+            try
+            {
+                return Results.Ok(Project(service.Cancel(id, context.Username())));
+            }
+            catch (InstallRejectedException ex)
+            {
+                return ex.Reason == InstallRejection.UnknownApp
+                    ? AdminApi.NotFound(ex.Message)
+                    : AdminApi.Conflict(ex.Message);
+            }
+        });
     }
 
     internal static AdminInstall Project(InstallRecord record) => new(

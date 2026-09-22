@@ -6,6 +6,14 @@
     string Or(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
     string When(DateTimeOffset? at) => at is { } t ? t.ToLocalTime().ToString("u") : "—";
 }
+@if (Model.Error is not null)
+{
+    <div class="notice error">@Model.Error</div>
+}
+@if (Model.Stopped)
+{
+    <div class="notice">The install was stopped.</div>
+}
 <div class="card">
     <h2>Install</h2>
     <dl class="detail">
@@ -55,6 +63,13 @@
         </dd>
     </dl>
     <div class="actions">
+        @if (Model.Install.IsActive && Model.Install.Engine == AppPortal.Shared.EngineLabel.Agent)
+        {
+            <form method="post" asp-page-handler="Cancel" asp-route-id="@Model.Install.Id">
+                <button class="button secondary" type="submit"
+                        onclick="return confirm('Stop this install? An installer already running on the PC will finish there.')">Stop this install</button>
+            </form>
+        }
         <a class="button secondary" href="/admin/installs">Back to installs</a>
         <a class="button secondary" href="/admin/installs?Device=@Uri.EscapeDataString(Model.Install.DeviceName)">Everything on this device</a>
     </div>

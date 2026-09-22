@@ -293,6 +293,56 @@ public sealed class AgentJobsTests : IDisposable
     }
 
     [Fact]
+    public void The_retry_cap_holds_when_a_job_comes_back_without_its_lease_expiring()
+    {
+        // The cap used to live only in the expiry sweep, so any other way back to the queue went round
+        // it. The agent's own catch block is such a way, and it runs on every failure by design.
+        var id = CreateJob();
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            Assert.Equal(attempt, _jobs.Lease(_device.Id)!.Attempt);
+            Assert.Equal(JobUpdate.Applied,
+                _jobs.Progress(_device.Id, id, new AgentJobProgress("queued", 0, "Waiting for the agent to resume."), attempt));
+        }
+
+        Assert.Null(_jobs.Lease(_device.Id));
+        var install = Assert.Single(_installs.All());
+        Assert.Equal(InstallState.Failed, install.State);
+        Assert.Contains("three attempts", install.Detail);
+    }
+
+    [Fact]
+    public void Cancelling_stops_the_job_and_the_device_finds_out_at_its_next_report()
+    {
+        var id = CreateJob();
+        _jobs.Lease(_device.Id);
+        Assert.Equal(JobUpdate.Applied, _jobs.Progress(_device.Id, id, new AgentJobProgress("installing", 30, "Installing"), 1));
+        var installId = Assert.Single(_installs.All()).Id;
+        Assert.True(_jobs.Cancel(installId, "Stopped by ada."));
+
+        var install = Assert.Single(_installs.All());
+        Assert.Equal(InstallState.Cancelled, install.State);
+        Assert.Equal("Stopped by ada.", install.Detail);
+
+        // Nothing was asked of the device. It finds out because the lease it held has gone.
+        Assert.Equal(JobUpdate.NotLeased,
+            _jobs.Progress(_device.Id, id, new AgentJobProgress("installing", 40, "Installing"), 1));
+        Assert.Null(_jobs.Lease(_device.Id));
+        Assert.False(_jobs.Cancel(installId, "Stopped by ada."));
+    }
+
+    [Fact]
+    public void Cancelling_a_queued_job_stops_it_before_any_device_sees_it()
+    {
+        var id = CreateJob();
+        var installId = Assert.Single(_installs.All()).Id;
+        Assert.True(_jobs.Cancel(installId, "Stopped by ada."));
+        Assert.Null(_jobs.Lease(_device.Id));
+        Assert.Equal(InstallState.Cancelled, Assert.Single(_installs.All()).State);
+        Assert.NotNull(id);
+    }
+
+    [Fact]
     public async Task Job_routes_require_a_device_token()
     {
         using var client = _factory.CreateClient();

@@ -29,6 +29,11 @@ public partial class App : Application
         {
             var settings = ClientSettings.Load();
             var demo = (desktop.Args ?? []).Contains("--demo");
+            if ((desktop.Args ?? []).Contains("--screenshot"))
+            {
+                DemoIdentity.UseSamples();
+            }
+
             IPortalApiClient? api = demo
                 ? new DemoPortalApiClient()
                 : settings.IsConfigured ? new PortalApiClient(settings) : null;
@@ -54,6 +59,9 @@ public partial class App : Application
             if (index >= 0 && index + 1 < args.Length)
             {
                 var section = index + 2 < args.Length && int.TryParse(args[index + 2], out var s) ? s : 0;
+                // Mica shows whatever is on the desktop behind the window, and a bitmap render of it
+                // garbles the pane's text. A picture for the docs should not depend on the wallpaper.
+                window.TransparencyLevelHint = [WindowTransparencyLevel.None];
                 _ = CaptureAsync(window, viewModel, args[index + 1], section, desktop);
             }
         }

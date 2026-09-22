@@ -1,0 +1,9 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:admin="using:AppPortal.Client.ViewModels.Admin"
+             xmlns:views="using:AppPortal.Client.Views.Admin"
+             x:Class="AppPortal.Client.Views.Admin.AdminsView"
+             x:DataType="admin:AdminsViewModel">
+    <!-- Placeholder until M4-05 builds this page. -->
+    <views:ComingSoonPanel />
+</UserControl>

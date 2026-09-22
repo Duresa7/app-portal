@@ -1,0 +1,105 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:admin="using:AppPortal.Client.ViewModels.Admin"
+             x:Class="AppPortal.Client.Views.Admin.DashboardView"
+             x:DataType="admin:DashboardViewModel">
+
+    <UserControl.Styles>
+        <!-- A tile is a card that is also a button, as each tile on the web dashboard is a link. -->
+        <Style Selector="Button.tile">
+            <Setter Property="Margin" Value="0,0,12,12" />
+            <Setter Property="Padding" Value="16,14" />
+            <Setter Property="MinHeight" Value="96" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{DynamicResource OverlayCornerRadius}" />
+            <Setter Property="FontFamily" Value="{DynamicResource PortalFontFamily}" />
+        </Style>
+        <Style Selector="Button.tile:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+        </Style>
+        <Style Selector="Button.tile:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+        </Style>
+        <Style Selector="Button.tile TextBlock.value">
+            <Setter Property="FontFamily" Value="{DynamicResource PortalDisplayFontFamily}" />
+            <Setter Property="FontSize" Value="28" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.tile TextBlock.value.critical">
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Grid.Column="0" Classes="title" Text="Dashboard" />
+            <ProgressBar Grid.Column="1" IsIndeterminate="True" Classes="thin" Width="80" HorizontalAlignment="Left"
+                         VerticalAlignment="Center" Margin="12,8,0,0" IsVisible="{Binding IsBusy}" />
+            <Button Grid.Column="2" Classes="standard" Command="{Binding RefreshCommand}" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <PathIcon Data="{DynamicResource IconRefresh}" />
+                    <TextBlock Text="Refresh" />
+                </StackPanel>
+            </Button>
+        </Grid>
+        <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,20" TextWrapping="Wrap"
+                   Text="The whole fleet at a glance, counted the same way as the web dashboard." />
+
+        <Border Grid.Row="2" Classes="infoBar critical" Margin="0,0,0,16"
+                IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <StackPanel Orientation="Horizontal">
+                <PathIcon Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" MaxWidth="640" />
+            </StackPanel>
+        </Border>
+
+        <!-- Five equal columns that shrink with the window rather than wrap onto a ragged second row. -->
+        <UniformGrid Grid.Row="3" Columns="5" Margin="0,0,-12,0">
+            <Button Classes="tile" Command="{Binding OpenDevicesCommand}">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="value" Text="{Binding DevicesText}" />
+                    <TextBlock Classes="caption" Text="Devices" TextWrapping="Wrap" />
+                </StackPanel>
+            </Button>
+            <Button Classes="tile" Command="{Binding OpenInstallsCommand}">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="value" Text="{Binding InstallsTodayText}" />
+                    <TextBlock Classes="caption" Text="Installs today" TextWrapping="Wrap" />
+                </StackPanel>
+            </Button>
+            <Button Classes="tile" Command="{Binding OpenInstallsCommand}">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="value" Classes.critical="{Binding HasFailures}" Text="{Binding FailuresThisWeekText}" />
+                    <TextBlock Classes="caption" Text="Failures this week" TextWrapping="Wrap" />
+                </StackPanel>
+            </Button>
+            <Button Classes="tile" Command="{Binding OpenInstallsCommand}">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="value" Text="{Binding ActiveNowText}" />
+                    <TextBlock Classes="caption" Text="Active now" TextWrapping="Wrap" />
+                </StackPanel>
+            </Button>
+            <Button Classes="tile" Command="{Binding OpenRequestsCommand}">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="value" Text="{Binding PendingRequestsText}" />
+                    <TextBlock Classes="caption" Text="Pending requests" TextWrapping="Wrap" />
+                </StackPanel>
+            </Button>
+        </UniformGrid>
+
+        <Border Grid.Row="4" Classes="card" Margin="0,4,0,24">
+            <StackPanel Spacing="4">
+                <TextBlock Classes="bodyStrong" Text="Getting started" />
+                <TextBlock Classes="secondary" TextWrapping="Wrap"
+                           Text="Manage the catalog, devices and enrollment keys from the navigation pane. Review install history and answer software requests here. Select a tile to open the page behind it." />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

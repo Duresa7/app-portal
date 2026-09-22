@@ -3,6 +3,8 @@
         xmlns:vm="using:AppPortal.Client.ViewModels"
         xmlns:shared="using:AppPortal.Shared"
         xmlns:svc="using:AppPortal.Client.Services"
+        xmlns:admin="using:AppPortal.Client.ViewModels.Admin"
+        xmlns:adminViews="using:AppPortal.Client.Views.Admin"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="720"
@@ -19,59 +21,30 @@
         <vm:MainViewModel />
     </Design.DataContext>
 
+    <!-- One view per admin page, found by the page's view model type. A package that fills a page
+         replaces that view and view model and leaves this list as it is. -->
+    <Window.DataTemplates>
+        <DataTemplate DataType="{x:Type admin:DashboardViewModel}"><adminViews:DashboardView /></DataTemplate>
+        <DataTemplate DataType="{x:Type admin:InstallsViewModel}"><adminViews:InstallsView /></DataTemplate>
+        <DataTemplate DataType="{x:Type admin:CatalogViewModel}"><adminViews:CatalogView /></DataTemplate>
+        <DataTemplate DataType="{x:Type admin:RequestsViewModel}"><adminViews:RequestsView /></DataTemplate>
+        <DataTemplate DataType="{x:Type admin:DevicesViewModel}"><adminViews:DevicesView /></DataTemplate>
+        <DataTemplate DataType="{x:Type admin:KeysViewModel}"><adminViews:KeysView /></DataTemplate>
+        <DataTemplate DataType="{x:Type admin:AdminsViewModel}"><adminViews:AdminsView /></DataTemplate>
+        <DataTemplate DataType="{x:Type admin:SettingsViewModel}"><adminViews:SettingsView /></DataTemplate>
+    </Window.DataTemplates>
+
     <!-- Two-layer layout: the base layer (Mica) carries navigation; the content layer is a lighter
          surface with an 8px top-left corner, as in Windows 11 NavigationView. -->
     <Grid ColumnDefinitions="280,*">
 
         <!-- Navigation pane -->
         <DockPanel Grid.Column="0" Margin="8,8,0,0">
-            <StackPanel DockPanel.Dock="Top" Margin="4,0,4,12">
-                <StackPanel Orientation="Horizontal" Spacing="12" Margin="16,8,16,16">
-                    <Border Width="28" Height="28" CornerRadius="6" Background="{DynamicResource AccentFillColorDefaultBrush}">
-                        <PathIcon Data="{StaticResource IconApps}" Width="16" Height="16" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
-                    </Border>
-                    <TextBlock Text="App Portal" Classes="bodyStrong" VerticalAlignment="Center" />
-                </StackPanel>
-
-                <Button Classes="nav" Classes.selected="{Binding ShowApps}" Command="{Binding SelectSectionCommand}" CommandParameter="0">
-                    <Grid ColumnDefinitions="Auto,*">
-                        <Border Classes="indicator" Grid.Column="0" />
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
-                            <PathIcon Data="{StaticResource IconApps}" />
-                            <TextBlock Text="Apps" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Grid>
-                </Button>
-                <Button Classes="nav" Classes.selected="{Binding ShowInstalled}" Command="{Binding SelectSectionCommand}" CommandParameter="1">
-                    <Grid ColumnDefinitions="Auto,*">
-                        <Border Classes="indicator" Grid.Column="0" />
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
-                            <PathIcon Data="{StaticResource IconInstalled}" />
-                            <TextBlock Text="Installed" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Grid>
-                </Button>
-                <Button Classes="nav" Classes.selected="{Binding ShowActivity}" Command="{Binding SelectSectionCommand}" CommandParameter="2">
-                    <Grid ColumnDefinitions="Auto,*,Auto">
-                        <Border Classes="indicator" Grid.Column="0" />
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
-                            <PathIcon Data="{StaticResource IconActivity}" />
-                            <TextBlock Text="Activity" VerticalAlignment="Center" />
-                        </StackPanel>
-                        <Border Grid.Column="2" Classes="infoBadge" Margin="0,0,12,0" IsVisible="{Binding ActiveInstallCount}">
-                            <TextBlock Text="{Binding ActiveInstallCount}" />
-                        </Border>
-                    </Grid>
-                </Button>
-                <Button Classes="nav" Classes.selected="{Binding ShowRequests}" Command="{Binding SelectSectionCommand}" CommandParameter="3">
-                    <Grid ColumnDefinitions="Auto,*,Auto">
-                        <Border Classes="indicator" Grid.Column="0" />
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
-                            <PathIcon Data="{StaticResource IconRequests}" />
-                            <TextBlock Text="Requests" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Grid>
-                </Button>
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="20,8,20,16">
+                <Border Width="28" Height="28" CornerRadius="6" Background="{DynamicResource AccentFillColorDefaultBrush}">
+                    <PathIcon Data="{StaticResource IconApps}" Width="16" Height="16" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                </Border>
+                <TextBlock Text="App Portal" Classes="bodyStrong" VerticalAlignment="Center" />
             </StackPanel>
 
             <!-- Pane footer: this device -->
@@ -93,7 +66,153 @@
                     <TextBlock Text="{Binding AppVersionText}" Classes="caption" HorizontalAlignment="Center" />
                 </StackPanel>
             </Border>
-            <Panel />
+
+            <!-- Pane footer: the way into the admin area, as Settings sits at the foot of a NavigationView. -->
+            <StackPanel DockPanel.Dock="Bottom" Margin="4,0,4,8" IsVisible="{Binding ShowAdminEntry}">
+                <Button Classes="nav" Command="{Binding OpenSignInCommand}">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Classes="indicator" Grid.Column="0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                            <PathIcon Data="{StaticResource IconShield}" />
+                            <TextBlock Text="Admin" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </Button>
+            </StackPanel>
+
+            <ScrollViewer>
+                <StackPanel Margin="4,0,4,12">
+                    <Button Classes="nav" Classes.selected="{Binding ShowApps}" Command="{Binding SelectSectionCommand}" CommandParameter="0">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border Classes="indicator" Grid.Column="0" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                <PathIcon Data="{StaticResource IconApps}" />
+                                <TextBlock Text="Apps" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </Button>
+                    <Button Classes="nav" Classes.selected="{Binding ShowInstalled}" Command="{Binding SelectSectionCommand}" CommandParameter="1">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border Classes="indicator" Grid.Column="0" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                <PathIcon Data="{StaticResource IconInstalled}" />
+                                <TextBlock Text="Installed" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </Button>
+                    <Button Classes="nav" Classes.selected="{Binding ShowActivity}" Command="{Binding SelectSectionCommand}" CommandParameter="2">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <Border Classes="indicator" Grid.Column="0" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                <PathIcon Data="{StaticResource IconActivity}" />
+                                <TextBlock Text="Activity" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <Border Grid.Column="2" Classes="infoBadge" Margin="0,0,12,0" IsVisible="{Binding ActiveInstallCount}">
+                                <TextBlock Text="{Binding ActiveInstallCount}" />
+                            </Border>
+                        </Grid>
+                    </Button>
+                    <Button Classes="nav" Classes.selected="{Binding ShowRequests}" Command="{Binding SelectSectionCommand}" CommandParameter="3">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <Border Classes="indicator" Grid.Column="0" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                <PathIcon Data="{StaticResource IconRequests}" />
+                                <TextBlock Text="Requests" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </Button>
+
+                    <!-- The admin group: shown only while an administrator is signed in on this PC. -->
+                    <StackPanel IsVisible="{Binding IsAdminSignedIn}">
+                        <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="16,10,16,10" />
+                        <StackPanel Orientation="Horizontal" Spacing="4" Margin="16,2,16,6">
+                            <TextBlock Classes="caption" FontWeight="SemiBold" Text="Admin" />
+                            <TextBlock Classes="caption" Text="{Binding AdminUsername, StringFormat='· {0}'}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <Button Classes="nav" Classes.selected="{Binding AdminArea.Dashboard.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="10">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="indicator" Grid.Column="0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                    <PathIcon Data="{StaticResource IconDashboard}" />
+                                    <TextBlock Text="Dashboard" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                        <Button Classes="nav" Classes.selected="{Binding AdminArea.Installs.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="11">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="indicator" Grid.Column="0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                    <PathIcon Data="{StaticResource IconDownload}" />
+                                    <TextBlock Text="Installs" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                        <Button Classes="nav" Classes.selected="{Binding AdminArea.Catalog.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="12">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="indicator" Grid.Column="0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                    <PathIcon Data="{StaticResource IconPackage}" />
+                                    <TextBlock Text="Catalog" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                        <Button Classes="nav" Classes.selected="{Binding AdminArea.Requests.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="13">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="indicator" Grid.Column="0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                    <PathIcon Data="{StaticResource IconRequests}" />
+                                    <TextBlock Text="Requests" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                        <Button Classes="nav" Classes.selected="{Binding AdminArea.Devices.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="14">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="indicator" Grid.Column="0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                    <PathIcon Data="{StaticResource IconDevice}" />
+                                    <TextBlock Text="Devices" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                        <Button Classes="nav" Classes.selected="{Binding AdminArea.Keys.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="15">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="indicator" Grid.Column="0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                    <PathIcon Data="{StaticResource IconKey}" />
+                                    <TextBlock Text="Enrollment keys" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                        <Button Classes="nav" Classes.selected="{Binding AdminArea.Admins.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="16">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="indicator" Grid.Column="0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                    <PathIcon Data="{StaticResource IconPerson}" />
+                                    <TextBlock Text="Admins" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                        <Button Classes="nav" Classes.selected="{Binding AdminArea.Settings.IsSelected, FallbackValue=False}" Command="{Binding SelectSectionCommand}" CommandParameter="17">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="indicator" Grid.Column="0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                    <PathIcon Data="{StaticResource IconSettings}" />
+                                    <TextBlock Text="Settings" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                        <Button Classes="nav" Command="{Binding SignOutCommand}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="indicator" Grid.Column="0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="12,0">
+                                    <PathIcon Data="{StaticResource IconSignOut}" />
+                                    <TextBlock Text="Sign out" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
         </DockPanel>
 
         <!-- Content layer -->
@@ -103,6 +222,14 @@
             <Grid RowDefinitions="Auto,*" Margin="36,28,36,0">
 
                 <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,8">
+                    <Border Classes="infoBar caution" IsVisible="{Binding AdminNotice, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                            <PathIcon Grid.Column="0" Data="{StaticResource IconWarning}" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                            <TextBlock Grid.Column="1" Text="{Binding AdminNotice}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            <Button Grid.Column="2" Classes="standard" Content="Sign in" Command="{Binding OpenSignInCommand}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                            <Button Grid.Column="3" Classes="standard" Content="Dismiss" Command="{Binding DismissAdminNoticeCommand}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
                     <Border Classes="infoBar critical" IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
                         <StackPanel Orientation="Horizontal">
                             <PathIcon Data="{StaticResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
@@ -322,7 +449,12 @@
                         </ScrollViewer>
                     </Border>
                 </Grid>
+
+                <!-- Admin pages, 10 and up. The view comes from Window.DataTemplates above. -->
+                <ContentControl Grid.Row="1" Content="{Binding CurrentAdminPage}" IsVisible="{Binding ShowAdmin}" />
             </Grid>
         </Border>
+
+        <adminViews:SignInView Grid.Column="0" Grid.ColumnSpan="2" IsVisible="{Binding IsSignInOpen}" />
     </Grid>
 </Window>

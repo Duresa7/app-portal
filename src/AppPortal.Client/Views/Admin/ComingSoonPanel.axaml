@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:admin="using:AppPortal.Client.ViewModels.Admin"
+             x:Class="AppPortal.Client.Views.Admin.ComingSoonPanel"
+             x:DataType="admin:ComingSoonPageViewModel">
+    <!-- Shared by every page not built yet. It reads the page's own title and summary, so each
+         placeholder view is one line and goes away whole when its page arrives. -->
+    <Grid RowDefinitions="Auto,Auto,Auto">
+        <TextBlock Grid.Row="0" Classes="title" Text="{Binding Title}" />
+        <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,20" TextWrapping="Wrap" Text="{Binding Summary}" />
+        <Border Grid.Row="2" Classes="card" Padding="20" HorizontalAlignment="Left" MaxWidth="560">
+            <Grid ColumnDefinitions="Auto,*">
+                <PathIcon Grid.Column="0" Data="{DynamicResource IconActivity}" Width="20" Height="20" VerticalAlignment="Top" Margin="0,2,14,0"
+                          Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+                <StackPanel Grid.Column="1" Spacing="4">
+                    <TextBlock Classes="bodyStrong" Text="Coming in this release" />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap"
+                               Text="This page is still being built into the app. Until it arrives, the web admin pages on the server do the same job with the same account." />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

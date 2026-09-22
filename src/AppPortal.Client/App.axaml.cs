@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 
 using AppPortal.Client.Services;
 using AppPortal.Client.ViewModels;
+using AppPortal.Client.ViewModels.Admin;
 using AppPortal.Client.Views;
 
 using Avalonia;
@@ -31,7 +32,7 @@ public partial class App : Application
             IPortalApiClient? api = demo
                 ? new DemoPortalApiClient()
                 : settings.IsConfigured ? new PortalApiClient(settings) : null;
-            var viewModel = new MainViewModel(api, settings, demo);
+            var viewModel = new MainViewModel(api, settings, demo, CreateAdminSession(settings, demo));
             var window = new MainWindow { DataContext = viewModel };
             desktop.MainWindow = window;
             if (api is not null)
@@ -60,9 +61,32 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
+    /// <summary>
+    /// The admin sign-in needs only the server address, not a device token, so a PC that is not enrolled
+    /// can still be administered from. Demo mode keeps its session in memory: a sample token written to
+    /// disk would replace a real administrator's session on this account.
+    /// </summary>
+    private static IAdminSession? CreateAdminSession(ClientSettings settings, bool demo)
+    {
+        if (demo)
+        {
+            return new AdminSession(new DemoAdminApiClient(), NoAdminSessionStore.Instance, "demo");
+        }
+
+        return Uri.TryCreate(settings.ServerUrl, UriKind.Absolute, out _)
+            ? new AdminSession(new AdminApiClient(settings.ServerUrl), AdminSession.DefaultStore(), settings.ServerUrl)
+            : null;
+    }
+
     private static async Task CaptureAsync(Window window, MainViewModel viewModel, string path, int section, IClassicDesktopStyleApplicationLifetime desktop)
     {
         await Task.Delay(TimeSpan.FromSeconds(3));
+        // An admin page in demo mode is shown signed in, so a screenshot of one needs nobody to type.
+        if (viewModel.IsDemo && section >= AdminSections.Dashboard && !viewModel.IsAdminSignedIn)
+        {
+            await viewModel.SignInAdminAsync(DemoAdminApiClient.DemoUsername, DemoAdminApiClient.DemoPassword);
+        }
+
         viewModel.SelectedSection = section;
         await Task.Delay(500);
         await Dispatcher.UIThread.InvokeAsync(() =>

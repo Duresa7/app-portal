@@ -288,9 +288,21 @@ try {
     # Upgrade. An installed fleet meets this path, not the clean install above, so a package that
     # cannot upgrade the release before it is a package that cannot ship.
     # -----------------------------------------------------------------------------------------
-    if ($PreviousMsi -and (Test-Path $PreviousMsi)) {
+    $previousPath = if ($PreviousMsi -and (Test-Path $PreviousMsi)) { (Resolve-Path $PreviousMsi).Path } else { $null }
+    $previousVersion = $null
+    if ($previousPath) {
+        $previousVersion = (Read-MsiTable $previousPath "SELECT Value FROM Property WHERE Property='ProductVersion'") |
+            Select-Object -First 1
+    }
+
+    # Windows Installer replaces an installed copy only when the incoming ProductVersion is higher. Once
+    # the working version has shipped, the newest release carries that same version, the second install
+    # lands beside the first instead of replacing it, and the count below reads two copies and blames the
+    # installer for a version arithmetic problem. Upgrading a version over itself proves nothing, so this
+    # says which two versions it compared and moves on. A real release is always higher than the one
+    # before it, which is exactly when this check matters.
+    if ($previousPath -and [version] $previousVersion -lt [version] $Version) {
         Write-Step 'Upgrade over the previous release'
-        $previousPath = (Resolve-Path $PreviousMsi).Path
         Remove-Item $settingsPath -ErrorAction SilentlyContinue
         Invoke-Msi -Operation '/i' -Name 'install-previous' -Package $previousPath `
             -Properties @("SERVERURL=$serverUrl", "ENROLLMENTKEY=$enrollmentKey") | Out-Null
@@ -317,6 +329,10 @@ try {
         'The upgrade kept the token, replaced the version, and left one installed copy.'
 
         Invoke-Msi -Operation '/x' -Name 'uninstall-upgraded' -Package $msiPath -Properties @('REMOVEDATA=1') | Out-Null
+    }
+    elseif ($previousPath) {
+        Write-Step "Upgrade check skipped: the previous release is $previousVersion and so is this build"
+        "Bump <Version> in Directory.Build.props to exercise the upgrade path."
     }
     else {
         Write-Step 'Upgrade check skipped: no previous MSI supplied'

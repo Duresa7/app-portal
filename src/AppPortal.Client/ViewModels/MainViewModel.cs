@@ -491,6 +491,12 @@ public sealed partial class MainViewModel : ViewModelBase
         if (current is not null)
         {
             _ = ActivateAsync(current);
+            // The web counts pending requests on every admin page it renders, for the badge in its
+            // navigation; this counts them on every admin page it shows. The Requests page counts its own.
+            if (AdminArea is { } area && current != area.Requests)
+            {
+                _ = area.Requests.RefreshPendingCountAsync();
+            }
         }
     }
 

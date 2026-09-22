@@ -91,26 +91,36 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
 
     public string? HelperMessage { get; private set; }
 
+    /// <summary>What saving the form will do, in words. Worked out from the same entry a save writes.</summary>
+    public string Sentence { get; private set; } = "";
+
+    public const string SourceAction1 = "action1";
+    public const string SourceDirect = "direct";
+
+    /// <summary>
+    /// Where the app comes from, the first thing an administrator chooses: <c>action1</c>,
+    /// <c>winget</c>, <c>msstore</c>, <c>direct</c>, or the name of a package manager. No manager is
+    /// called any of the other four, so one value is enough.
+    /// </summary>
     [BindProperty]
-    public string AgentKind { get; set; } = "";
+    public string Source { get; set; } = SourceAction1;
+
+    /// <summary>The package's id in its source, for winget, the Store and every manager.</summary>
+    [BindProperty]
+    public string SourceId { get; set; } = "";
 
     [BindProperty]
-    public string WingetSource { get; set; } = WingetSources.Winget;
+    public string SourceVersion { get; set; } = "";
 
     [BindProperty]
-    public string WingetId { get; set; } = "";
+    public string SourceExtraArgs { get; set; } = "";
+
+    /// <summary>Machine or user, for every agent source, the direct download too.</summary>
+    [BindProperty]
+    public string SourceScope { get; set; } = "machine";
 
     [BindProperty]
-    public string WingetScope { get; set; } = "machine";
-
-    [BindProperty]
-    public string WingetVersion { get; set; } = "";
-
-    [BindProperty]
-    public string WingetExtraArgs { get; set; } = "";
-
-    [BindProperty]
-    public bool WingetRequiresReboot { get; set; }
+    public bool SourceRequiresReboot { get; set; }
 
     [BindProperty]
     public string DirectUrl { get; set; } = "";
@@ -130,36 +140,13 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     [BindProperty]
     public string DirectUninstallKey { get; set; } = "";
 
-    [BindProperty]
-    public string DirectScope { get; set; } = "machine";
-
-    [BindProperty]
-    public bool DirectRequiresReboot { get; set; }
-
-    [BindProperty]
-    public string ManagedManager { get; set; } = "choco";
-
-    [BindProperty]
-    public string ManagedId { get; set; } = "";
-
-    [BindProperty]
-    public string ManagedScope { get; set; } = "machine";
-
-    [BindProperty]
-    public string ManagedVersion { get; set; } = "";
-
-    [BindProperty]
-    public string ManagedExtraArgs { get; set; } = "";
-
-    [BindProperty]
-    public bool ManagedRequiresReboot { get; set; }
-
     public IActionResult OnGet(string id)
     {
         IsNew = string.Equals(id, NewId, StringComparison.OrdinalIgnoreCase);
         if (IsNew)
         {
             Category = "Other";
+            Sentence = new CatalogEntry().Describe();
             return Page();
         }
 
@@ -170,6 +157,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         }
 
         Fill(entry);
+        Sentence = entry.Describe();
         return Page();
     }
 
@@ -190,73 +178,39 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             return Page();
         }
 
-        if (ModelState[nameof(DirectSizeBytes)]?.Errors.Count > 0 && AgentKind == "direct")
+        if (ModelState[nameof(DirectSizeBytes)]?.Errors.Count > 0 && Source == SourceDirect)
         {
             Error = "Enter sizeBytes as a positive whole number of bytes.";
             return Page();
         }
 
-        var entry = new CatalogEntry
-        {
-            Id = target,
-            Name = Name ?? "",
-            Publisher = Publisher ?? "",
-            Description = Description ?? "",
-            Category = string.IsNullOrWhiteSpace(Category) ? "Other" : Category,
-            IconUrl = string.IsNullOrWhiteSpace(IconUrl) ? null : IconUrl.Trim(),
-            Featured = Featured,
-            Hidden = Hidden,
-            EngineOverride = EmptyToNull(EngineOverride),
-            Requirements = EmptyToNull(Requirements),
-            Requires = [.. SplitLines(Requires)],
-            UserRemovable = UserRemovable,
-            Match = string.IsNullOrWhiteSpace(MatchNameContains) && string.IsNullOrWhiteSpace(MatchNameEquals)
-                ? null
-                : new MatchRule
-                {
-                    NameContains = string.IsNullOrWhiteSpace(MatchNameContains) ? null : MatchNameContains.Trim(),
-                    NameEquals = string.IsNullOrWhiteSpace(MatchNameEquals) ? null : MatchNameEquals.Trim(),
-                },
-            Action1 = new Action1PackageRef
-            {
-                PackageId = (PackageId ?? "").Trim(),
-                Version = string.IsNullOrWhiteSpace(Version) ? "latest" : Version.Trim(),
-            },
-        };
-
+        CatalogEntry entry;
         try
         {
-            entry.Agent = AgentKind switch
-            {
-                null or "" => null,
-                "winget" => new WingetPackageDefinition((WingetId ?? "").Trim(), WingetScope,
-                    EmptyToNull(WingetVersion), EmptyToNull(WingetExtraArgs), WingetRequiresReboot,
-                    WingetSource),
-                "direct" => new DirectPackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
-                    DirectInstallerType, DirectSilentArgs, DirectSizeBytes ?? 0, EmptyToNull(DirectUninstallKey),
-                    DirectScope, DirectRequiresReboot),
-                "managed" => new ManagedPackageDefinition((ManagedManager ?? "").Trim(), (ManagedId ?? "").Trim(),
-                    ManagedScope, EmptyToNull(ManagedVersion), EmptyToNull(ManagedExtraArgs), ManagedRequiresReboot),
-                _ => throw new InvalidDataException($"The agent package kind must be {PackageDefinition.Kinds}."),
-            };
+            entry = Build(target);
             // Before the save, not after: a loop written into the catalog is a loop every install of
             // those apps has to walk around, and the person who can undo it is the one on this page.
             catalog.EnsureNoCycle(entry.Id, entry.Requires);
             catalog.Upsert(entry);
         }
-        catch (PrerequisiteException ex)
+        catch (Exception ex) when (ex is PrerequisiteException or InvalidDataException)
         {
             Error = ex.Message;
-            Fill(entry);
-            return Page();
-        }
-        catch (InvalidDataException ex)
-        {
-            Error = ex.Message;
+            Sentence = TryDescribe(target);
             return Page();
         }
 
-        return RedirectToPage("Edit", new { id = entry.Id.Trim(), saved = true });
+        return RedirectToPage("Edit", new { id = entry.Id, saved = true });
+    }
+
+    /// <summary>
+    /// htmx: the sentence under the form, redone whenever a field changes. It describes the entry a
+    /// save would write, so it cannot promise something the save would not do.
+    /// </summary>
+    public IActionResult OnPostDescribe([FromRoute] string id)
+    {
+        IsNew = string.Equals(id, NewId, StringComparison.OrdinalIgnoreCase);
+        return Content(System.Net.WebUtility.HtmlEncode(TryDescribe(IsNew ? Id ?? "" : id)), "text/html");
     }
 
     /// <summary>htmx: the Search button under the Action1 package section.</summary>
@@ -332,7 +286,8 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         try
         {
             HelperMessage = (await (helpers ?? PackageHelpers.Shared)
-                .LookupWingetAsync((WingetId ?? "").Trim(), ct, WingetSource)).Message;
+                .LookupWingetAsync((SourceId ?? "").Trim(), ct,
+                    Source == WingetSources.Store ? WingetSources.Store : WingetSources.Winget)).Message;
         }
         catch (InvalidDataException ex)
         {
@@ -347,6 +302,69 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     /// <summary>One app id per line, blank lines ignored, so the box can be typed in comfortably.</summary>
     private static IEnumerable<string> SplitLines(string? value)
         => (value ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private string TryDescribe(string target)
+    {
+        try
+        {
+            return Build(target).Describe();
+        }
+        catch (InvalidDataException ex)
+        {
+            return "Not ready to save: " + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// The entry this form describes, for a save and for the sentence alike. Throws
+    /// <see cref="InvalidDataException"/> with the reason it cannot be saved.
+    /// </summary>
+    private CatalogEntry Build(string target)
+    {
+        var entry = new CatalogEntry
+        {
+            Id = target.Trim(),
+            Name = Name ?? "",
+            Publisher = Publisher ?? "",
+            Description = Description ?? "",
+            Category = string.IsNullOrWhiteSpace(Category) ? "Other" : Category,
+            IconUrl = string.IsNullOrWhiteSpace(IconUrl) ? null : IconUrl.Trim(),
+            Featured = Featured,
+            Hidden = Hidden,
+            EngineOverride = EmptyToNull(EngineOverride),
+            Requirements = EmptyToNull(Requirements),
+            Requires = [.. SplitLines(Requires)],
+            UserRemovable = UserRemovable,
+            Match = string.IsNullOrWhiteSpace(MatchNameContains) && string.IsNullOrWhiteSpace(MatchNameEquals)
+                ? null
+                : new MatchRule
+                {
+                    NameContains = string.IsNullOrWhiteSpace(MatchNameContains) ? null : MatchNameContains.Trim(),
+                    NameEquals = string.IsNullOrWhiteSpace(MatchNameEquals) ? null : MatchNameEquals.Trim(),
+                },
+            Action1 = new Action1PackageRef
+            {
+                PackageId = (PackageId ?? "").Trim(),
+                Version = string.IsNullOrWhiteSpace(Version) ? "latest" : Version.Trim(),
+            },
+        };
+
+        var id = (SourceId ?? "").Trim();
+        entry.Agent = Source switch
+        {
+            null or "" or SourceAction1 => null,
+            WingetSources.Winget or WingetSources.Store => new WingetPackageDefinition(id, SourceScope,
+                EmptyToNull(SourceVersion), EmptyToNull(SourceExtraArgs), SourceRequiresReboot, Source),
+            SourceDirect => new DirectPackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
+                DirectInstallerType, DirectSilentArgs ?? "", DirectSizeBytes ?? 0, EmptyToNull(DirectUninstallKey),
+                SourceScope, SourceRequiresReboot),
+            _ when PackageManagers.Find(Source) is not null => new ManagedPackageDefinition(Source, id, SourceScope,
+                EmptyToNull(SourceVersion), EmptyToNull(SourceExtraArgs), SourceRequiresReboot),
+            _ => throw new InvalidDataException("Choose where this app comes from: Action1, winget, the Microsoft Store, "
+                                                + "a package manager, or a direct download."),
+        };
+        return entry;
+    }
 
     private void Fill(CatalogEntry entry)
     {
@@ -366,36 +384,35 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         MatchNameEquals = entry.Match?.NameEquals ?? "";
         PackageId = entry.Action1.PackageId;
         Version = entry.Action1.Version;
+        Source = SourceAction1;
+        if (entry.Agent is { } agent)
+        {
+            SourceScope = agent.Scope;
+            SourceRequiresReboot = agent.RequiresReboot;
+        }
+
         switch (entry.Agent)
         {
             case WingetPackageDefinition winget:
-                AgentKind = "winget";
-                WingetSource = winget.Source;
-                WingetId = winget.Id;
-                WingetScope = winget.Scope;
-                WingetVersion = winget.Version ?? "";
-                WingetExtraArgs = winget.ExtraArgs ?? "";
-                WingetRequiresReboot = winget.RequiresReboot;
+                Source = winget.Source;
+                SourceId = winget.Id;
+                SourceVersion = winget.Version ?? "";
+                SourceExtraArgs = winget.ExtraArgs ?? "";
                 break;
             case DirectPackageDefinition direct:
-                AgentKind = "direct";
+                Source = SourceDirect;
                 DirectUrl = direct.Url;
                 DirectSha256 = direct.Sha256;
                 DirectInstallerType = direct.InstallerType;
                 DirectSilentArgs = direct.SilentArgs;
                 DirectSizeBytes = direct.SizeBytes;
                 DirectUninstallKey = direct.UninstallKey ?? "";
-                DirectScope = direct.Scope;
-                DirectRequiresReboot = direct.RequiresReboot;
                 break;
             case ManagedPackageDefinition managed:
-                AgentKind = "managed";
-                ManagedManager = managed.Manager;
-                ManagedId = managed.Id;
-                ManagedScope = managed.Scope;
-                ManagedVersion = managed.Version ?? "";
-                ManagedExtraArgs = managed.ExtraArgs ?? "";
-                ManagedRequiresReboot = managed.RequiresReboot;
+                Source = managed.Manager;
+                SourceId = managed.Id;
+                SourceVersion = managed.Version ?? "";
+                SourceExtraArgs = managed.ExtraArgs ?? "";
                 break;
         }
     }

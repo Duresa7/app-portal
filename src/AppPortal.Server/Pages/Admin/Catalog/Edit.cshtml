@@ -1,8 +1,11 @@
 @page "/admin/catalog/{id}"
 @model AppPortal.Server.Pages.Admin.Catalog.EditModel
+@using AppPortal.Server.Pages.Admin.Catalog
+@using AppPortal.Shared
 @{
     ViewData["Title"] = Model.IsNew ? "New app" : Model.Name;
     ViewData["Nav"] = "catalog";
+    var here = "/admin/catalog/" + (Model.IsNew ? EditModel.NewId : Model.Id);
 }
 @if (Model.Error is not null)
 {
@@ -17,7 +20,7 @@
     <div class="message ok">Saved. Devices pick this up on their next refresh.</div>
 }
 
-<form method="post">
+<form method="post" id="catalog-form">
     <div class="card">
         <h2>App</h2>
         @if (Model.IsNew)
@@ -58,42 +61,134 @@
     </div>
 
     <div class="card">
+        <h2>Where it comes from</h2>
+        <label for="source">Source</label>
+        <select id="source" name="Source">
+            <option value="@EditModel.SourceAction1" selected="@(Model.Source == EditModel.SourceAction1)"
+                    data-purpose="A package from your Action1 Software Repository. Action1 always installs for everyone on the PC.">Action1</option>
+            <option value="@WingetSources.Winget" selected="@(Model.Source == WingetSources.Winget)"
+                    data-purpose="Windows applications, from Microsoft's community repository. The usual choice for most software.">winget</option>
+            <option value="@WingetSources.Store" selected="@(Model.Source == WingetSources.Store)"
+                    data-purpose="Store applications, by their product id. They install into the profile of the person who asks.">Microsoft Store</option>
+            <optgroup label="A package manager on the PC">
+                @foreach (var manager in PackageManagers.All)
+                {
+                    <option value="@manager.Name" selected="@(Model.Source == manager.Name)"
+                            data-purpose="@manager.Purpose" data-scopes="@string.Join(',', manager.Scopes)"
+                            data-pins="@(manager.CanPinVersion ? "yes" : "no")"
+                            data-devices="@Model.DevicesWith(manager.Name)">@manager.DisplayName</option>
+                }
+            </optgroup>
+            <option value="@EditModel.SourceDirect" selected="@(Model.Source == EditModel.SourceDirect)"
+                    data-purpose="Any installer at a web address, checked against its SHA-256. For game launchers and vendor installers that are in no repository.">Direct download</option>
+        </select>
+        <p class="muted" id="source-purpose"></p>
+        <p class="muted" id="source-devices"></p>
+
+        <div id="package-fields">
+            <label for="source-id" id="source-id-label">Package id</label>
+            <input id="source-id" name="SourceId" value="@Model.SourceId" autocomplete="off" />
+            <p class="muted" id="store-hint" hidden>
+                A Store product id is the last part of the app's address in the Store, such as 9WZDNCRFJ3TJ.
+                Some Store apps need the person signed in to the Store before the Store will grant a licence;
+                say so under Requirements and the portal will show it before they install.
+            </p>
+            <p class="muted" id="manager-hint" hidden>
+                Exactly as the package manager names it: letters, digits and the separators that manager uses,
+                and nothing a command prompt would read as an instruction. The manager itself has to be on the PC;
+                if it might not be, add it to the catalog and list it under Needs first, and the portal installs it first.
+            </p>
+            <label for="source-version">Version (optional)</label>
+            <input id="source-version" name="SourceVersion" value="@Model.SourceVersion" autocomplete="off" />
+            <label for="source-extra">Extra arguments (optional)</label>
+            <input id="source-extra" name="SourceExtraArgs" value="@Model.SourceExtraArgs" autocomplete="off" />
+            <p class="muted">Passed on as you type them. The agent does not check these; they are yours.</p>
+            <button type="submit" class="secondary" id="lookup" asp-page-handler="LookupWinget">Look up this id</button>
+        </div>
+
+        <div id="direct-fields">
+            <label for="direct-url">Installer URL</label>
+            <input id="direct-url" name="DirectUrl" value="@Model.DirectUrl" />
+            <label for="direct-sha256">SHA-256</label>
+            <input id="direct-sha256" name="DirectSha256" value="@Model.DirectSha256" />
+            <label for="direct-type">Installer type</label>
+            <select id="direct-type" name="DirectInstallerType">
+                <option value="exe" selected="@(Model.DirectInstallerType == "exe")">exe</option>
+                <option value="msi" selected="@(Model.DirectInstallerType == "msi")">msi</option>
+                <option value="msix" selected="@(Model.DirectInstallerType == "msix")">msix</option>
+            </select>
+            <label for="direct-args">Silent arguments</label>
+            <input id="direct-args" name="DirectSilentArgs" value="@Model.DirectSilentArgs" placeholder="/S or /qn" />
+            <p class="muted">Leave this empty for an msix, and for an exe that installs silently on its own. An msi always needs them; the agent adds /qn /norestart itself, so put here whatever else this package takes.</p>
+            <label for="direct-size">Download size (bytes)</label>
+            <input id="direct-size" name="DirectSizeBytes" type="number" min="1" step="1" value="@Model.DirectSizeBytes" />
+            <label for="direct-uninstall">Uninstall key (optional)</label>
+            <input id="direct-uninstall" name="DirectUninstallKey" value="@Model.DirectUninstallKey" />
+            <button type="submit" class="secondary" asp-page-handler="FetchAndHash">Fetch and hash</button>
+            <p class="muted">Fetch and hash downloads the installer to calculate its hash and size. For files over the server's limit, enter these values manually.</p>
+        </div>
+
+        <div id="agent-fields">
+            <label for="source-scope">Installs for</label>
+            <select id="source-scope" name="SourceScope">
+                <option value="machine" selected="@(Model.SourceScope == "machine")">Everyone on the PC</option>
+                <option value="user" selected="@(Model.SourceScope == "user")">The person who asks for it</option>
+            </select>
+            <label for="source-reboot">
+                <input id="source-reboot" name="SourceRequiresReboot" type="checkbox" value="true" checked="@Model.SourceRequiresReboot" />
+                The software only works after a restart
+            </label>
+        </div>
+
+        <details id="action1-details" open="@(Model.Source == EditModel.SourceAction1 || !string.IsNullOrWhiteSpace(Model.PackageId))">
+            <summary id="action1-summary">Also offer it through Action1 (optional)</summary>
+            <p class="muted" id="action1-hint">Leave the package id empty when this app only comes from the source above.</p>
+            <label for="package-id">Action1 package id</label>
+            <input id="package-id" name="PackageId" type="text" value="@Model.PackageId" autocomplete="off" />
+
+            <label for="version">Action1 version</label>
+            <input id="version" name="Version" type="text" value="@Model.Version" autocomplete="off" />
+            <p class="muted"><code>latest</code>, or an exact version published in the Software Repository.</p>
+
+            <div class="actions">
+                <button type="button" class="secondary"
+                        hx-get="@here?handler=Search"
+                        hx-vals='js:{term: document.getElementById("package-id").value || document.getElementById("name").value}'
+                        hx-target="#package-search"
+                        hx-swap="outerHTML">Search the repository</button>
+                <button type="button" class="secondary"
+                        hx-get="@here?handler=Verify"
+                        hx-vals='js:{packageId: document.getElementById("package-id").value, version: document.getElementById("version").value}'
+                        hx-target="#package-verify"
+                        hx-swap="outerHTML">Verify</button>
+            </div>
+
+            <div id="package-verify"></div>
+            <div id="package-search"></div>
+        </details>
+
+        <div id="engine-fields">
+            <label for="engine-override">When a device could use either Action1 or the agent</label>
+            <select id="engine-override" name="EngineOverride">
+                <option value="" selected="@(string.IsNullOrEmpty(Model.EngineOverride))">Follow the server's default</option>
+                <option value="action1" selected="@(Model.EngineOverride == "action1")">Use Action1</option>
+                <option value="agent" selected="@(Model.EngineOverride == "agent")">Use the agent</option>
+            </select>
+            <p class="muted">A device set to prefer an engine still wins over this.</p>
+        </div>
+    </div>
+
+    <div class="card">
         <h2>Inventory match</h2>
         <p class="muted">
-            How the client decides this app is already installed. Left empty, the app name is used.
+            How the portal decides this app is already installed. Left empty, the app name is used; an app
+            from a package manager is also found by its package id.
         </p>
         <label for="match">Installed name contains</label>
         <input id="match" name="MatchNameContains" type="text" value="@Model.MatchNameContains" autocomplete="off" />
         <label for="match-exact">Installed name equals</label>
         <input id="match-exact" name="MatchNameEquals" type="text" value="@Model.MatchNameEquals" autocomplete="off" />
         <p class="muted">An exact name takes precedence over the contains rule.</p>
-    </div>
-
-    <div class="card">
-        <h2>Action1 package</h2>
-        <p class="muted">Leave the package id empty when this app only has an agent package.</p>
-        <label for="package-id">Package id</label>
-        <input id="package-id" name="PackageId" type="text" value="@Model.PackageId" autocomplete="off" />
-
-        <label for="version">Version</label>
-        <input id="version" name="Version" type="text" value="@Model.Version" autocomplete="off" />
-        <p class="muted"><code>latest</code>, or an exact version published in the Software Repository.</p>
-
-        <div class="actions">
-            <button type="button" class="secondary"
-                    hx-get="/admin/catalog/@(Model.IsNew ? AppPortal.Server.Pages.Admin.Catalog.EditModel.NewId : Model.Id)?handler=Search"
-                    hx-vals='js:{term: document.getElementById("package-id").value || document.getElementById("name").value}'
-                    hx-target="#package-search"
-                    hx-swap="outerHTML">Search the repository</button>
-            <button type="button" class="secondary"
-                    hx-get="/admin/catalog/@(Model.IsNew ? AppPortal.Server.Pages.Admin.Catalog.EditModel.NewId : Model.Id)?handler=Verify"
-                    hx-vals='js:{packageId: document.getElementById("package-id").value, version: document.getElementById("version").value}'
-                    hx-target="#package-verify"
-                    hx-swap="outerHTML">Verify</button>
-        </div>
-
-        <div id="package-verify"></div>
-        <div id="package-search"></div>
     </div>
 
     <div class="card">
@@ -116,115 +211,14 @@
             Shown on the app and confirmed by the person before they install it. The portal does not
             check any of this and will never refuse an install because of it.
         </p>
+    </div>
 
-        <h2>Engine</h2>
-        <label for="engine-override">Prefer</label>
-        <select id="engine-override" name="EngineOverride">
-            <option value="" selected="@(string.IsNullOrEmpty(Model.EngineOverride))">The server's default</option>
-            <option value="action1" selected="@(Model.EngineOverride == "action1")">Action1</option>
-            <option value="agent" selected="@(Model.EngineOverride == "agent")">Agent</option>
-        </select>
-        <p class="muted">Only matters on a device that could use either. A device set to prefer an engine still wins over this.</p>
-
-        <h2>Agent package</h2>
-        <label for="agent-kind">Kind</label>
-        <select id="agent-kind" name="AgentKind">
-            <option value="" selected="@(string.IsNullOrEmpty(Model.AgentKind))">None</option>
-            <option value="winget" selected="@(Model.AgentKind == "winget")">Winget</option>
-            <option value="direct" selected="@(Model.AgentKind == "direct")">Direct installer</option>
-            <option value="managed" selected="@(Model.AgentKind == "managed")">A package manager on the PC</option>
-        </select>
-        <div id="winget-fields">
-            <label for="winget-source">Source</label>
-            <select id="winget-source" name="WingetSource">
-                <option value="winget" selected="@(Model.WingetSource == "winget")">winget</option>
-                <option value="msstore" selected="@(Model.WingetSource == "msstore")">Microsoft Store</option>
-            </select>
-            <label for="winget-id" id="winget-id-label">Winget id</label>
-            <input id="winget-id" name="WingetId" value="@Model.WingetId" placeholder="Valve.Steam" />
-            <p class="muted" id="winget-store-hint" hidden>
-                A Store product id is the last part of the app's address in the Store, such as 9WZDNCRFJ3TJ.
-                Store apps install into one person's profile, so leave the scope on User.
-                Some of them need that person signed in to the Store before the Store will grant a licence;
-                say so under Requirements and the portal will show it before they install.
-            </p>
-            <label for="winget-scope">Scope</label>
-            <select id="winget-scope" name="WingetScope">
-                <option value="machine" selected="@(Model.WingetScope == "machine")">Machine</option>
-                <option value="user" selected="@(Model.WingetScope == "user")">User</option>
-            </select>
-            <label for="winget-version">Version (optional)</label>
-            <input id="winget-version" name="WingetVersion" value="@Model.WingetVersion" />
-            <label for="winget-extra">Extra arguments (optional)</label>
-            <input id="winget-extra" name="WingetExtraArgs" value="@Model.WingetExtraArgs" />
-            <label for="winget-reboot">
-                <input id="winget-reboot" name="WingetRequiresReboot" type="checkbox" value="true" checked="@Model.WingetRequiresReboot" />
-                The software only works after a restart
-            </label>
-            <button type="submit" class="secondary" asp-page-handler="LookupWinget">Look up this id</button>
-        </div>
-        <div id="direct-fields">
-            <label for="direct-url">Installer URL</label>
-            <input id="direct-url" name="DirectUrl" value="@Model.DirectUrl" />
-            <label for="direct-sha256">SHA-256</label>
-            <input id="direct-sha256" name="DirectSha256" value="@Model.DirectSha256" />
-            <label for="direct-type">Installer type</label>
-            <select id="direct-type" name="DirectInstallerType">
-                <option value="exe" selected="@(Model.DirectInstallerType == "exe")">exe</option>
-                <option value="msi" selected="@(Model.DirectInstallerType == "msi")">msi</option>
-                <option value="msix" selected="@(Model.DirectInstallerType == "msix")">msix</option>
-            </select>
-            <label for="direct-scope">Scope</label>
-            <select id="direct-scope" name="DirectScope">
-                <option value="machine" selected="@(Model.DirectScope == "machine")">Machine</option>
-                <option value="user" selected="@(Model.DirectScope == "user")">User</option>
-            </select>
-            <label for="direct-args">Silent arguments</label>
-            <input id="direct-args" name="DirectSilentArgs" value="@Model.DirectSilentArgs" placeholder="/S or /qn" />
-            <p class="muted">Leave this empty for an msix, and for an exe that installs silently on its own. An msi always needs them; the agent adds /qn /norestart itself, so put here whatever else this package takes.</p>
-            <label for="direct-size">Download size (bytes)</label>
-            <input id="direct-size" name="DirectSizeBytes" type="number" min="1" step="1" value="@Model.DirectSizeBytes" />
-            <label for="direct-uninstall">Uninstall key (optional)</label>
-            <input id="direct-uninstall" name="DirectUninstallKey" value="@Model.DirectUninstallKey" />
-            <label for="direct-reboot">
-                <input id="direct-reboot" name="DirectRequiresReboot" type="checkbox" value="true" checked="@Model.DirectRequiresReboot" />
-                The software only works after a restart
-            </label>
-            <button type="submit" class="secondary" asp-page-handler="FetchAndHash">Fetch and hash</button>
-            <p class="muted">Fetch and hash downloads the installer to calculate its hash and size. For files over the server's limit, enter these values manually.</p>
-        </div>
-        <div id="managed-fields">
-            <label for="managed-manager">Package manager</label>
-            <select id="managed-manager" name="ManagedManager">
-                @foreach (var manager in AppPortal.Shared.PackageManagers.All)
-                {
-                    <option value="@manager.Name" selected="@(Model.ManagedManager == manager.Name)"
-                            data-purpose="@manager.Purpose" data-scopes="@string.Join(',', manager.Scopes)"
-                            data-pins="@(manager.CanPinVersion ? "yes" : "no")"
-                            data-devices="@Model.DevicesWith(manager.Name)">@manager.DisplayName</option>
-                }
-            </select>
-            <p class="muted" id="managed-purpose"></p>
-            <p class="muted" id="managed-devices"></p>
-            <label for="managed-id">Package id</label>
-            <input id="managed-id" name="ManagedId" value="@Model.ManagedId" placeholder="7zip" />
-            <p class="muted">Exactly as the package manager names it: letters, digits and the separators that manager uses, and nothing a command prompt would read as an instruction.</p>
-            <label for="managed-scope">Scope</label>
-            <select id="managed-scope" name="ManagedScope">
-                <option value="machine" selected="@(Model.ManagedScope == "machine")">Machine</option>
-                <option value="user" selected="@(Model.ManagedScope == "user")">User</option>
-            </select>
-            <label for="managed-version">Version (optional)</label>
-            <input id="managed-version" name="ManagedVersion" value="@Model.ManagedVersion" />
-            <label for="managed-extra">Extra arguments (optional)</label>
-            <input id="managed-extra" name="ManagedExtraArgs" value="@Model.ManagedExtraArgs" />
-            <p class="muted">Passed to the package manager as you type them. The agent does not check these; they are yours.</p>
-            <label for="managed-reboot">
-                <input id="managed-reboot" name="ManagedRequiresReboot" type="checkbox" value="true" checked="@Model.ManagedRequiresReboot" />
-                The software only works after a restart
-            </label>
-            <p class="muted">The package manager itself has to be on the PC. If it might not be, add it to the catalog and list it under Requires above, and the portal installs it first.</p>
-        </div>
+    <div class="card">
+        <h2>What this will do</h2>
+        <p id="sentence"
+           hx-post="@here?handler=Describe"
+           hx-include="#catalog-form"
+           hx-trigger="change from:#catalog-form, keyup changed delay:600ms from:#catalog-form">@Model.Sentence</p>
     </div>
 
     <div class="actions">
@@ -234,59 +228,76 @@
 </form>
 
 <script>
-    const kind = document.getElementById('agent-kind');
-    function showAgentFields() {
-        document.getElementById('winget-fields').hidden = kind.value !== 'winget';
-        document.getElementById('direct-fields').hidden = kind.value !== 'direct';
-        document.getElementById('managed-fields').hidden = kind.value !== 'managed';
-    }
-    kind.addEventListener('change', showAgentFields);
-    showAgentFields();
+    // One selector decides which fields exist. Each source says what it is for, and a package
+    // manager says which scopes it can really carry out, so choosing npm to deploy a browser, or
+    // Cargo for everyone on a PC, looks odd on the form rather than failing on every device later.
+    const source = document.getElementById('source');
+    const scope = document.getElementById('source-scope');
+    const version = document.getElementById('source-version');
+    const packageId = document.getElementById('package-id');
+    const action1 = document.getElementById('action1-details');
 
-    // The Store wants a different sort of id and a different scope, so the form says which it wants
-    // rather than leaving an administrator to find out from a validation message.
-    const source = document.getElementById('winget-source');
-    const scope = document.getElementById('winget-scope');
-    function showSourceFields() {
-        const store = source.value === 'msstore';
-        document.getElementById('winget-id-label').textContent = store ? 'Store product id' : 'Winget id';
-        document.getElementById('winget-id').placeholder = store ? '9WZDNCRFJ3TJ' : 'Valve.Steam';
-        document.getElementById('winget-store-hint').hidden = !store;
+    function chosen() {
+        return source.options[source.selectedIndex];
     }
+
+    function showEngine() {
+        // The override only means something for an app that has both kinds of package.
+        document.getElementById('engine-fields').hidden = source.value === 'action1' || packageId.value.trim() === '';
+    }
+
+    function showSource() {
+        const value = source.value;
+        const option = chosen();
+        const manager = option.dataset.scopes !== undefined;
+        const agent = value !== 'action1';
+        const store = value === 'msstore';
+
+        document.getElementById('source-purpose').textContent = option.dataset.purpose;
+        document.getElementById('package-fields').hidden = !(value === 'winget' || store || manager);
+        document.getElementById('direct-fields').hidden = value !== 'direct';
+        document.getElementById('agent-fields').hidden = !agent;
+        document.getElementById('lookup').hidden = !(value === 'winget' || store);
+        document.getElementById('store-hint').hidden = !store;
+        document.getElementById('manager-hint').hidden = !manager;
+        document.getElementById('source-id-label').textContent = store ? 'Store product id' : value === 'winget' ? 'Winget id' : 'Package id';
+        document.getElementById('source-id').placeholder = store ? '9WZDNCRFJ3TJ' : value === 'winget' ? 'Valve.Steam' : manager ? '7zip' : '';
+
+        // Action1 as the source is the Action1 section itself, not an optional extra to it.
+        document.getElementById('action1-summary').hidden = !agent;
+        document.getElementById('action1-hint').hidden = !agent;
+        if (!agent) {
+            action1.open = true;
+        }
+
+        const devices = document.getElementById('source-devices');
+        devices.textContent = '';
+        const scopes = manager ? option.dataset.scopes.split(',') : ['machine', 'user'];
+        for (const item of scope.options) {
+            item.disabled = !scopes.includes(item.value);
+        }
+        if (!scopes.includes(scope.value)) {
+            scope.value = scopes[0];
+        }
+        version.disabled = manager && option.dataset.pins !== 'yes';
+        version.placeholder = version.disabled ? 'This manager always installs its current version' : '';
+        if (manager) {
+            const count = Number(option.dataset.devices);
+            devices.textContent = count === 0
+                ? 'No enrolled device reports ' + option.textContent + ' yet. Add it to the catalog and list it under Needs first, and the portal installs it first.'
+                : count + (count === 1 ? ' enrolled device reports ' : ' enrolled devices report ') + option.textContent + '.';
+        }
+        showEngine();
+    }
+
     source.addEventListener('change', function () {
         // Only when the person changes the source, never on load: on load the value is the one that
         // was saved, and moving it would rewrite an administrator's own choice behind their back.
         if (source.value === 'msstore') {
             scope.value = 'user';
         }
-        showSourceFields();
+        showSource();
     });
-    showSourceFields();
-
-    // Each manager says what it is for, and which scopes it can really carry out. Choosing npm to
-    // deploy a browser, or Cargo for everyone on a PC, should look odd on the form rather than fail
-    // on every device afterwards.
-    const manager = document.getElementById('managed-manager');
-    const managedScope = document.getElementById('managed-scope');
-    const managedVersion = document.getElementById('managed-version');
-    function showManagerFields() {
-        const chosen = manager.options[manager.selectedIndex];
-        const scopes = chosen.dataset.scopes.split(',');
-        document.getElementById('managed-purpose').textContent = chosen.dataset.purpose;
-        const devices = Number(chosen.dataset.devices);
-        document.getElementById('managed-devices').textContent = devices === 0
-            ? 'No enrolled device reports ' + chosen.textContent + ' yet. Add it to the catalog and list it under Requires, and the portal installs it first.'
-            : devices + (devices === 1 ? ' enrolled device reports ' : ' enrolled devices report ') + chosen.textContent + '.';
-        for (const option of managedScope.options) {
-            option.disabled = !scopes.includes(option.value);
-        }
-        if (!scopes.includes(managedScope.value)) {
-            managedScope.value = scopes[0];
-        }
-        const pins = chosen.dataset.pins === 'yes';
-        managedVersion.disabled = !pins;
-        managedVersion.placeholder = pins ? '' : 'This manager always installs its current version';
-    }
-    manager.addEventListener('change', showManagerFields);
-    showManagerFields();
+    packageId.addEventListener('input', showEngine);
+    showSource();
 </script>

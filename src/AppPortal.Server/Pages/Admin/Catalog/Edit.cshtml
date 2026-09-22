@@ -200,10 +200,12 @@
                 {
                     <option value="@manager.Name" selected="@(Model.ManagedManager == manager.Name)"
                             data-purpose="@manager.Purpose" data-scopes="@string.Join(',', manager.Scopes)"
-                            data-pins="@(manager.CanPinVersion ? "yes" : "no")">@manager.DisplayName</option>
+                            data-pins="@(manager.CanPinVersion ? "yes" : "no")"
+                            data-devices="@Model.DevicesWith(manager.Name)">@manager.DisplayName</option>
                 }
             </select>
             <p class="muted" id="managed-purpose"></p>
+            <p class="muted" id="managed-devices"></p>
             <label for="managed-id">Package id</label>
             <input id="managed-id" name="ManagedId" value="@Model.ManagedId" placeholder="7zip" />
             <p class="muted">Exactly as the package manager names it: letters, digits and the separators that manager uses, and nothing a command prompt would read as an instruction.</p>
@@ -271,6 +273,10 @@
         const chosen = manager.options[manager.selectedIndex];
         const scopes = chosen.dataset.scopes.split(',');
         document.getElementById('managed-purpose').textContent = chosen.dataset.purpose;
+        const devices = Number(chosen.dataset.devices);
+        document.getElementById('managed-devices').textContent = devices === 0
+            ? 'No enrolled device reports ' + chosen.textContent + ' yet. Add it to the catalog and list it under Requires, and the portal installs it first.'
+            : devices + (devices === 1 ? ' enrolled device reports ' : ' enrolled devices report ') + chosen.textContent + '.';
         for (const option of managedScope.options) {
             option.disabled = !scopes.includes(option.value);
         }

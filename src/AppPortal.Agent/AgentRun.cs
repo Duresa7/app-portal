@@ -111,6 +111,14 @@ public static class AgentRun
                 provider.GetRequiredService<ILogger<JobRunner>>(),
                 software: provider.GetRequiredService<SoftwareReporter>(),
                 sessions: provider.GetRequiredService<IUserSessionLauncher>()));
+            // On start and once a day: what the catalog page counts when an administrator chooses a
+            // package manager for an app.
+            builder.Services.AddHostedService(provider => new ManagerReporter(
+                provider.GetRequiredService<HttpClient>(),
+                provider.GetRequiredService<IProcessRunner>(),
+                provider.GetRequiredService<IPackageManagerLocator>(),
+                provider.GetRequiredService<ILogger<ManagerReporter>>(),
+                provider.GetRequiredService<IUserSessionLauncher>()));
             // Every start, because a restart and an upgrade both end in one, and those are the two
             // moments the server's picture of this device is otherwise wrong.
             builder.Services.AddHostedService(provider => new StartupSoftwareSweep(

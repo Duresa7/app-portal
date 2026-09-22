@@ -88,6 +88,34 @@
 </div>
 
 <div class="card">
+    <h2>Package managers</h2>
+    @if (!Model.Device.HasAgent)
+    {
+        <p class="muted">This device has no agent, so nothing reports what it has.</p>
+    }
+    else if (Model.Managers.Count == 0)
+    {
+        <p class="muted">None reported yet. The agent looks when its service starts and once a day after that.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Manager</th><th>Version</th><th>For</th></tr></thead>
+            <tbody>
+                @foreach (var found in Model.Managers)
+                {
+                    <tr>
+                        <td>@(AppPortal.Shared.PackageManagers.Find(found.Name)?.DisplayName ?? found.Name)</td>
+                        <td class="muted">@(string.IsNullOrEmpty(found.Version) ? "not known" : found.Version)</td>
+                        <td class="muted">@(found.Account ?? "everyone on this PC")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="card">
     <h2>Recent installs</h2>
     @if (Model.RecentInstalls.Count == 0)
     {

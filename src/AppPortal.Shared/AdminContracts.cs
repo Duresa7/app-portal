@@ -123,7 +123,8 @@ public sealed record AdminDevice(
 public sealed record AdminDeviceDetail(
     AdminDevice Device,
     IReadOnlyList<AdminInstall> RecentInstalls,
-    IReadOnlyList<AdminRequest> RecentRequests);
+    IReadOnlyList<AdminRequest> RecentRequests,
+    IReadOnlyList<DeviceManager>? Managers = null);
 
 public sealed record AdminDeviceCreate(string Name, string? Action1EndpointId = null);
 

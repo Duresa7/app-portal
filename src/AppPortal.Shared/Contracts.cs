@@ -209,3 +209,11 @@ public sealed record ExecutionResult(bool Ok, string? Detail, int? ExitCode = nu
 /// the agent reads give a display name and a version and nothing dependable beyond that.
 /// </summary>
 public sealed record InstalledSoftware(string Name, string Version);
+
+/// <summary>
+/// A package manager the agent found on the device. <paramref name="Account"/> is null for one every
+/// account can use, and names the person for one that lives in their profile, such as Scoop or Cargo:
+/// those are real on that PC for that person and nobody else, and an administrator deciding whether
+/// to rely on one needs to know which it is.
+/// </summary>
+public sealed record DeviceManager(string Name, string Version, string? Account = null);

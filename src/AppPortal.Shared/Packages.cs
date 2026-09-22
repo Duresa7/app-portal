@@ -34,6 +34,18 @@ public abstract record PackageDefinition
     /// <summary>Whether the software is only finished once the device restarts.</summary>
     public abstract bool RequiresReboot { get; init; }
 
+    /// <summary>
+    /// How much the device will download, when this kind of package knows. Only a direct installer
+    /// does; every package manager decides that for itself at install time. Asked of the definition
+    /// rather than read through a cast, so a new kind answers for itself instead of being sized as
+    /// nothing by a caller that forgot it existed.
+    /// </summary>
+    [JsonIgnore]
+    public virtual long? DownloadSizeBytes => null;
+
+    /// <summary>Every kind a definition may carry, for a message that has to say which it expected.</summary>
+    public static string Kinds => "winget, direct or managed";
+
     private protected static void ValidateScope(string scope)
     {
         if (scope is not ("machine" or "user"))
@@ -211,6 +223,11 @@ public sealed record DirectPackageDefinition(
         // app name when no key is given, so an administrator who does not know it may leave it out.
         ValidateScope(Scope);
     }
+
+    // Ignored here as well as on the base: an attribute on a virtual property does not reach its
+    // override, and without it every direct definition would grow a second copy of its size.
+    [JsonIgnore]
+    public override long? DownloadSizeBytes => SizeBytes;
 
     public static Uri ValidateUrl(string url)
     {

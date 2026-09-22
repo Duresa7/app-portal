@@ -5,6 +5,28 @@
     // The messages travel with the rows because htmx swaps this fragment alone: a refused delete has
     // to explain itself inside the thing that came back, or the reason never reaches the screen.
     var list = ViewData.Page();
+
+    // Every source the app has, named the way the edit page names it. The column used to say Action1
+    // or none, so an app the agent installs read as having nothing at all.
+    static string Sources(CatalogEntry app)
+    {
+        var sources = new List<string>();
+        if (app.HasAction1)
+        {
+            sources.Add("Action1");
+        }
+
+        sources.Add(app.Agent switch
+        {
+            AppPortal.Shared.WingetPackageDefinition { Source: AppPortal.Shared.WingetSources.Store } => "Microsoft Store",
+            AppPortal.Shared.WingetPackageDefinition => "winget",
+            AppPortal.Shared.DirectPackageDefinition => "Direct download",
+            AppPortal.Shared.ManagedPackageDefinition managed => AppPortal.Shared.PackageManagers.Find(managed.Manager)?.DisplayName ?? managed.Manager,
+            _ => "",
+        });
+        var named = sources.Where(s => s.Length > 0).ToList();
+        return named.Count == 0 ? "none" : string.Join(", ", named);
+    }
 }
 <div id="catalog-table">
     @if (list.Error is not null)
@@ -50,7 +72,7 @@
                 </td>
                 <td>@app.Publisher</td>
                 <td>@app.Category</td>
-                <td class="muted">@(string.IsNullOrWhiteSpace(app.Action1.PackageId) ? "none" : "Action1")</td>
+                <td class="muted">@Sources(app)</td>
                 <td>
                     @if (app.Hidden)
                     {

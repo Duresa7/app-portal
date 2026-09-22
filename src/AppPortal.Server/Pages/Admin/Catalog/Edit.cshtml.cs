@@ -128,6 +128,24 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     [BindProperty]
     public bool DirectRequiresReboot { get; set; }
 
+    [BindProperty]
+    public string ManagedManager { get; set; } = "choco";
+
+    [BindProperty]
+    public string ManagedId { get; set; } = "";
+
+    [BindProperty]
+    public string ManagedScope { get; set; } = "machine";
+
+    [BindProperty]
+    public string ManagedVersion { get; set; } = "";
+
+    [BindProperty]
+    public string ManagedExtraArgs { get; set; } = "";
+
+    [BindProperty]
+    public bool ManagedRequiresReboot { get; set; }
+
     public IActionResult OnGet(string id)
     {
         IsNew = string.Equals(id, NewId, StringComparison.OrdinalIgnoreCase);
@@ -209,7 +227,9 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
                 "direct" => new DirectPackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
                     DirectInstallerType, DirectSilentArgs, DirectSizeBytes ?? 0, EmptyToNull(DirectUninstallKey),
                     DirectScope, DirectRequiresReboot),
-                _ => throw new InvalidDataException("The agent package kind must be winget or direct."),
+                "managed" => new ManagedPackageDefinition((ManagedManager ?? "").Trim(), (ManagedId ?? "").Trim(),
+                    ManagedScope, EmptyToNull(ManagedVersion), EmptyToNull(ManagedExtraArgs), ManagedRequiresReboot),
+                _ => throw new InvalidDataException($"The agent package kind must be {PackageDefinition.Kinds}."),
             };
             // Before the save, not after: a loop written into the catalog is a loop every install of
             // those apps has to walk around, and the person who can undo it is the one on this page.
@@ -359,6 +379,15 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
                 DirectUninstallKey = direct.UninstallKey ?? "";
                 DirectScope = direct.Scope;
                 DirectRequiresReboot = direct.RequiresReboot;
+                break;
+            case ManagedPackageDefinition managed:
+                AgentKind = "managed";
+                ManagedManager = managed.Manager;
+                ManagedId = managed.Id;
+                ManagedScope = managed.Scope;
+                ManagedVersion = managed.Version ?? "";
+                ManagedExtraArgs = managed.ExtraArgs ?? "";
+                ManagedRequiresReboot = managed.RequiresReboot;
                 break;
         }
     }

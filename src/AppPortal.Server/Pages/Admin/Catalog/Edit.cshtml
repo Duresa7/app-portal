@@ -132,6 +132,7 @@
             <option value="" selected="@(string.IsNullOrEmpty(Model.AgentKind))">None</option>
             <option value="winget" selected="@(Model.AgentKind == "winget")">Winget</option>
             <option value="direct" selected="@(Model.AgentKind == "direct")">Direct installer</option>
+            <option value="managed" selected="@(Model.AgentKind == "managed")">A package manager on the PC</option>
         </select>
         <div id="winget-fields">
             <label for="winget-source">Source</label>
@@ -192,6 +193,36 @@
             <button type="submit" class="secondary" asp-page-handler="FetchAndHash">Fetch and hash</button>
             <p class="muted">Fetch and hash downloads the installer to calculate its hash and size. For files over the server's limit, enter these values manually.</p>
         </div>
+        <div id="managed-fields">
+            <label for="managed-manager">Package manager</label>
+            <select id="managed-manager" name="ManagedManager">
+                @foreach (var manager in AppPortal.Shared.PackageManagers.All)
+                {
+                    <option value="@manager.Name" selected="@(Model.ManagedManager == manager.Name)"
+                            data-purpose="@manager.Purpose" data-scopes="@string.Join(',', manager.Scopes)"
+                            data-pins="@(manager.CanPinVersion ? "yes" : "no")">@manager.DisplayName</option>
+                }
+            </select>
+            <p class="muted" id="managed-purpose"></p>
+            <label for="managed-id">Package id</label>
+            <input id="managed-id" name="ManagedId" value="@Model.ManagedId" placeholder="7zip" />
+            <p class="muted">Exactly as the package manager names it: letters, digits and the separators that manager uses, and nothing a command prompt would read as an instruction.</p>
+            <label for="managed-scope">Scope</label>
+            <select id="managed-scope" name="ManagedScope">
+                <option value="machine" selected="@(Model.ManagedScope == "machine")">Machine</option>
+                <option value="user" selected="@(Model.ManagedScope == "user")">User</option>
+            </select>
+            <label for="managed-version">Version (optional)</label>
+            <input id="managed-version" name="ManagedVersion" value="@Model.ManagedVersion" />
+            <label for="managed-extra">Extra arguments (optional)</label>
+            <input id="managed-extra" name="ManagedExtraArgs" value="@Model.ManagedExtraArgs" />
+            <p class="muted">Passed to the package manager as you type them. The agent does not check these; they are yours.</p>
+            <label for="managed-reboot">
+                <input id="managed-reboot" name="ManagedRequiresReboot" type="checkbox" value="true" checked="@Model.ManagedRequiresReboot" />
+                The software only works after a restart
+            </label>
+            <p class="muted">The package manager itself has to be on the PC. If it might not be, add it to the catalog and list it under Requires above, and the portal installs it first.</p>
+        </div>
     </div>
 
     <div class="actions">
@@ -205,6 +236,7 @@
     function showAgentFields() {
         document.getElementById('winget-fields').hidden = kind.value !== 'winget';
         document.getElementById('direct-fields').hidden = kind.value !== 'direct';
+        document.getElementById('managed-fields').hidden = kind.value !== 'managed';
     }
     kind.addEventListener('change', showAgentFields);
     showAgentFields();
@@ -228,4 +260,27 @@
         showSourceFields();
     });
     showSourceFields();
+
+    // Each manager says what it is for, and which scopes it can really carry out. Choosing npm to
+    // deploy a browser, or Cargo for everyone on a PC, should look odd on the form rather than fail
+    // on every device afterwards.
+    const manager = document.getElementById('managed-manager');
+    const managedScope = document.getElementById('managed-scope');
+    const managedVersion = document.getElementById('managed-version');
+    function showManagerFields() {
+        const chosen = manager.options[manager.selectedIndex];
+        const scopes = chosen.dataset.scopes.split(',');
+        document.getElementById('managed-purpose').textContent = chosen.dataset.purpose;
+        for (const option of managedScope.options) {
+            option.disabled = !scopes.includes(option.value);
+        }
+        if (!scopes.includes(managedScope.value)) {
+            managedScope.value = scopes[0];
+        }
+        const pins = chosen.dataset.pins === 'yes';
+        managedVersion.disabled = !pins;
+        managedVersion.placeholder = pins ? '' : 'This manager always installs its current version';
+    }
+    manager.addEventListener('change', showManagerFields);
+    showManagerFields();
 </script>

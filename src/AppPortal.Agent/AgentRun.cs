@@ -92,6 +92,15 @@ public static class AgentRun
             provider.GetRequiredService<ILogger<WingetExecutor>>(),
             stateDirectory,
             provider.GetRequiredService<IUserSessionLauncher>()));
+        builder.Services.AddSingleton<IPackageManagerLocator>(_ => OperatingSystem.IsWindows()
+            ? new WindowsPackageManagerLocator()
+            : new NoPackageManagerLocator());
+        builder.Services.AddSingleton<IPackageExecutor>(provider => new ManagedPackageExecutor(
+            provider.GetRequiredService<IProcessRunner>(),
+            provider.GetRequiredService<IUserSessionLauncher>(),
+            provider.GetRequiredService<IPackageManagerLocator>(),
+            provider.GetRequiredService<ILogger<ManagedPackageExecutor>>(),
+            stateDirectory));
         if (!once)
         {
             // Not in a single-shot run: the job loop long-polls for twenty-five seconds, and a run whose

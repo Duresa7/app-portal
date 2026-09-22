@@ -294,7 +294,13 @@ public static class PackageManagers
         new("powershell5-module", "Windows PowerShell module",
             "The same, for the Windows PowerShell 5.1 that every Windows PC already has.",
             "powershell.exe", [@"%SystemRoot%\System32\WindowsPowerShell\v1.0"],
-            Install: Pwsh + " \"Install-Module -Name {package} -Force -AcceptLicense {scope} {version} {extra}\"",
+            // Windows PowerShell 5.1 ships PowerShellGet 1.0.0.1, which has no -AcceptLicense and stops
+            // on its first Install-Module to ask whether it may fetch the NuGet provider. Nobody answers
+            // a question asked of a service, so the provider is fetched first, and TLS 1.2 is switched
+            // on because 5.1 does not offer it by default and the Gallery refuses anything older.
+            Install: Pwsh + " \"[Net.ServicePointManager]::SecurityProtocol = 'Tls12'; "
+                     + "Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force | Out-Null; "
+                     + "Install-Module -Name {package} -Force {scope} {version} {extra}\"",
             Uninstall: Pwsh + " \"Uninstall-Module -Name {id} -Force\"",
             List: Pwsh + " \"Get-InstalledModule\"",
             Scopes: Both,

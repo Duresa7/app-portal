@@ -11,7 +11,8 @@ Settled on 2026-09-19. Change them here first, then in the plans that depend on 
 | Audience | A product for any company, any directory or none. The author's own Action1 tenant is the first deployment, not the design limit. |
 | Identity | Devices enroll with managed enrollment keys and hold a device token. The client sends the signed-in Windows account with installs and requests; it is trusted because the PC is managed. Admins sign in with local accounts on the server; optional directory sign-in (M1-11) is an add-on, off unless configured, and local accounts are always checked first. OpenID Connect sign-in is a later add-on. No dependency on Active Directory. |
 | Storage | SQLite on the existing data volume is the source of truth for catalog, devices, installs, requests, admins and enrollment keys. `deploy/config/catalog.json` seeds an empty database; `catalog import` and `catalog export` remain. |
-| Install engines | Two: **action1** (exists) and **agent**, a Windows service running as SYSTEM that installs winget packages or direct installers with silent arguments and a SHA-256. A device may have both. A server-wide preference picks the engine when both apply; each catalog app can override it. Every install is labelled with the engine that ran it. Games are ordinary catalog apps; the agent must show download progress and resume downloads. |
+| Install engines | Two: **action1** (exists) and **agent**, a Windows service running as SYSTEM. A device may have both. A server-wide preference picks the engine when both apply; each catalog app can override it. Every install is labelled with the engine that ran it. Games are ordinary catalog apps; the agent must show download progress and resume downloads. |
+| Package sources | What the agent can install from, settled 2026-09-22 for milestone 5. A winget package, a Microsoft Store package (winget's `msstore` source, not a second mechanism), a direct installer with silent arguments and a SHA-256, or a package the PC's own package manager knows: Scoop, Chocolatey, npm, Bun, pip, Cargo, vcpkg, .NET tools, PowerShell modules, Yarn. The managers are one package kind driven by one table of manager descriptions, not one executor each. A manager the PC lacks is a readable failure and a prerequisite an administrator can declare, never something the portal installs behind their back. |
 | Agent | Installed on every device. Takes over self-update of client and agent by running the newer MSI. The scheduled-task updater and the rename swap retire with it. |
 | Install shapes | A Windows install is not one shape. A catalog app says who runs it (`scope`: SYSTEM or the signed-in person), whether a restart finishes it (`requiresReboot`), and which catalog apps come first (`requires`). The agent honours all three. |
 | Requirements | An app may also state what it needs in plain words, such as Secure Boot or a vendor account. The portal shows that text and asks the person to confirm it. It does not read TPM or Secure Boot state and never refuses an install on those grounds: installing is not running, the vendor owns the rules, and the person at the PC is better placed to judge. |
@@ -28,9 +29,12 @@ Settled on 2026-09-19. Change them here first, then in the plans that depend on 
 | 1 | 0.3.0 | SQLite, requester identity, app requests, web admin UI with local accounts, catalog CRUD, install history, devices, enrollment key management |
 | 2 | 0.6.0 | Enrollment API, agent service taking over updates, MSI and Setup.exe, installer verification in CI |
 | 3 | 0.5.0 | Agent install engine: every shape a Windows install takes. winget and direct installers, job protocol with progress, engine preference and labels, per-user installs, device requirements, restarts, prerequisite chains, uninstall |
-| 4 | 0.7.0 | Full admin parity in the Windows client over an admin JSON API |
+| 5 | 0.7.0 | Every way software arrives: Microsoft Store apps, ten more package managers behind one package kind, which managers each PC has, managed packages in the installed list, and one way to add an app |
+| 4 | 0.8.0 | Full admin parity in the Windows client over an admin JSON API |
 
-Milestone 2 was meant to be 0.4.0. Milestone 3 finished first and shipped as 0.5.0, so 0.4.0 was never cut and milestone 2's remainder ships as 0.6.0 instead. Milestone 4 moves up to 0.7.0. Versions only go forwards, so the number a milestone carries is a label rather than a promise.
+Milestone 2 was meant to be 0.4.0. Milestone 3 finished first and shipped as 0.5.0, so 0.4.0 was never cut and milestone 2's remainder ships as 0.6.0 instead. Versions only go forwards, so the number a milestone carries is a label rather than a promise.
+
+Milestone 5 goes before milestone 4 for one reason. M4-04 builds a catalog editor inside the Windows client, and M4-01's `AdminCatalogApp` carries the whole definition. Milestone 5 changes what a definition can hold. Building the client editor first means building it twice. M4-01 is already Done and stays Done; additive contract changes are ordinary.
 
 ## Packages and status
 
@@ -68,12 +72,18 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M3-09](plans/M3-09-reboot-orchestration.md) | Restarts as part of the install | M3-02, M3-04 | Done |
 | [M3-10](plans/M3-10-prerequisite-chains.md) | Software that needs other software first | M3-01, M3-05 | Done |
 | [M3-11](plans/M3-11-uninstall.md) | Taking software off again | M3-03, M3-04, M3-07 | Done |
-| [M4-01](plans/M4-01-admin-json-api.md) | Admin JSON API and client admin sessions | M1-10, M1-12 | In review |
+| [M4-01](plans/M4-01-admin-json-api.md) | Admin JSON API and client admin sessions | M1-10, M1-12 | Done |
 | [M4-02](plans/M4-02-client-admin-shell.md) | Client admin sign-in and navigation | M4-01 | Open |
 | [M4-03](plans/M4-03-client-installs-and-requests.md) | Client admin: installs and requests | M4-02 | Open |
 | [M4-04](plans/M4-04-client-catalog.md) | Client admin: catalog | M4-02 | Open |
 | [M4-05](plans/M4-05-client-devices-keys-admins.md) | Client admin: devices, keys, admins | M4-02 | Open |
-| [M4-06](plans/M4-06-release-0.7.0.md) | Release 0.7.0 | M4-03, M4-04, M4-05 | Open |
+| [M4-06](plans/M4-06-release-0.8.0.md) | Release 0.8.0 | M4-03, M4-04, M4-05 | Open |
+| [M5-01](plans/M5-01-microsoft-store-apps.md) | Microsoft Store apps | M3-03 | Open |
+| [M5-02](plans/M5-02-package-managers.md) | Package managers as one kind | M3-02, M3-05 | Open |
+| [M5-03](plans/M5-03-managers-on-a-device.md) | Which package managers a device has | M5-02 | Open |
+| [M5-04](plans/M5-04-managed-packages-in-the-installed-list.md) | Managed packages in the installed list | M5-02 | Open |
+| [M5-05](plans/M5-05-one-way-to-add-an-app.md) | One way to add an app | M5-01, M5-02 | Open |
+| [M5-06](plans/M5-06-release-0.7.0.md) | Release 0.7.0 | M5-03, M5-04, M5-05 | Open |
 
 Milestone 3 shipped as [v0.5.0](https://github.com/Duresa7/app-portal/releases/tag/v0.5.0). The full gate, Windows jobs included, was run on the release commit before the tag and passed. **None of the VM verification in the milestone 3 plans was done.** The Win32 code behind per-user installs has only ever run against a test double, and no installer has been run by the agent outside a fake process runner, so prove a per-user install and a restart on one real PC before trusting this to a fleet.
 
@@ -118,9 +128,16 @@ graph LR
   M4-02 --> M4-04
   M4-02 --> M4-05
   M4-03 & M4-04 & M4-05 --> M4-06
+  M3-03 --> M5-01
+  M3-02 & M3-05 --> M5-02
+  M5-02 --> M5-03
+  M5-02 --> M5-04
+  M5-01 & M5-02 --> M5-05
+  M5-03 & M5-04 & M5-05 --> M5-06
+  M5-05 --> M4-04
 ```
 
-What can start today: milestone 1 is Done, so M2-01, M2-02 and M3-01 have nothing in their way and can run in parallel. Everything else in milestones 2 and 3 waits on the agent, which M2-02 brings.
+What can start today: milestones 1, 2 and 3 are Done and M4-01 is merged, so M5-01 and M5-02 have nothing in their way and can run in parallel. M5-03 and M5-04 both wait only on M5-02 and can then run in parallel as well. M4-02 could start at any time; M4-04 waits on M5-05 so that the client's catalog editor is built once.
 
 ## Shared interface
 

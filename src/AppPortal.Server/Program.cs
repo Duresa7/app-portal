@@ -112,7 +112,13 @@ builder.Services.AddRazorPages();
 builder.Services.AddAdminAuthentication();
 builder.Services.AddEnrollmentRateLimiting();
 
-builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+builder.Services.ConfigureHttpJsonOptions(o =>
+{
+    o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    // A package definition's "kind" says which shape it is. A script or a person writing the body does
+    // not keep it first, and read strictly it would count as missing wherever else it was written.
+    o.SerializerOptions.AllowOutOfOrderMetadataProperties = true;
+});
 
 var app = builder.Build();
 
@@ -166,6 +172,24 @@ if (app.Services.GetRequiredService<AdminStore>().None())
 }
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
+
+// A body the JSON reader cannot turn into its type at all, such as a package definition with no kind,
+// fails with NotSupportedException rather than the JsonException the framework answers 400 for. It is
+// still the caller's mistake, so it gets the same answer instead of a 500 that blames the server.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next(context);
+    }
+    catch (NotSupportedException ex) when (ex.TargetSite?.DeclaringType?.Namespace == "System.Text.Json"
+                                           && !context.Response.HasStarted)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new ErrorMessage(
+            "The request body could not be read. " + ex.Message.Split(" Path:")[0]));
+    }
+});
 
 // The device bearer middleware guards the device API only. Admin JSON routes sit under the same
 // /api/v1 prefix but authenticate with an apa_ token against the session table, so they are excluded

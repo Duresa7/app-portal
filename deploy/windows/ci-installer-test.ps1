@@ -88,6 +88,8 @@ function Invoke-Msi {
     return $process.ExitCode
 }
 
+$resetScript = Join-Path $PSScriptRoot 'Reset-AppPortal.ps1'
+
 # ---------------------------------------------------------------------------------------------
 # Static checks. A package that names the wrong version or the wrong upgrade code either refuses to
 # upgrade the release before it or silently installs beside it, and neither is visible until a fleet
@@ -141,6 +143,16 @@ foreach ($required in 'AppPortal.exe', 'AppPortal.Agent.exe') {
     }
 }
 "ProductVersion $productVersion, UpgradeCode $upgradeCode, $($packaged.Count) files packaged."
+
+# ---------------------------------------------------------------------------------------------
+# A runner that keeps its disk starts where the last run stopped. On windows-latest that could not
+# happen, so nothing here looked for it; a self-hosted runner makes it the ordinary case. The release
+# gate also runs this script before Verify-Msi.ps1, which fails differently on the same leftovers.
+# ---------------------------------------------------------------------------------------------
+Write-Step 'Leave nothing of an earlier run in place'
+
+& $resetScript
+'What follows is this run and not the last one.'
 
 # ---------------------------------------------------------------------------------------------
 # A real server, in fake Action1 mode, on loopback. The Windows runner cannot run Linux containers,
@@ -340,10 +352,10 @@ try {
 }
 finally {
     if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force }
-    # Never leave a half-installed product on a machine somebody runs this on by hand.
-    if (Get-Service AppPortalAgent -ErrorAction SilentlyContinue) {
-        Invoke-Msi -Operation '/x' -Name 'cleanup' -Package $msiPath -Properties @('REMOVEDATA=1') | Out-Null
-    }
+    # Never leave a half-installed product, or its data directory, on a machine somebody runs this on
+    # by hand or on a runner that keeps its disk. A failure here must not replace the failure that
+    # brought us into this block, so report it and let the original stand.
+    try { & $resetScript } catch { Write-Warning "Cleanup failed: $($_.Exception.Message)" }
 }
 
 Write-Host ''

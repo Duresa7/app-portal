@@ -28,6 +28,16 @@ Each entry maps an app to an Action1 Software Repository package:
 - `action1.version` is `latest` or an exact published version.
 - `match` tells the portal which installed-software row means "this app is present". It defaults to a case-insensitive `nameContains` on the app name.
 
+An entry may also carry an `agent` package, which is what the agent on each PC installs. A winget one looks like this:
+
+```json
+"agent": { "kind": "winget", "id": "Valve.Steam", "scope": "machine", "requiresReboot": false }
+```
+
+- `source` is `winget`, the default, or `msstore` for the Microsoft Store. The Store is one of winget's own sources rather than a separate mechanism, so everything else about the entry is the same.
+- A Store `id` is a twelve-character product id such as `9WZDNCRFJ3TJ`, the last part of the app's address in the Store, not a `Publisher.Name` id.
+- Store apps are MSIX packages and install into one person's profile, so give them `"scope": "user"`. Some of them need that person signed in to the Store before it grants a licence. The portal has no account there and will not acquire one, so say so in `requirements` and the person reads it before they install.
+
 This folder is mounted read-only into the container, because the catalog is configuration rather than state.
 
 The device registry is not here. `AppPortal.Server device add` writes to `app-portal.db` in the data directory, `/app/data` in the container, which is a named volume. That one file holds the catalog, the devices and the install history: device names, endpoint IDs and SHA-256 hashes of device tokens, never a plaintext token. The token is printed once when the device is added; keep it in the password manager. Back up the volume, not this folder.

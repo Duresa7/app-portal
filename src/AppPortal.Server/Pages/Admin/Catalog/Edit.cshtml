@@ -134,8 +134,19 @@
             <option value="direct" selected="@(Model.AgentKind == "direct")">Direct installer</option>
         </select>
         <div id="winget-fields">
-            <label for="winget-id">Winget id</label>
+            <label for="winget-source">Source</label>
+            <select id="winget-source" name="WingetSource">
+                <option value="winget" selected="@(Model.WingetSource == "winget")">winget</option>
+                <option value="msstore" selected="@(Model.WingetSource == "msstore")">Microsoft Store</option>
+            </select>
+            <label for="winget-id" id="winget-id-label">Winget id</label>
             <input id="winget-id" name="WingetId" value="@Model.WingetId" placeholder="Valve.Steam" />
+            <p class="muted" id="winget-store-hint" hidden>
+                A Store product id is the last part of the app's address in the Store, such as 9WZDNCRFJ3TJ.
+                Store apps install into one person's profile, so leave the scope on User.
+                Some of them need that person signed in to the Store before the Store will grant a licence;
+                say so under Requirements and the portal will show it before they install.
+            </p>
             <label for="winget-scope">Scope</label>
             <select id="winget-scope" name="WingetScope">
                 <option value="machine" selected="@(Model.WingetScope == "machine")">Machine</option>
@@ -149,7 +160,7 @@
                 <input id="winget-reboot" name="WingetRequiresReboot" type="checkbox" value="true" checked="@Model.WingetRequiresReboot" />
                 The software only works after a restart
             </label>
-            <button type="submit" class="secondary" asp-page-handler="LookupWinget">Look up winget id</button>
+            <button type="submit" class="secondary" asp-page-handler="LookupWinget">Look up this id</button>
         </div>
         <div id="direct-fields">
             <label for="direct-url">Installer URL</label>
@@ -197,4 +208,24 @@
     }
     kind.addEventListener('change', showAgentFields);
     showAgentFields();
+
+    // The Store wants a different sort of id and a different scope, so the form says which it wants
+    // rather than leaving an administrator to find out from a validation message.
+    const source = document.getElementById('winget-source');
+    const scope = document.getElementById('winget-scope');
+    function showSourceFields() {
+        const store = source.value === 'msstore';
+        document.getElementById('winget-id-label').textContent = store ? 'Store product id' : 'Winget id';
+        document.getElementById('winget-id').placeholder = store ? '9WZDNCRFJ3TJ' : 'Valve.Steam';
+        document.getElementById('winget-store-hint').hidden = !store;
+    }
+    source.addEventListener('change', function () {
+        // Only when the person changes the source, never on load: on load the value is the one that
+        // was saved, and moving it would rewrite an administrator's own choice behind their back.
+        if (source.value === 'msstore') {
+            scope.value = 'user';
+        }
+        showSourceFields();
+    });
+    showSourceFields();
 </script>

@@ -105,8 +105,8 @@ public sealed class WingetExecutor(
         }
 
         var log = new JobLog(stateDirectory, job.JobId);
-        var arguments = $"uninstall --id {Quote(winget.Id)} --exact --scope {winget.Scope} --silent "
-                        + "--accept-source-agreements --disable-interactivity";
+        var arguments = $"uninstall --id {Quote(winget.Id)} --exact --source {winget.Source} "
+                        + $"--scope {winget.Scope} --silent --accept-source-agreements --disable-interactivity";
         log.Write($"winget {arguments}");
         progress.Report((0, "Removing"));
 
@@ -150,6 +150,10 @@ public sealed class WingetExecutor(
             "install",
             "--id", winget.Id,
             "--exact",
+            // Always named, never left to whichever source answers first. A Store product id and a
+            // winget id cannot be told apart by winget, and resolving one against the other source
+            // fails with "no installer matches this PC", which reads like a packaging problem.
+            "--source", winget.Source,
             "--scope", winget.Scope,
             "--silent",
             "--accept-package-agreements",

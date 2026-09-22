@@ -171,7 +171,8 @@ public static class AdminCatalogEndpoints
         {
             try
             {
-                var lookup = await PackageHelpers.Shared.LookupWingetAsync((body?.PackageId ?? "").Trim(), ct);
+                var lookup = await PackageHelpers.Shared
+                    .LookupWingetAsync((body?.PackageId ?? "").Trim(), ct, body?.Source ?? WingetSources.Winget);
                 return Results.Ok(new AdminWingetLookup(lookup.Exists, lookup.Message));
             }
             catch (InvalidDataException ex)

@@ -113,6 +113,31 @@
       }
     },
     {
+      "id": "example-store-app",
+      "name": "Example Store application",
+      "publisher": "A vendor",
+      "description": "An application from the Microsoft Store. Replace the product id with the last part of the app's address in the Store. Hidden until you do.",
+      "category": "Other",
+      "iconUrl": null,
+      "featured": false,
+      "hidden": true,
+      "requirements": "Some Store applications need you signed in to the Microsoft Store before it will grant a licence.",
+      "userRemovable": true,
+      "action1": {
+        "packageId": "",
+        "version": "latest"
+      },
+      "agent": {
+        "kind": "winget",
+        "id": "9WZDNCRFJ3TJ",
+        "scope": "user",
+        "version": null,
+        "extraArgs": null,
+        "requiresReboot": false,
+        "source": "msstore"
+      }
+    },
+    {
       "id": "example-direct-installer",
       "name": "Example direct installer",
       "publisher": "Your vendor",

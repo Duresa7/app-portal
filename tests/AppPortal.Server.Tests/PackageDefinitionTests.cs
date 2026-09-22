@@ -36,7 +36,7 @@ public sealed class PackageDefinitionTests
     [Fact]
     public void Winget_json_preserves_optional_fields()
     {
-        const string json = """{"kind":"winget","id":"Valve.Steam","scope":"machine","version":null,"extraArgs":null,"requiresReboot":false}""";
+        const string json = """{"kind":"winget","id":"Valve.Steam","scope":"machine","version":null,"extraArgs":null,"requiresReboot":false,"source":"winget"}""";
         var definition = JsonSerializer.Deserialize<PackageDefinition>(json, Json)!;
         definition.Validate();
         Assert.Equal(json, JsonSerializer.Serialize(definition, Json));
@@ -153,6 +153,48 @@ public sealed class PackageDefinitionTests
     }
 
     [Fact]
+    public void A_catalog_written_before_the_store_still_parses_and_still_means_winget()
+    {
+        // Source is the one field an existing catalog does not carry, so every app in one has to come
+        // back meaning what it meant before.
+        const string json = """{"kind":"winget","id":"Valve.Steam","scope":"machine","version":null,"extraArgs":null,"requiresReboot":false}""";
+        var definition = Assert.IsType<WingetPackageDefinition>(JsonSerializer.Deserialize<PackageDefinition>(json, Json));
+        definition.Validate();
+        Assert.Equal(WingetSources.Winget, definition.Source);
+    }
+
+    [Fact]
+    public void A_store_package_round_trips_and_keeps_its_source()
+    {
+        var store = new WingetPackageDefinition("9WZDNCRFJ3TJ", "user", Source: WingetSources.Store);
+        store.Validate();
+        var json = JsonSerializer.Serialize<PackageDefinition>(store, Json);
+        Assert.Contains("""  "source":"msstore" """.Trim(), json);
+        Assert.Equal(store, JsonSerializer.Deserialize<PackageDefinition>(json, Json));
+    }
+
+    [Theory]
+    // A Store product id has no publisher and no dot, so the winget rule rejects every one of them.
+    [InlineData("9WZDNCRFJ3TJ", WingetSources.Winget)]
+    // And a dotted winget id is not a Store product id, which is twelve characters of one word.
+    [InlineData("Valve.Steam", WingetSources.Store)]
+    [InlineData("9WZDNCRFJ3T", WingetSources.Store)]
+    [InlineData("9WZDNCRFJ3TJ9", WingetSources.Store)]
+    [InlineData("", WingetSources.Store)]
+    public void Each_source_refuses_the_other_sources_id(string id, string source)
+    {
+        Assert.Throws<InvalidDataException>(() => new WingetPackageDefinition(id, "user", Source: source).Validate());
+    }
+
+    [Fact]
+    public void A_source_that_is_neither_is_refused()
+    {
+        var error = Assert.Throws<InvalidDataException>(
+            () => new WingetPackageDefinition("Valve.Steam", "machine", Source: "chocolatey").Validate());
+        Assert.Contains("msstore", error.Message);
+    }
+
+    [Fact]
     public async Task Fetch_hashes_the_stream_and_counts_bytes_without_buffering_the_response()
     {
         var data = Encoding.UTF8.GetBytes("a vendor installer");
@@ -222,6 +264,27 @@ public sealed class PackageDefinitionTests
         Assert.Equal(0, await CatalogCli.RunAsync(["catalog", "verify"], store, new FakeAction1Client(), output, CancellationToken.None, helpers));
         Assert.Contains("unavailable", output.ToString());
         Assert.DoesNotContain("->", output.ToString());
+    }
+
+    [Fact]
+    public async Task Catalog_verify_passes_a_store_app_without_asking_winget_pkgs_about_it()
+    {
+        // The seed catalog carries a Store example, and the gate runs catalog verify over it. A lookup
+        // that forgot the source asked winget-pkgs for a manifest no Store app has, and then reported
+        // a correct product id as an invalid one.
+        using var client = new HttpClient(new StubHandler(_ => throw new InvalidOperationException("winget-pkgs must not be asked about a Store id.")));
+        using var test = new TestDatabase();
+        var store = new CatalogStore(test.Database, "");
+        store.Upsert(new CatalogEntry
+        {
+            Id = "store-app",
+            Name = "Store App",
+            Agent = new WingetPackageDefinition("9WZDNCRFJ3TJ", "user", Source: WingetSources.Store),
+        });
+        using var output = new StringWriter();
+        Assert.Equal(0, await CatalogCli.RunAsync(["catalog", "verify"], store, new FakeAction1Client(),
+            output, CancellationToken.None, new PackageHelpers(client)));
+        Assert.Contains("Store product id", output.ToString());
     }
 
     [Fact]

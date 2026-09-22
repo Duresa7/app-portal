@@ -4,6 +4,241 @@
              xmlns:views="using:AppPortal.Client.Views.Admin"
              x:Class="AppPortal.Client.Views.Admin.AdminsView"
              x:DataType="admin:AdminsViewModel">
-    <!-- Placeholder until M4-05 builds this page. -->
-    <views:ComingSoonPanel />
+
+    <UserControl.Styles>
+        <!-- A status pill, as the web tables mark Enabled and Disabled. -->
+        <Style Selector="Border.pill">
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="8,1" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+        </Style>
+        <Style Selector="Border.pill TextBlock">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Border.pill.off">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <!-- The in-page dialog, drawn the way the sign-in dialog is. -->
+        <Style Selector="Border.smoke">
+            <Setter Property="Background" Value="#4D000000" />
+            <Setter Property="CornerRadius" Value="{DynamicResource OverlayCornerRadius}" />
+        </Style>
+        <Style Selector="Border.dialog">
+            <Setter Property="Width" Value="440" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource SolidBackgroundFillColorBaseBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{DynamicResource OverlayCornerRadius}" />
+            <Setter Property="BoxShadow" Value="0 8 32 0 #40000000" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+        <Style Selector="Border.dialogFooter">
+            <Setter Property="Background" Value="{DynamicResource LayerFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+            <Setter Property="Padding" Value="24" />
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto">
+                <TextBlock Grid.Column="0" Classes="title" Text="Admins" />
+                <ProgressBar Grid.Column="1" IsIndeterminate="True" Classes="thin" Width="80" HorizontalAlignment="Left"
+                             VerticalAlignment="Center" Margin="12,8,0,0" IsVisible="{Binding IsBusy}" />
+                <Button Grid.Column="2" Classes="accent" Command="{Binding OpenAddCommand}" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <TextBlock Text="Add administrator" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                </Button>
+                <Button Grid.Column="3" Classes="standard" Command="{Binding RefreshCommand}" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <PathIcon Data="{DynamicResource IconRefresh}" />
+                        <TextBlock Text="Refresh" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,20" TextWrapping="Wrap"
+                       Text="The accounts that can sign in here and on the web admin pages." />
+
+            <Border Grid.Row="2" Classes="infoBar critical" Margin="0,0,0,16"
+                    IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+            <Border Grid.Row="3" Classes="infoBar" Background="{DynamicResource SystemFillColorSuccessBackgroundBrush}" Margin="0,0,0,16"
+                    IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <PathIcon Grid.Column="0" Data="{DynamicResource IconCheck}" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Notice}" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="4" Classes="card" Padding="4" VerticalAlignment="Top" Margin="0,0,0,24">
+                <ScrollViewer>
+                    <StackPanel>
+                        <Grid ColumnDefinitions="*,90,90,150,230" Margin="12,8,12,8">
+                            <TextBlock Grid.Column="0" Text="User name" Classes="caption" />
+                            <TextBlock Grid.Column="1" Text="Password" Classes="caption" />
+                            <TextBlock Grid.Column="2" Text="Status" Classes="caption" />
+                            <TextBlock Grid.Column="3" Text="Last signed in" Classes="caption" />
+                        </Grid>
+                        <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="8,0" />
+                        <TextBlock Classes="secondary" Margin="12,12" Text="No administrators to show." IsVisible="{Binding !Accounts.Count}" />
+                        <ItemsControl ItemsSource="{Binding Accounts}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="admin:AdminAccountRow">
+                                    <Border Classes="row">
+                                        <Grid ColumnDefinitions="*,90,90,150,230">
+                                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Username}" Classes="bodyStrong" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="(you)" Classes="caption" VerticalAlignment="Center" IsVisible="{Binding IsYou}" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="{Binding PasswordText}" Classes="secondary" VerticalAlignment="Center" />
+                                            <Border Grid.Column="2" Classes="pill" Classes.off="{Binding Account.Disabled}">
+                                                <TextBlock Text="{Binding StatusText}" />
+                                            </Border>
+                                            <TextBlock Grid.Column="3" Text="{Binding LastSignedInText}" Classes="secondary" VerticalAlignment="Center" />
+                                            <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                                <Button Classes="standard small" Content="Reset password" IsVisible="{Binding CanResetPassword}"
+                                                        Command="{Binding $parent[ItemsControl].((admin:AdminsViewModel)DataContext).OpenResetCommand, FallbackValue={x:Null}}"
+                                                        CommandParameter="{Binding}" />
+                                                <!-- Shown but unavailable on your own row, so the reason is visible rather than a missing button. -->
+                                                <Button Classes="standard small" Content="Disable" IsVisible="{Binding !Account.Disabled}" IsEnabled="{Binding CanDisable}"
+                                                        ToolTip.Tip="You cannot disable the account you are signed in with."
+                                                        ToolTip.ShowOnDisabled="True" ToolTip.ServiceEnabled="{Binding IsYou}"
+                                                        Command="{Binding $parent[ItemsControl].((admin:AdminsViewModel)DataContext).RequestDisableCommand, FallbackValue={x:Null}}"
+                                                        CommandParameter="{Binding}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Classes="standard" Content="Load more" HorizontalAlignment="Center" Margin="0,8,0,8"
+                                IsVisible="{Binding HasMore}" Command="{Binding LoadMoreCommand}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- The dialogs. Enter and Escape are bound to each one's open state, because a default button
+             answers Enter for the whole window even while its dialog is hidden. -->
+
+        <!-- Add an administrator -->
+        <Panel IsVisible="{Binding IsAddOpen}">
+            <Border Classes="smoke" />
+            <Border Classes="dialog">
+                <Grid RowDefinitions="*,Auto">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                        <TextBlock Classes="subtitle" Text="Add an administrator" />
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="caption" Text="User name" />
+                            <TextBox Text="{Binding NewUsername}" />
+                        </StackPanel>
+                        <StackPanel Spacing="8">
+                            <RadioButton GroupName="new-password" Content="Generate a password and show it once" IsChecked="{Binding GenerateNewPassword}" />
+                            <RadioButton GroupName="new-password" Content="Enter a password" IsChecked="{Binding !GenerateNewPassword}" />
+                        </StackPanel>
+                        <StackPanel Spacing="6" IsVisible="{Binding !GenerateNewPassword}">
+                            <TextBlock Classes="caption" Text="Password" />
+                            <TextBox Text="{Binding NewPassword}" PasswordChar="&#x2022;" />
+                            <TextBlock Classes="caption" Text="{Binding PasswordRule}" />
+                        </StackPanel>
+                        <Border Classes="infoBar critical" IsVisible="{Binding AddError, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding AddError}" TextWrapping="Wrap" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                    <Border Grid.Row="1" Classes="dialogFooter">
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" IsDefault="{Binding IsAddOpen}" Content="Add"
+                                    Command="{Binding AddCommand}" IsEnabled="{Binding !IsBusy}" />
+                            <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="{Binding IsAddOpen}" Content="Cancel"
+                                    Command="{Binding CancelAddCommand}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Panel>
+
+        <!-- Reset a password -->
+        <Panel IsVisible="{Binding IsResetOpen}">
+            <Border Classes="smoke" />
+            <Border Classes="dialog">
+                <Grid RowDefinitions="*,Auto">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                        <TextBlock Classes="subtitle" Text="{Binding ResetTarget.Username, StringFormat='Reset the password for {0}', FallbackValue=''}" TextWrapping="Wrap" />
+                        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                                   Text="Every session that account holds is signed out, here and on the web." />
+                        <Border Classes="infoBar caution" IsVisible="{Binding ResetIsYou}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Grid.Column="0" Data="{DynamicResource IconWarning}" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                <TextBlock Grid.Column="1" TextWrapping="Wrap"
+                                           Text="This is the account you are signed in with. This app signs out too, and you sign in again with the new password." />
+                            </Grid>
+                        </Border>
+                        <StackPanel Spacing="8">
+                            <RadioButton GroupName="reset-password" Content="Generate a password and show it once" IsChecked="{Binding GenerateResetPassword}" />
+                            <RadioButton GroupName="reset-password" Content="Enter a password" IsChecked="{Binding !GenerateResetPassword}" />
+                        </StackPanel>
+                        <StackPanel Spacing="6" IsVisible="{Binding !GenerateResetPassword}">
+                            <TextBlock Classes="caption" Text="New password" />
+                            <TextBox Text="{Binding ResetPassword}" PasswordChar="&#x2022;" />
+                            <TextBlock Classes="caption" Text="{Binding PasswordRule}" />
+                        </StackPanel>
+                        <Border Classes="infoBar critical" IsVisible="{Binding ResetError, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding ResetError}" TextWrapping="Wrap" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                    <Border Grid.Row="1" Classes="dialogFooter">
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" IsDefault="{Binding IsResetOpen}" Content="Reset"
+                                    Command="{Binding ResetCommand}" IsEnabled="{Binding !IsBusy}" />
+                            <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="{Binding IsResetOpen}" Content="Cancel"
+                                    Command="{Binding CancelResetCommand}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Panel>
+
+        <!-- Disable, confirmed -->
+        <Panel IsVisible="{Binding IsDisableOpen}">
+            <Border Classes="smoke" />
+            <Border Classes="dialog">
+                <Grid RowDefinitions="*,Auto">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                        <TextBlock Classes="subtitle" Text="{Binding DisableTarget.Username, StringFormat='Disable {0}?', FallbackValue=''}" TextWrapping="Wrap" />
+                        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                                   Text="The account can no longer sign in, and every session it holds ends now, here and on the web. Its history stays." />
+                    </StackPanel>
+                    <Border Grid.Row="1" Classes="dialogFooter">
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" Content="Disable"
+                                    Command="{Binding ConfirmDisableCommand}" />
+                            <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="{Binding IsDisableOpen}" IsDefault="{Binding IsDisableOpen}" Content="Cancel"
+                                    Command="{Binding CancelDisableCommand}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Panel>
+
+        <views:ShowOnceDialog DataContext="{Binding ShowOnce}" />
+    </Panel>
 </UserControl>

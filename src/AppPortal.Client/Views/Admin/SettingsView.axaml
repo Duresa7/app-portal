@@ -1,9 +1,54 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:admin="using:AppPortal.Client.ViewModels.Admin"
-             xmlns:views="using:AppPortal.Client.Views.Admin"
              x:Class="AppPortal.Client.Views.Admin.SettingsView"
              x:DataType="admin:SettingsViewModel">
-    <!-- Placeholder until M4-05 builds this page. -->
-    <views:ComingSoonPanel />
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Grid.Column="0" Classes="title" Text="Settings" />
+            <ProgressBar Grid.Column="1" IsIndeterminate="True" Classes="thin" Width="80" HorizontalAlignment="Left"
+                         VerticalAlignment="Center" Margin="12,8,0,0" IsVisible="{Binding IsBusy}" />
+            <Button Grid.Column="2" Classes="standard" Command="{Binding RefreshCommand}" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <PathIcon Data="{DynamicResource IconRefresh}" />
+                    <TextBlock Text="Refresh" />
+                </StackPanel>
+            </Button>
+        </Grid>
+        <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,20" TextWrapping="Wrap"
+                   Text="Settings the whole server shares. They apply to every device, whoever changes them and wherever from." />
+
+        <Border Grid.Row="2" Classes="infoBar critical" Margin="0,0,0,16"
+                IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Grid ColumnDefinitions="Auto,*">
+                <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+            </Grid>
+        </Border>
+        <Border Grid.Row="3" Classes="infoBar" Background="{DynamicResource SystemFillColorSuccessBackgroundBrush}" Margin="0,0,0,16"
+                IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Grid ColumnDefinitions="Auto,*">
+                <PathIcon Grid.Column="0" Data="{DynamicResource IconCheck}" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                <TextBlock Grid.Column="1" Text="{Binding Notice}" TextWrapping="Wrap" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="4" Classes="card" Padding="20" VerticalAlignment="Top" HorizontalAlignment="Left" MaxWidth="640" Margin="0,0,0,24">
+            <StackPanel Spacing="12">
+                <TextBlock Classes="bodyStrong" Text="Default install engine" />
+                <!-- The same two paragraphs as the web page: the rule is the point of the setting. -->
+                <TextBlock Classes="secondary" TextWrapping="Wrap"
+                           Text="Which engine installs an app when a device could use either. It only decides between the two: an app or a device that has one engine uses that one whatever this says." />
+                <TextBlock Classes="secondary" TextWrapping="Wrap"
+                           Text="A device set to prefer an engine wins over this. Failing that, an app set to prefer one wins. Failing that, this setting decides." />
+                <StackPanel Spacing="6" Margin="0,4,0,0">
+                    <TextBlock Classes="caption" Text="Prefer" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ComboBox Classes="filter" Width="200" ItemsSource="{Binding Engines}" SelectedItem="{Binding DefaultEngine}" />
+                        <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
 </UserControl>

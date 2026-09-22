@@ -28,7 +28,8 @@ public static class AdminSections
 /// </summary>
 public sealed class AdminAreaViewModel : ViewModelBase
 {
-    public AdminAreaViewModel(IAdminApiClient api, Action<int> navigate)
+    /// <param name="username">Who signed in, so the admins page can keep them from disabling themselves.</param>
+    public AdminAreaViewModel(IAdminApiClient api, Action<int> navigate, string? username = null)
     {
         Dashboard = new DashboardViewModel(api, navigate);
         Installs = new InstallsViewModel(api);
@@ -36,7 +37,7 @@ public sealed class AdminAreaViewModel : ViewModelBase
         Requests = new RequestsViewModel(api);
         Devices = new DevicesViewModel(api);
         Keys = new KeysViewModel(api);
-        Admins = new AdminsViewModel(api);
+        Admins = new AdminsViewModel(api, username);
         Settings = new SettingsViewModel(api);
     }
 

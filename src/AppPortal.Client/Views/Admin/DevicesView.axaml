@@ -4,6 +4,424 @@
              xmlns:views="using:AppPortal.Client.Views.Admin"
              x:Class="AppPortal.Client.Views.Admin.DevicesView"
              x:DataType="admin:DevicesViewModel">
-    <!-- Placeholder until M4-05 builds this page. -->
-    <views:ComingSoonPanel />
+
+    <UserControl.Styles>
+        <Style Selector="Border.pill">
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="8,1" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+        </Style>
+        <Style Selector="Border.pill TextBlock">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Border.pill.off">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+        </Style>
+        <Style Selector="Border.pill.failed">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
+        </Style>
+        <!-- An engine the device has: a neutral tag, not a status. -->
+        <Style Selector="Border.tag">
+            <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+            <Setter Property="Padding" Value="6,1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
+        </Style>
+        <Style Selector="Border.tag TextBlock">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <!-- A whole row that opens the device, as each device name on the web table is a link. -->
+        <Style Selector="Button.rowButton">
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="FontFamily" Value="{DynamicResource PortalFontFamily}" />
+        </Style>
+        <Style Selector="Button.rowButton:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+        </Style>
+        <Style Selector="Button.rowButton:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+        </Style>
+        <Style Selector="Border.smoke">
+            <Setter Property="Background" Value="#4D000000" />
+            <Setter Property="CornerRadius" Value="{DynamicResource OverlayCornerRadius}" />
+        </Style>
+        <Style Selector="Border.dialog">
+            <Setter Property="Width" Value="440" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource SolidBackgroundFillColorBaseBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{DynamicResource OverlayCornerRadius}" />
+            <Setter Property="BoxShadow" Value="0 8 32 0 #40000000" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+        <Style Selector="Border.dialogFooter">
+            <Setter Property="Background" Value="{DynamicResource LayerFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+            <Setter Property="Padding" Value="24" />
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto">
+                <TextBlock Grid.Column="0" Classes="title" Text="Devices" />
+                <ProgressBar Grid.Column="1" IsIndeterminate="True" Classes="thin" Width="80" HorizontalAlignment="Left"
+                             VerticalAlignment="Center" Margin="12,8,0,0" IsVisible="{Binding IsBusy}" />
+                <Button Grid.Column="2" Classes="accent" Command="{Binding OpenAddCommand}" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <TextBlock Text="Add device" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                </Button>
+                <Button Grid.Column="3" Classes="standard" Command="{Binding RefreshCommand}" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <PathIcon Data="{DynamicResource IconRefresh}" />
+                        <TextBlock Text="Refresh" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,20" TextWrapping="Wrap"
+                       Text="Every enrolled PC. Open one to rename it, choose its install engine, rotate its token or remove it." />
+
+            <Border Grid.Row="2" Classes="infoBar critical" Margin="0,0,0,16"
+                    IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+            <Border Grid.Row="3" Classes="infoBar" Background="{DynamicResource SystemFillColorSuccessBackgroundBrush}" Margin="0,0,0,16"
+                    IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <PathIcon Grid.Column="0" Data="{DynamicResource IconCheck}" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Notice}" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+
+            <!-- The table -->
+            <Grid Grid.Row="4" RowDefinitions="Auto,*" IsVisible="{Binding IsListOpen}">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,16">
+                    <TextBox Classes="search" Width="320" Text="{Binding Search}" PlaceholderText="Search devices">
+                        <TextBox.InnerLeftContent>
+                            <PathIcon Data="{DynamicResource IconSearch}" Width="14" Height="14" Margin="10,0,0,0"
+                                      Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </TextBox.InnerLeftContent>
+                        <TextBox.KeyBindings>
+                            <KeyBinding Gesture="Enter" Command="{Binding SearchDevicesCommand}" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                    <Button Classes="standard" Content="Search" Command="{Binding SearchDevicesCommand}" />
+                </StackPanel>
+                <Border Grid.Row="1" Classes="card" Padding="4" VerticalAlignment="Top" Margin="0,0,0,24">
+                    <ScrollViewer>
+                        <StackPanel>
+                            <Grid ColumnDefinitions="*,120,64,130,80,120,56" Margin="12,8,12,8">
+                                <TextBlock Grid.Column="0" Text="Name" Classes="caption" />
+                                <TextBlock Grid.Column="1" Text="Engines" Classes="caption" />
+                                <TextBlock Grid.Column="2" Text="Agent" Classes="caption" />
+                                <TextBlock Grid.Column="3" Text="Last seen" Classes="caption" />
+                                <TextBlock Grid.Column="4" Text="Status" Classes="caption" />
+                                <TextBlock Grid.Column="5" Text="Enrolled with" Classes="caption" />
+                                <TextBlock Grid.Column="6" Text="Installs" Classes="caption" HorizontalAlignment="Right" />
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="8,0" />
+                            <TextBlock Classes="secondary" Margin="12,12" Text="No devices match." IsVisible="{Binding !Devices.Count}" />
+                            <ItemsControl ItemsSource="{Binding Devices}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="admin:DeviceRow">
+                                        <Button Classes="rowButton" ToolTip.Tip="Open this device"
+                                                Command="{Binding $parent[ItemsControl].((admin:DevicesViewModel)DataContext).OpenDeviceCommand, FallbackValue={x:Null}}"
+                                                CommandParameter="{Binding}">
+                                            <Grid ColumnDefinitions="*,120,64,130,80,120,56">
+                                                <TextBlock Grid.Column="0" Text="{Binding Name}" Classes="bodyStrong" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                    <Border Classes="tag" IsVisible="{Binding HasAction1}"><TextBlock Text="Action1" /></Border>
+                                                    <Border Classes="tag" IsVisible="{Binding HasAgent}"><TextBlock Text="Agent" /></Border>
+                                                    <TextBlock Classes="secondary" Text="none" IsVisible="{Binding HasNoEngine}" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" Text="{Binding AgentVersionText}" Classes="secondary" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="3" Text="{Binding LastSeenText}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                <Border Grid.Column="4" Classes="pill" Classes.off="{Binding !Device.Enabled}">
+                                                    <TextBlock Text="{Binding StatusText}" />
+                                                </Border>
+                                                <TextBlock Grid.Column="5" Text="{Binding EnrolledWithText}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="6" Text="{Binding InstallCountText}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                            </Grid>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Classes="standard" Content="Load more" HorizontalAlignment="Center" Margin="0,8,0,8"
+                                    IsVisible="{Binding HasMore}" Command="{Binding LoadMoreCommand}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <!-- One device -->
+            <ScrollViewer Grid.Row="4" IsVisible="{Binding IsDetailOpen}" Padding="0,0,12,0">
+                <StackPanel Spacing="16" Margin="0,0,0,24">
+                    <Border Classes="card" Padding="20">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <PathIcon Grid.Column="0" Data="{DynamicResource IconDevice}" Width="20" Height="20" Margin="0,0,10,0"
+                                          Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+                                <TextBlock Grid.Column="1" Classes="subtitle" Text="{Binding SelectedRow.Name, FallbackValue=''}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <Button Grid.Column="2" Classes="standard" Content="Back to devices" Command="{Binding BackCommand}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Id" />
+                                <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Selected.Id, FallbackValue=''}" FontFamily="Consolas, Cascadia Mono, monospace" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Registered" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedRow.RegisteredText, FallbackValue=''}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Last seen" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedRow.LastSeenText, FallbackValue=''}" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Classes="secondary" Text="Agent" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedRow.AgentText, FallbackValue=''}" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Classes="secondary" Text="Enrolled with" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedRow.EnrolledWithText, FallbackValue=''}" />
+                                <TextBlock Grid.Row="5" Grid.Column="0" Classes="secondary" Text="Installs" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SelectedRow.InstallCountText, FallbackValue=''}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card" Padding="20">
+                        <StackPanel Spacing="12" MaxWidth="560" HorizontalAlignment="Left">
+                            <TextBlock Classes="bodyStrong" Text="Settings" />
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="caption" Text="Name" />
+                                <TextBox Text="{Binding EditName}" />
+                            </StackPanel>
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="caption" Text="Action1 endpoint id" />
+                                <TextBox Text="{Binding EditEndpointId}" />
+                                <TextBlock Classes="caption" TextWrapping="Wrap" Text="Empty means this device has no Action1 endpoint to deploy through." />
+                            </StackPanel>
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="caption" Text="Engine preference" />
+                                <ComboBox Classes="filter" Width="240" ItemsSource="{Binding EnginePreferences}" SelectedItem="{Binding EditEnginePreference}" />
+                                <TextBlock Classes="caption" TextWrapping="Wrap" Text="Which engine installs go through for this device. A preference here wins over the app's and the server's." />
+                            </StackPanel>
+                            <CheckBox IsChecked="{Binding EditEnabled}">
+                                <TextBlock TextWrapping="Wrap" Text="Enabled. A disabled device is refused by the server on its very next call." />
+                            </CheckBox>
+                            <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card" Padding="20">
+                        <StackPanel Spacing="12">
+                            <TextBlock Classes="bodyStrong" Text="Token" />
+                            <TextBlock Classes="secondary" TextWrapping="Wrap"
+                                       Text="Rotating issues a new token and stops the old one immediately. The device cannot call in again until it has the new one, so do this when you can update the device." />
+                            <Button Classes="standard" Content="Rotate token" Command="{Binding RequestRotateCommand}" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card" Padding="4">
+                        <StackPanel>
+                            <TextBlock Classes="bodyStrong" Text="Package managers" Margin="12,12,12,8" />
+                            <TextBlock Classes="secondary" Margin="12,0,12,12" TextWrapping="Wrap" IsVisible="{Binding !SelectedRow.HasAgent, FallbackValue=False}"
+                                       Text="This device has no agent, so nothing reports what it has." />
+                            <StackPanel IsVisible="{Binding SelectedRow.HasAgent, FallbackValue=False}">
+                                <TextBlock Classes="secondary" Margin="12,0,12,12" TextWrapping="Wrap" IsVisible="{Binding !Managers.Count}"
+                                           Text="None reported yet. The agent looks when its service starts and once a day after that." />
+                                <StackPanel IsVisible="{Binding !!Managers.Count}">
+                                    <Grid ColumnDefinitions="*,140,200" Margin="12,0,12,8">
+                                        <TextBlock Grid.Column="0" Text="Manager" Classes="caption" />
+                                        <TextBlock Grid.Column="1" Text="Version" Classes="caption" />
+                                        <TextBlock Grid.Column="2" Text="For" Classes="caption" />
+                                    </Grid>
+                                    <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="8,0" />
+                                    <ItemsControl ItemsSource="{Binding Managers}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="admin:DeviceManagerRow">
+                                                <Border Classes="row">
+                                                    <Grid ColumnDefinitions="*,140,200">
+                                                        <TextBlock Grid.Column="0" Text="{Binding NameText}" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding VersionText}" Classes="secondary" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding ForText}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card" Padding="4">
+                        <StackPanel>
+                            <TextBlock Classes="bodyStrong" Text="Recent installs" Margin="12,12,12,8" />
+                            <TextBlock Classes="secondary" Margin="12,0,12,12" IsVisible="{Binding !RecentInstalls.Count}"
+                                       Text="Nothing has been installed on this device yet." />
+                            <StackPanel IsVisible="{Binding !!RecentInstalls.Count}">
+                                <Grid ColumnDefinitions="150,*,160,100" Margin="12,0,12,8">
+                                    <TextBlock Grid.Column="0" Text="Requested" Classes="caption" />
+                                    <TextBlock Grid.Column="1" Text="App" Classes="caption" />
+                                    <TextBlock Grid.Column="2" Text="Requested by" Classes="caption" />
+                                    <TextBlock Grid.Column="3" Text="State" Classes="caption" />
+                                </Grid>
+                                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="8,0" />
+                                <ItemsControl ItemsSource="{Binding RecentInstalls}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="admin:DeviceInstallRow">
+                                            <Border Classes="row">
+                                                <Grid ColumnDefinitions="150,*,160,100">
+                                                    <TextBlock Grid.Column="0" Text="{Binding RequestedText}" Classes="secondary" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding AppName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding RequestedByText}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                    <Border Grid.Column="3" Classes="pill off" Classes.failed="{Binding Failed}">
+                                                        <TextBlock Text="{Binding StateText}" />
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card" Padding="4">
+                        <StackPanel>
+                            <TextBlock Classes="bodyStrong" Text="Recent requests" Margin="12,12,12,8" />
+                            <TextBlock Classes="secondary" Margin="12,0,12,12" IsVisible="{Binding !RecentRequests.Count}"
+                                       Text="No software has been requested on this device yet." />
+                            <StackPanel IsVisible="{Binding !!RecentRequests.Count}">
+                                <Grid ColumnDefinitions="150,*,160,100" Margin="12,0,12,8">
+                                    <TextBlock Grid.Column="0" Text="Requested" Classes="caption" />
+                                    <TextBlock Grid.Column="1" Text="Request" Classes="caption" />
+                                    <TextBlock Grid.Column="2" Text="Requested by" Classes="caption" />
+                                    <TextBlock Grid.Column="3" Text="Status" Classes="caption" />
+                                </Grid>
+                                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="8,0" />
+                                <ItemsControl ItemsSource="{Binding RecentRequests}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="admin:DeviceRequestRow">
+                                            <Border Classes="row">
+                                                <Grid ColumnDefinitions="150,*,160,100">
+                                                    <TextBlock Grid.Column="0" Text="{Binding CreatedText}" Classes="secondary" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Text}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,0" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding RequestedByText}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                    <Border Grid.Column="3" Classes="pill off">
+                                                        <TextBlock Text="{Binding StatusText}" />
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card" Padding="20">
+                        <StackPanel Spacing="12">
+                            <TextBlock Classes="bodyStrong" Text="Remove" />
+                            <TextBlock Classes="secondary" TextWrapping="Wrap"
+                                       Text="Removing takes the device off the portal and stops its token. Its install and request history stays available to administrators under this name. A device with an install still running cannot be removed." />
+                            <Button Classes="standard" Content="Remove device" Command="{Binding RequestRemoveCommand}" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- The dialogs. Enter and Escape are bound to each one's open state, because a default button
+             answers Enter for the whole window even while its dialog is hidden. -->
+
+        <!-- Add a device by hand -->
+        <Panel IsVisible="{Binding IsAddOpen}">
+            <Border Classes="smoke" />
+            <Border Classes="dialog">
+                <Grid RowDefinitions="*,Auto">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                        <TextBlock Classes="subtitle" Text="Add a device" />
+                        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                                   Text="The same registration device add performs. The token is shown once, on the next screen, and then never again." />
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="caption" Text="Name" />
+                            <TextBox Text="{Binding NewName}" PlaceholderText="The PC's computer name" />
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="caption" Text="Action1 endpoint id" />
+                            <TextBox Text="{Binding NewEndpointId}" />
+                            <TextBlock Classes="caption" TextWrapping="Wrap" Text="Leave empty for a device that will be driven by the agent alone." />
+                        </StackPanel>
+                        <Border Classes="infoBar critical" IsVisible="{Binding AddError, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding AddError}" TextWrapping="Wrap" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                    <Border Grid.Row="1" Classes="dialogFooter">
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" IsDefault="{Binding IsAddOpen}" Content="Add device"
+                                    Command="{Binding AddCommand}" IsEnabled="{Binding !IsBusy}" />
+                            <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="{Binding IsAddOpen}" Content="Cancel"
+                                    Command="{Binding CancelAddCommand}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Panel>
+
+        <!-- Rotate, confirmed -->
+        <Panel IsVisible="{Binding IsRotateOpen}">
+            <Border Classes="smoke" />
+            <Border Classes="dialog">
+                <Grid RowDefinitions="*,Auto">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                        <TextBlock Classes="subtitle" Text="{Binding SelectedRow.Name, StringFormat='Rotate the token for {0}?', FallbackValue=''}" TextWrapping="Wrap" />
+                        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                                   Text="The old token stops working now. The device is refused on its next call until it has the new token or is enrolled again." />
+                    </StackPanel>
+                    <Border Grid.Row="1" Classes="dialogFooter">
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" Content="Rotate token"
+                                    Command="{Binding ConfirmRotateCommand}" />
+                            <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="{Binding IsRotateOpen}" IsDefault="{Binding IsRotateOpen}"
+                                    Content="Cancel" Command="{Binding CancelRotateCommand}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Panel>
+
+        <!-- Remove, confirmed -->
+        <Panel IsVisible="{Binding IsRemoveOpen}">
+            <Border Classes="smoke" />
+            <Border Classes="dialog">
+                <Grid RowDefinitions="*,Auto">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                        <TextBlock Classes="subtitle" Text="{Binding SelectedRow.Name, StringFormat='Remove {0}?', FallbackValue=''}" TextWrapping="Wrap" />
+                        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                                   Text="Its token stops working and it leaves the device list. Its install history is kept." />
+                    </StackPanel>
+                    <Border Grid.Row="1" Classes="dialogFooter">
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" Content="Remove device"
+                                    Command="{Binding ConfirmRemoveCommand}" />
+                            <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="{Binding IsRemoveOpen}" IsDefault="{Binding IsRemoveOpen}"
+                                    Content="Cancel" Command="{Binding CancelRemoveCommand}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Panel>
+
+        <views:ShowOnceDialog DataContext="{Binding ShowOnce}" />
+    </Panel>
 </UserControl>

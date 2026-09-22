@@ -4,6 +4,290 @@
              xmlns:views="using:AppPortal.Client.Views.Admin"
              x:Class="AppPortal.Client.Views.Admin.KeysView"
              x:DataType="admin:KeysViewModel">
-    <!-- Placeholder until M4-05 builds this page. -->
-    <views:ComingSoonPanel />
+
+    <UserControl.Styles>
+        <Style Selector="Border.pill">
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="8,1" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+        </Style>
+        <Style Selector="Border.pill TextBlock">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Border.pill.off">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+        </Style>
+        <Style Selector="Border.pill.failed">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <!-- A name that opens its detail, as each key name on the web page is a link. -->
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="FontFamily" Value="{DynamicResource PortalFontFamily}" />
+        </Style>
+        <Style Selector="Button.link:pointerover /template/ ContentPresenter, Button.link:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.link TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.link:pointerover TextBlock">
+            <Setter Property="TextDecorations" Value="Underline" />
+        </Style>
+        <Style Selector="Border.smoke">
+            <Setter Property="Background" Value="#4D000000" />
+            <Setter Property="CornerRadius" Value="{DynamicResource OverlayCornerRadius}" />
+        </Style>
+        <Style Selector="Border.dialog">
+            <Setter Property="Width" Value="440" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource SolidBackgroundFillColorBaseBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{DynamicResource OverlayCornerRadius}" />
+            <Setter Property="BoxShadow" Value="0 8 32 0 #40000000" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+        <Style Selector="Border.dialogFooter">
+            <Setter Property="Background" Value="{DynamicResource LayerFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+            <Setter Property="Padding" Value="24" />
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto">
+                <TextBlock Grid.Column="0" Classes="title" Text="Enrollment keys" />
+                <ProgressBar Grid.Column="1" IsIndeterminate="True" Classes="thin" Width="80" HorizontalAlignment="Left"
+                             VerticalAlignment="Center" Margin="12,8,0,0" IsVisible="{Binding IsBusy}" />
+                <Button Grid.Column="2" Classes="accent" Command="{Binding OpenCreateCommand}" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <TextBlock Text="Create key" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                </Button>
+                <Button Grid.Column="3" Classes="standard" Command="{Binding RefreshCommand}" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <PathIcon Data="{DynamicResource IconRefresh}" />
+                        <TextBlock Text="Refresh" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,20" TextWrapping="Wrap"
+                       Text="The keys new PCs enroll with in the setup wizard. A key is shown once, when it is created." />
+
+            <Border Grid.Row="2" Classes="infoBar critical" Margin="0,0,0,16"
+                    IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+            <Border Grid.Row="3" Classes="infoBar" Background="{DynamicResource SystemFillColorSuccessBackgroundBrush}" Margin="0,0,0,16"
+                    IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <PathIcon Grid.Column="0" Data="{DynamicResource IconCheck}" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Notice}" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+
+            <!-- The list -->
+            <Border Grid.Row="4" Classes="card" Padding="4" VerticalAlignment="Top" Margin="0,0,0,24" IsVisible="{Binding IsListOpen}">
+                <ScrollViewer>
+                    <StackPanel>
+                        <Grid ColumnDefinitions="*,128,64,64,136,90,80" Margin="12,8,12,8">
+                            <TextBlock Grid.Column="0" Text="Name" Classes="caption" />
+                            <TextBlock Grid.Column="1" Text="Key" Classes="caption" />
+                            <TextBlock Grid.Column="2" Text="Engine" Classes="caption" />
+                            <TextBlock Grid.Column="3" Text="Uses" Classes="caption" />
+                            <TextBlock Grid.Column="4" Text="Expires" Classes="caption" />
+                            <TextBlock Grid.Column="5" Text="Status" Classes="caption" />
+                        </Grid>
+                        <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="8,0" />
+                        <TextBlock Classes="secondary" Margin="12,12" Text="No enrollment keys yet. Create one to enroll a PC." IsVisible="{Binding !Keys.Count}" />
+                        <ItemsControl ItemsSource="{Binding Keys}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="admin:EnrollmentKeyRow">
+                                    <Border Classes="row">
+                                        <Grid ColumnDefinitions="*,128,64,64,136,90,80">
+                                            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                <Button Classes="link" ToolTip.Tip="Open this key and its enrollment attempts"
+                                                        Command="{Binding $parent[ItemsControl].((admin:KeysViewModel)DataContext).OpenKeyCommand, FallbackValue={x:Null}}"
+                                                        CommandParameter="{Binding}">
+                                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                </Button>
+                                                <TextBlock Text="{Binding CreatedText}" Classes="caption" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="{Binding PrefixText}" Classes="secondary" FontFamily="Consolas, Cascadia Mono, monospace" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="2" Text="{Binding EngineText}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="3" Text="{Binding UsesText}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="4" Text="{Binding ExpiresText}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <Border Grid.Column="5" Classes="pill" Classes.off="{Binding !IsActive}">
+                                                <TextBlock Text="{Binding StatusText}" />
+                                            </Border>
+                                            <Button Grid.Column="6" Classes="standard small" Content="Revoke" HorizontalAlignment="Right" IsVisible="{Binding CanRevoke}"
+                                                    Command="{Binding $parent[ItemsControl].((admin:KeysViewModel)DataContext).RequestRevokeCommand, FallbackValue={x:Null}}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Classes="standard" Content="Load more" HorizontalAlignment="Center" Margin="0,8,0,8"
+                                IsVisible="{Binding HasMore}" Command="{Binding LoadMoreCommand}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- One key and its attempts -->
+            <ScrollViewer Grid.Row="4" IsVisible="{Binding IsDetailOpen}" Padding="0,0,12,0">
+                <StackPanel Spacing="16" Margin="0,0,0,24">
+                    <Border Classes="card" Padding="20">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                <TextBlock Grid.Column="0" Classes="subtitle" Text="{Binding SelectedKey.Name, FallbackValue=''}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Classes="standard" Content="Revoke" Margin="0,0,8,0" IsVisible="{Binding SelectedKey.CanRevoke, FallbackValue=False}"
+                                        Command="{Binding RequestRevokeCommand}" CommandParameter="{Binding SelectedKey}" />
+                                <Button Grid.Column="2" Classes="standard" Content="Back to keys" Command="{Binding BackCommand}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Classes="secondary" Text="Key" />
+                                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{Binding SelectedKey.PrefixText, FallbackValue=''}" FontFamily="Consolas, Cascadia Mono, monospace" />
+                                    <TextBlock Classes="caption" Text="only the first characters are stored" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Classes="secondary" Text="Default engine" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedKey.EngineText, FallbackValue=''}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Classes="secondary" Text="Uses" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedKey.UsesText, FallbackValue=''}" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Classes="secondary" Text="Expires" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedKey.ExpiresText, FallbackValue=''}" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Classes="secondary" Text="Status" />
+                                <Border Grid.Row="4" Grid.Column="1" Classes="pill" Classes.off="{Binding !SelectedKey.IsActive, FallbackValue=False}">
+                                    <TextBlock Text="{Binding SelectedKey.StatusText, FallbackValue=''}" />
+                                </Border>
+                                <TextBlock Grid.Row="5" Grid.Column="0" Classes="secondary" Text="Created" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SelectedKey.CreatedText, FallbackValue=''}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card" Padding="4">
+                        <StackPanel>
+                            <TextBlock Classes="bodyStrong" Text="Enrollment attempts" Margin="12,12,12,4" />
+                            <Grid ColumnDefinitions="150,160,80,*" Margin="12,8,12,8">
+                                <TextBlock Grid.Column="0" Text="When" Classes="caption" />
+                                <TextBlock Grid.Column="1" Text="Device" Classes="caption" />
+                                <TextBlock Grid.Column="2" Text="From" Classes="caption" />
+                                <TextBlock Grid.Column="3" Text="Outcome" Classes="caption" />
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="8,0" />
+                            <TextBlock Classes="secondary" Margin="12,12" Text="Nothing has been enrolled with this key yet." IsVisible="{Binding !Events.Count}" />
+                            <ItemsControl ItemsSource="{Binding Events}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="admin:EnrollmentKeyEventRow">
+                                        <Border Classes="row">
+                                            <Grid ColumnDefinitions="150,160,80,*">
+                                                <TextBlock Grid.Column="0" Text="{Binding WhenText}" Classes="secondary" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="{Binding DeviceText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Source}" Classes="secondary" VerticalAlignment="Center" />
+                                                <Border Grid.Column="3" Classes="pill" Classes.failed="{Binding !Succeeded}">
+                                                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Classes="caption" Margin="12,8,12,12" Text="The most recent attempts." IsVisible="{Binding !!Events.Count}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- The dialogs. Enter and Escape are bound to each one's open state, because a default button
+             answers Enter for the whole window even while its dialog is hidden. -->
+
+        <!-- Create a key -->
+        <Panel IsVisible="{Binding IsCreateOpen}">
+            <Border Classes="smoke" />
+            <Border Classes="dialog">
+                <Grid RowDefinitions="*,Auto">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                        <TextBlock Classes="subtitle" Text="Create an enrollment key" />
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="caption" Text="Name" />
+                            <TextBox Text="{Binding NewName}" PlaceholderText="For example, Head office rollout" />
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="caption" Text="Default engine" />
+                            <ComboBox Classes="filter" HorizontalAlignment="Stretch" ItemsSource="{Binding Engines}" SelectedItem="{Binding NewEngine}" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,12,*">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Classes="caption" Text="Expires (optional)" />
+                                <TextBox Text="{Binding NewExpires}" PlaceholderText="YYYY-MM-DD" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="6">
+                                <TextBlock Classes="caption" Text="Maximum uses (optional)" />
+                                <TextBox Text="{Binding NewMaxUses}" PlaceholderText="unlimited" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Classes="caption" TextWrapping="Wrap" Text="The key is shown once, on the next screen." />
+                        <Border Classes="infoBar critical" IsVisible="{Binding CreateError, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding CreateError}" TextWrapping="Wrap" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                    <Border Grid.Row="1" Classes="dialogFooter">
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" IsDefault="{Binding IsCreateOpen}" Content="Create"
+                                    Command="{Binding CreateCommand}" IsEnabled="{Binding !IsBusy}" />
+                            <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="{Binding IsCreateOpen}" Content="Cancel"
+                                    Command="{Binding CancelCreateCommand}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Panel>
+
+        <!-- Revoke, confirmed -->
+        <Panel IsVisible="{Binding IsRevokeOpen}">
+            <Border Classes="smoke" />
+            <Border Classes="dialog">
+                <Grid RowDefinitions="*,Auto">
+                    <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                        <TextBlock Classes="subtitle" Text="{Binding RevokeTarget.Name, StringFormat='Revoke {0}?', FallbackValue=''}" TextWrapping="Wrap" />
+                        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                                   Text="Machines that have not enrolled with it yet no longer can. PCs already enrolled keep working." />
+                    </StackPanel>
+                    <Border Grid.Row="1" Classes="dialogFooter">
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" Content="Revoke"
+                                    Command="{Binding ConfirmRevokeCommand}" />
+                            <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="{Binding IsRevokeOpen}" IsDefault="{Binding IsRevokeOpen}"
+                                    Content="Cancel" Command="{Binding CancelRevokeCommand}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Panel>
+
+        <views:ShowOnceDialog DataContext="{Binding ShowOnce}" />
+    </Panel>
 </UserControl>

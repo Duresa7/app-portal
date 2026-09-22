@@ -97,6 +97,41 @@ public sealed class PrerequisiteChainTests : IDisposable
     }
 
     [Fact]
+    public async Task A_prerequisite_chocolatey_already_installed_is_skipped()
+    {
+        // The name is nothing like the package id, so only Chocolatey's own list, matched on the id,
+        // can say it is there.
+        _catalog.Upsert(new CatalogEntry
+        {
+            Id = "node",
+            Name = "Node.js LTS",
+            Agent = new ManagedPackageDefinition("choco", "nodejs-lts", "machine"),
+        });
+        Chain("game", "node");
+        _software.Replace(_device.Id, [new InstalledSoftware("nodejs-lts", "20.17.0")], source: "choco");
+        using var client = Client();
+
+        var install = await Start(client, "game");
+
+        Assert.Equal(1, install.StepCount);
+        Assert.Equal("A Game", install.StepName);
+    }
+
+    [Fact]
+    public void A_managed_apps_id_counts_only_in_its_own_managers_list()
+    {
+        var node = new CatalogEntry { Id = "node", Name = "Node.js LTS", Agent = new ManagedPackageDefinition("choco", "nodejs-lts", "machine") };
+
+        Assert.True(node.MatchesInstalled("nodejs-lts", "choco"));
+        Assert.True(node.MatchesInstalled("NodeJS-LTS", "choco"));
+        // The same text from winget, or from another manager, is somebody else's package.
+        Assert.False(node.MatchesInstalled("nodejs-lts", "winget"));
+        Assert.False(node.MatchesInstalled("nodejs-lts", "scoop"));
+        // The name still works from anywhere, as it always did.
+        Assert.True(node.MatchesInstalled("Node.js LTS 20.17.0", "winget"));
+    }
+
+    [Fact]
     public async Task The_app_somebody_asked_for_is_installed_even_if_the_device_thinks_it_has_it()
     {
         // Pressing Install and being told nothing happened helps nobody, whatever the inventory says.

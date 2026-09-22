@@ -32,7 +32,10 @@ namespace AppPortal.Shared;
 /// after it lands outside the quotes.
 /// </param>
 /// <param name="Uninstall">The uninstall arguments, with <c>{id}</c> and <c>{scope}</c>.</param>
-/// <param name="List">The arguments that list what this manager has installed.</param>
+/// <param name="List">
+/// The arguments that list what this manager has installed, in the most machine-readable form it offers.
+/// The agent's <c>ManagerList</c> reads the output, so the two change together.
+/// </param>
 /// <param name="Scopes">
 /// The scopes this manager can actually carry out, in preference order, so the first is the default.
 /// Several of these install into a profile whatever you ask, and one refuses to run elevated at all.
@@ -85,6 +88,18 @@ public sealed record PackageManagerDescriptor(
 {
     /// <summary>What this manager does when the catalog does not say.</summary>
     public string DefaultScope => Scopes[0];
+
+    /// <summary>
+    /// How this manager's own list spells a package the catalog names as <paramref name="id"/>. Scoop
+    /// lists an app without the bucket it came from, and vcpkg a port without the features it was
+    /// built with; the rest list the id as it was installed.
+    /// </summary>
+    public string ListedAs(string id) => Name switch
+    {
+        "scoop" => id[(id.IndexOf('/') + 1)..],
+        "vcpkg" => id.Split('[')[0],
+        _ => id,
+    };
 
     /// <summary>Whether this manager can be asked for one particular version.</summary>
     public bool CanPinVersion => PackageTemplate.Contains("{version}") || VersionFragment is not null;
@@ -192,7 +207,7 @@ public static class PackageManagers
             "npm.cmd", [@"%ProgramFiles%\nodejs", @"%APPDATA%\npm"],
             Install: "install --global {package} {extra}",
             Uninstall: "uninstall --global {id}",
-            List: "ls --global --depth=0",
+            List: "ls --global --depth=0 --json",
             Scopes: Both,
             PackageTemplate: "{id}@{version}",
             VersionFragment: null,
@@ -232,7 +247,7 @@ public static class PackageManagers
             "pip.exe", [@"%LOCALAPPDATA%\Programs\Python\Scripts", @"%ProgramFiles%\Python\Scripts"],
             Install: "install {package} {scope} --disable-pip-version-check --no-input {extra}",
             Uninstall: "uninstall {id} --yes --disable-pip-version-check",
-            List: "list --disable-pip-version-check",
+            List: "list --disable-pip-version-check --format=json",
             Scopes: Both,
             PackageTemplate: "{id}=={version}",
             VersionFragment: null,
@@ -289,7 +304,7 @@ public static class PackageManagers
             "pwsh.exe", [@"%ProgramFiles%\PowerShell\7"],
             Install: Pwsh + " \"Install-Module -Name {package} -Force -AcceptLicense {scope} {version} {extra}\"",
             Uninstall: Pwsh + " \"Uninstall-Module -Name {id} -Force\"",
-            List: Pwsh + " \"Get-InstalledModule\"",
+            List: Pwsh + " \"Get-InstalledModule | Select-Object Name, Version | ConvertTo-Csv -NoTypeInformation\"",
             Scopes: Both,
             PackageTemplate: "{id}",
             VersionFragment: "-RequiredVersion {version}",
@@ -309,7 +324,7 @@ public static class PackageManagers
                      + "Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force | Out-Null; "
                      + "Install-Module -Name {package} -Force {scope} {version} {extra}\"",
             Uninstall: Pwsh + " \"Uninstall-Module -Name {id} -Force\"",
-            List: Pwsh + " \"Get-InstalledModule\"",
+            List: Pwsh + " \"Get-InstalledModule | Select-Object Name, Version | ConvertTo-Csv -NoTypeInformation\"",
             Scopes: Both,
             PackageTemplate: "{id}",
             VersionFragment: "-RequiredVersion {version}",

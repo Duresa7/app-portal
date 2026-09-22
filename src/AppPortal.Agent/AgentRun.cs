@@ -68,11 +68,15 @@ public static class AgentRun
         builder.Services.AddSingleton<IUninstallRegistry>(_ => OperatingSystem.IsWindows()
             ? new WindowsUninstallRegistry()
             : new NoUninstallRegistry());
+        builder.Services.AddSingleton<IPackageManagerLocator>(_ => OperatingSystem.IsWindows()
+            ? new WindowsPackageManagerLocator()
+            : new NoPackageManagerLocator());
         builder.Services.AddSingleton(provider => new SoftwareReporter(
             provider.GetRequiredService<HttpClient>(),
             provider.GetRequiredService<IProcessRunner>(),
             provider.GetRequiredService<ILogger<SoftwareReporter>>(),
-            provider.GetRequiredService<IUserSessionLauncher>()));
+            provider.GetRequiredService<IUserSessionLauncher>(),
+            managers: provider.GetRequiredService<IPackageManagerLocator>()));
         builder.Services.AddSingleton(provider => new InstallerCache(
             Path.Combine(stateDirectory, "downloads"), provider.GetRequiredService<ILogger<InstallerCache>>()));
         builder.Services.AddSingleton(provider => new ResumableDownload(
@@ -92,9 +96,6 @@ public static class AgentRun
             provider.GetRequiredService<ILogger<WingetExecutor>>(),
             stateDirectory,
             provider.GetRequiredService<IUserSessionLauncher>()));
-        builder.Services.AddSingleton<IPackageManagerLocator>(_ => OperatingSystem.IsWindows()
-            ? new WindowsPackageManagerLocator()
-            : new NoPackageManagerLocator());
         builder.Services.AddSingleton<IPackageExecutor>(provider => new ManagedPackageExecutor(
             provider.GetRequiredService<IProcessRunner>(),
             provider.GetRequiredService<IUserSessionLauncher>(),
@@ -118,7 +119,8 @@ public static class AgentRun
                 provider.GetRequiredService<IProcessRunner>(),
                 provider.GetRequiredService<IPackageManagerLocator>(),
                 provider.GetRequiredService<ILogger<ManagerReporter>>(),
-                provider.GetRequiredService<IUserSessionLauncher>()));
+                provider.GetRequiredService<IUserSessionLauncher>(),
+                software: provider.GetRequiredService<SoftwareReporter>()));
             // Every start, because a restart and an upgrade both end in one, and those are the two
             // moments the server's picture of this device is otherwise wrong.
             builder.Services.AddHostedService(provider => new StartupSoftwareSweep(

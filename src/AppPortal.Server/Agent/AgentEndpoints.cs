@@ -83,7 +83,8 @@ public static class AgentEndpoints
             }
         });
 
-        group.MapPost("/software", (IReadOnlyList<InstalledSoftware> request, string? account, HttpContext context, DeviceSoftwareStore software) =>
+        group.MapPost("/software", (IReadOnlyList<InstalledSoftware> request, string? account, string? source, HttpContext context,
+            DeviceSoftwareStore software) =>
         {
             // The whole list, every time. A device that had software removed has to be able to say so,
             // and a merge would leave anything the agent stopped reporting on the record for ever.
@@ -98,9 +99,17 @@ public static class AgentEndpoints
                 return Results.BadRequest(new ErrorMessage("That account name is too long."));
             }
 
+            // No source is winget, which is all an agent from before package managers ever sends, so it
+            // keeps replacing exactly the rows it always did.
+            source = string.IsNullOrWhiteSpace(source) ? DeviceSoftwareStore.WingetSource : source.Trim();
+            if (source != DeviceSoftwareStore.WingetSource && PackageManagers.Find(source) is null)
+            {
+                return Results.BadRequest(new ErrorMessage($"This server does not know the software source '{source}'."));
+            }
+
             // No account is the machine-wide sweep; an account is one profile's own software. They are
-            // separate lists, so one sweep never erases the other.
-            software.Replace(device.Id, request, account);
+            // separate lists, and so is each source, so one sweep never erases another.
+            software.Replace(device.Id, request, account, source);
             return Results.NoContent();
         });
 

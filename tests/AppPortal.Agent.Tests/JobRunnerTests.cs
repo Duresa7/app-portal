@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using AppPortal.Agent.Executors;
 using AppPortal.Agent.Jobs;
 using AppPortal.Shared;
 
@@ -213,6 +214,37 @@ public sealed class JobRunnerTests
         Assert.Equal("Executor failed (IOException).", completion.Detail);
     }
 
+    [Fact]
+    public async Task A_package_manager_install_is_followed_by_that_managers_list_and_not_by_winget()
+    {
+        // Winget cannot see what npm installed, so asking it would leave the card saying Install.
+        var reports = new List<string>();
+        using var http = new HttpClient(new Handler((request, _) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return Task.FromResult(Job("managed"));
+            }
+
+            if (request.RequestUri!.AbsolutePath == "/api/v1/agent/software")
+            {
+                reports.Add(request.RequestUri.Query);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+        }));
+        var processes = new ListProcesses("""{ "dependencies": { "typescript": { "version": "5.5.4" } } }""");
+        var software = new SoftwareReporter(http, processes, NullLogger<SoftwareReporter>.Instance,
+            managers: new NpmLocator());
+        using var runner = new JobRunner(http, [new ManagedExecutor()], NullLogger<JobRunner>.Instance, () => Settings,
+            TimeSpan.FromMilliseconds(30), software: software);
+
+        await runner.RunOnceAsync(Settings, CancellationToken.None);
+
+        Assert.Equal("?source=npm", Assert.Single(reports));
+        Assert.Equal("ls --global --depth=0 --json", Assert.Single(processes.Arguments));
+    }
+
     // Raw JSON rather than a typed AgentJob, so that a kind this build has no type for can be sent at
     // all. That is the case the runner has to survive: a server newer than the agent.
     private static HttpResponseMessage Job(string kind) => new(HttpStatusCode.OK)
@@ -230,6 +262,7 @@ public sealed class JobRunnerTests
                     + "\",\"installerType\":\"exe\",\"silentArgs\":\"/S\",\"sizeBytes\":1000,"
                     + "\"uninstallKey\":null,\"scope\":\"machine\",\"requiresReboot\":false}",
         "winget" => "{\"kind\":\"winget\",\"id\":\"Vendor.App\",\"scope\":\"machine\"}",
+        "managed" => "{\"kind\":\"managed\",\"manager\":\"npm\",\"id\":\"typescript\",\"scope\":\"machine\"}",
         _ => "{\"kind\":\"" + kind + "\"}",
     };
 
@@ -242,6 +275,34 @@ public sealed class JobRunnerTests
         public Task<ExecutionResult> RunAsync(JobContext job, PackageDefinition d, IProgress<(int percent, string detail)> p, CancellationToken ct) => run(p, ct);
 
         public Task<ExecutionResult> UninstallAsync(JobContext job, PackageDefinition d, IProgress<(int percent, string detail)> p, CancellationToken ct) => run(p, ct);
+    }
+
+    private sealed class ManagedExecutor : IPackageExecutor
+    {
+        public string Kind => "managed";
+
+        public Task<ExecutionResult> RunAsync(JobContext job, PackageDefinition d, IProgress<(int percent, string detail)> p, CancellationToken ct)
+            => Task.FromResult(new ExecutionResult(true, "Installed.", 0));
+
+        public Task<ExecutionResult> UninstallAsync(JobContext job, PackageDefinition d, IProgress<(int percent, string detail)> p, CancellationToken ct)
+            => RunAsync(job, d, p, ct);
+    }
+
+    private sealed class NpmLocator : IPackageManagerLocator
+    {
+        public string? Find(PackageManagerDescriptor manager, string? account)
+            => manager.Name == "npm" && account is null ? @"C:\Program Files\nodejs\npm.cmd" : null;
+    }
+
+    private sealed class ListProcesses(string output) : IProcessRunner
+    {
+        public List<string> Arguments { get; } = [];
+
+        public Task<ProcessResult> RunAsync(string file, string arguments, Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
+        {
+            Arguments.Add(arguments);
+            return Task.FromResult(new ProcessResult(0, output));
+        }
     }
 
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handle) : HttpMessageHandler

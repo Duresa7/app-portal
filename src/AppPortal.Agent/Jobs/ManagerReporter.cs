@@ -19,7 +19,8 @@ public sealed class ManagerReporter(
     ILogger<ManagerReporter> logger,
     IUserSessionLauncher? sessions = null,
     Func<PortalSettings>? settings = null,
-    TimeSpan? interval = null) : BackgroundService
+    TimeSpan? interval = null,
+    SoftwareReporter? software = null) : BackgroundService
 {
     private static readonly TimeSpan VersionTimeout = TimeSpan.FromSeconds(15);
 
@@ -68,6 +69,17 @@ public sealed class ManagerReporter(
             }
 
             logger.LogInformation("Reported {Count} package managers", found.Count);
+            if (software is not null)
+            {
+                // What each of them installed, on the same schedule. Nothing else refreshes it for
+                // software somebody installed through a manager outside the portal.
+                await software.ReportManagersAsync(current, ct);
+                foreach (var account in SignedIn())
+                {
+                    await software.ReportManagersAsync(current, ct, account);
+                }
+            }
+
             return true;
         }
         catch (Exception ex) when ((ex is HttpRequestException or IOException or InvalidOperationException

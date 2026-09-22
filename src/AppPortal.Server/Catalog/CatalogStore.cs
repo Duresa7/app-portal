@@ -101,6 +101,58 @@ public sealed class CatalogEntry
         var needle = Match?.NameContains is { Length: > 0 } contains ? contains : Name;
         return installedName.Contains(needle, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Where the agent gets <paramref name="agent"/> from, named the way the catalog page names it, or
+    /// empty for none. The page's source list, its sentence and the catalog list all say it this way.
+    /// </summary>
+    public static string SourceName(PackageDefinition? agent) => agent switch
+    {
+        WingetPackageDefinition { Source: WingetSources.Store } => "Microsoft Store",
+        WingetPackageDefinition => "winget",
+        DirectPackageDefinition => "Direct download",
+        ManagedPackageDefinition managed => PackageManagers.Find(managed.Manager)?.DisplayName ?? managed.Manager,
+        _ => "",
+    };
+
+    /// <summary>
+    /// What saving this app will do, in one sentence: the app, who it installs for, and where it comes
+    /// from. An administrator reads this rather than reassembling it from six fields.
+    /// </summary>
+    public string Describe()
+    {
+        var name = string.IsNullOrWhiteSpace(Name) ? "this app" : Name.Trim();
+        if (Agent is null)
+        {
+            return HasAction1
+                ? $"Installs {name} for everyone on the PC, through Action1."
+                : $"{name} has no source yet, so no device can install it.";
+        }
+
+        var agent = $"{For(Agent.Scope)}, {Through(Agent)}";
+        if (!HasAction1)
+        {
+            return $"Installs {name} {agent}.";
+        }
+
+        var either = EngineOverride switch
+        {
+            EngineLabel.Action1 => " A device that could use either uses Action1.",
+            EngineLabel.Agent => " A device that could use either uses the agent.",
+            _ => "",
+        };
+        return $"Installs {name} for everyone on the PC through Action1, or {agent} on a device with only the agent.{either}";
+
+        static string For(string scope) => scope == "user" ? "for the person who asks for it" : "for everyone on the PC";
+
+        static string Through(PackageDefinition agent) => agent switch
+        {
+            WingetPackageDefinition { Source: WingetSources.Store } => "from the Microsoft Store",
+            DirectPackageDefinition direct => "with its own installer from "
+                                              + (Uri.TryCreate(direct.Url, UriKind.Absolute, out var url) ? url.Host : "its download address"),
+            _ => "through " + SourceName(agent),
+        };
+    }
 }
 
 public sealed class Action1PackageRef

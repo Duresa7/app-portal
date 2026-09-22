@@ -81,8 +81,8 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M5-01](plans/M5-01-microsoft-store-apps.md) | Microsoft Store apps | M3-03 | Done |
 | [M5-02](plans/M5-02-package-managers.md) | Package managers as one kind | M3-02, M3-05 | Done |
 | [M5-03](plans/M5-03-managers-on-a-device.md) | Which package managers a device has | M5-02 | Done |
-| [M5-04](plans/M5-04-managed-packages-in-the-installed-list.md) | Managed packages in the installed list | M5-02 | In review |
-| [M5-05](plans/M5-05-one-way-to-add-an-app.md) | One way to add an app | M5-01, M5-02 | Open |
+| [M5-04](plans/M5-04-managed-packages-in-the-installed-list.md) | Managed packages in the installed list | M5-02 | Done |
+| [M5-05](plans/M5-05-one-way-to-add-an-app.md) | One way to add an app | M5-01, M5-02 | In review |
 | [M5-06](plans/M5-06-release-0.7.0.md) | Release 0.7.0 | M5-03, M5-04, M5-05 | Open |
 
 Milestone 3 shipped as [v0.5.0](https://github.com/Duresa7/app-portal/releases/tag/v0.5.0). The full gate, Windows jobs included, was run on the release commit before the tag and passed. **None of the VM verification in the milestone 3 plans was done.** The Win32 code behind per-user installs has only ever run against a test double, and no installer has been run by the agent outside a fake process runner, so prove a per-user install and a restart on one real PC before trusting this to a fleet.
@@ -137,7 +137,7 @@ graph LR
   M5-05 --> M4-04
 ```
 
-What can start today: milestones 1, 2 and 3 are Done, and so are M4-01, M5-01, M5-02 and M5-03. M5-04 and M5-05 wait on nothing else and can run in parallel. M4-02 could start at any time; M4-04 waits on M5-05 so that the client's catalog editor is built once.
+What can start today: milestones 1, 2 and 3 are Done, and so are M4-01 and M5-01 to M5-04. M5-05 waits on nothing else. M4-02 could start at any time; M4-04 waits on M5-05 so that the client's catalog editor is built once.
 
 ## Shared interface
 

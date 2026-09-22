@@ -30,12 +30,13 @@ What the agent adds beyond "run an installer":
 
 The portal installs applications and launchers. Content a launcher downloads afterwards for one signed-in account — a game inside a store client, for instance — is outside it: the portal has no account there and does not drive one.
 
-### Where the agent installs from
+### Where an app comes from
 
-An administrator picks one source per app on the catalog page. The person installing it never sees which.
+An administrator adds an app by choosing its **Source** on the catalog page and naming the app there; the page shows only the fields that source needs, and a sentence under the form says what saving will do. The person installing it never sees which source it is.
 
 | Source | What it is for | Installs for |
 |---|---|---|
+| Action1 | A package from your Action1 Software Repository, on a device with an Action1 endpoint. | Everyone |
 | winget | Windows applications, from Microsoft's community repository. The default choice for most software. | Everyone, or one person |
 | Microsoft Store | Store applications, by their twelve-character product id. Some need the person signed in to the Store before it grants a licence; say so under Requirements. | One person |
 | Direct download | Any installer at a URL, checked against its SHA-256. Game launchers and vendor installers that are in no repository. | Everyone, or one person |
@@ -49,7 +50,7 @@ An administrator picks one source per app on the catalog page. The person instal
 | .NET tool | Command line tools published to NuGet. Needs the .NET SDK. | One person |
 | PowerShell module | A module from the PowerShell Gallery, for PowerShell 7 or for the Windows PowerShell 5.1 every PC already has. | Everyone, or one person |
 
-Only the first four are ways to put an application in front of everybody on a PC. The rest are for developer workstations: reaching for npm to deploy a web browser is a misunderstanding of what npm is.
+An app can have an Action1 package and one agent source at once; the catalog page then asks which to use on a device that could use either. Only Action1 and the next four are ways to put an application in front of everybody on a PC. The rest are for developer workstations: reaching for npm to deploy a web browser is a misunderstanding of what npm is.
 
 A package manager has to be on the PC before anything can be installed through it, and none of them are on a fresh Windows install. Add the manager itself to the catalog, from winget or a direct download, and list it under **Requires** on the apps that need it: the portal then installs it first, once, and skips it on every PC that already has it. An install through a manager the PC lacks fails with a sentence naming the manager, rather than an exit code.
 

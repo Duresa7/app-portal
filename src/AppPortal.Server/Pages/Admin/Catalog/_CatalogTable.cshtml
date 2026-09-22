@@ -16,14 +16,7 @@
             sources.Add("Action1");
         }
 
-        sources.Add(app.Agent switch
-        {
-            AppPortal.Shared.WingetPackageDefinition { Source: AppPortal.Shared.WingetSources.Store } => "Microsoft Store",
-            AppPortal.Shared.WingetPackageDefinition => "winget",
-            AppPortal.Shared.DirectPackageDefinition => "Direct download",
-            AppPortal.Shared.ManagedPackageDefinition managed => AppPortal.Shared.PackageManagers.Find(managed.Manager)?.DisplayName ?? managed.Manager,
-            _ => "",
-        });
+        sources.Add(CatalogEntry.SourceName(app.Agent));
         var named = sources.Where(s => s.Length > 0).ToList();
         return named.Count == 0 ? "none" : string.Join(", ", named);
     }

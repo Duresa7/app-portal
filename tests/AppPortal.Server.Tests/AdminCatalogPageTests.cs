@@ -328,17 +328,16 @@ public sealed class AdminCatalogPageTests : IDisposable
 
     [Theory]
     [InlineData("DirectSha256", "", "sha256")]
-    [InlineData("AgentKind", "unknown", "kind")]
-    [InlineData("ManagedId", "notepadplusplus&calc", "not a Chocolatey package id")]
-    [InlineData("ManagedId", "7zip|calc", "not a Chocolatey package id")]
-    [InlineData("ManagedScope", "user", "machine scope")]
-    [InlineData("ManagedManager", "apt", "must be one of")]
+    [InlineData("Source", "unknown", "Choose where this app comes from")]
+    [InlineData("SourceId", "notepadplusplus&calc", "not a Chocolatey package id")]
+    [InlineData("SourceId", "7zip|calc", "not a Chocolatey package id")]
+    [InlineData("SourceScope", "user", "machine scope")]
     [InlineData("DirectSizeBytes", "not a number", "whole number")]
     [InlineData("DirectSizeBytes", "9223372036854775808", "whole number")]
     public async Task Invalid_agent_definitions_show_a_message_without_saving(string field, string value, string message)
     {
         var admin = await SignedIn();
-        var form = AgentForm(field.StartsWith("Managed", StringComparison.Ordinal) ? "managed" : "direct");
+        var form = AgentForm(field.StartsWith("SourceId", StringComparison.Ordinal) || field == "SourceScope" ? "managed" : "direct");
         form[field] = value;
         form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");
         var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(form));
@@ -421,22 +420,20 @@ public sealed class AdminCatalogPageTests : IDisposable
         }
     }
 
+    /// <summary>A form for one source. "managed" means Chocolatey, the manager most like winget.</summary>
     private static Dictionary<string, string> AgentForm(string kind) => new()
     {
         ["Id"] = "vendor",
         ["Name"] = "Vendor app",
-        ["AgentKind"] = kind,
-        ["WingetId"] = "Valve.Steam",
-        ["WingetScope"] = "machine",
+        ["Source"] = kind == "managed" ? "choco" : kind,
+        ["SourceId"] = kind == "managed" ? "notepadplusplus" : "Valve.Steam",
+        ["SourceScope"] = "machine",
         ["DirectUrl"] = PackageDefinitionTests.Direct.Url,
         ["DirectSha256"] = PackageDefinitionTests.Direct.Sha256,
         ["DirectInstallerType"] = "exe",
         ["DirectSilentArgs"] = "/S",
         ["DirectSizeBytes"] = "5000000000",
         ["DirectUninstallKey"] = "Vendor Application",
-        ["ManagedManager"] = "choco",
-        ["ManagedId"] = "notepadplusplus",
-        ["ManagedScope"] = "machine",
     };
 
     public void Dispose()

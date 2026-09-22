@@ -159,6 +159,36 @@
       "match": {
         "nameContains": "Example Application"
       }
+    },
+    {
+      "id": "chocolatey",
+      "name": "Chocolatey",
+      "publisher": "Chocolatey Software",
+      "description": "The Chocolatey package manager, installed from winget. Apps that install through Chocolatey list it under requires.",
+      "category": "Developer tools",
+      "hidden": true,
+      "agent": {
+        "kind": "winget",
+        "id": "Chocolatey.Chocolatey",
+        "scope": "machine"
+      }
+    },
+    {
+      "id": "example-package-manager",
+      "name": "Example package manager app",
+      "publisher": "A vendor",
+      "description": "A worked example of an app installed through a package manager on the PC, here Chocolatey. It lists Chocolatey under requires, so the portal installs Chocolatey first on a PC that lacks it. Hidden until you want it.",
+      "category": "Other",
+      "hidden": true,
+      "agent": {
+        "kind": "managed",
+        "manager": "choco",
+        "id": "notepadplusplus",
+        "scope": "machine"
+      },
+      "requires": [
+        "chocolatey"
+      ]
     }
   ]
 }

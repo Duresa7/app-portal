@@ -52,6 +52,8 @@ An administrator adds an app by choosing its **Source** on the catalog page and 
 
 An app can have an Action1 package and one agent source at once; the catalog page then asks which to use on a device that could use either. Only Action1 and the next four are ways to put an application in front of everybody on a PC. The rest are for developer workstations: reaching for npm to deploy a web browser is a misunderstanding of what npm is.
 
+The portal installs applications and launchers. What a launcher then downloads for one signed-in account, a game in a Steam library or a Riot client's own updates, belongs to that launcher and that account, and is outside the portal: add Steam or the Riot client to the catalog, not the games inside them.
+
 A package manager has to be on the PC before anything can be installed through it, and none of them are on a fresh Windows install. Add the manager itself to the catalog, from winget or a direct download, and list it under **Requires** on the apps that need it: the portal then installs it first, once, and skips it on every PC that already has it. An install through a manager the PC lacks fails with a sentence naming the manager, rather than an exit code.
 
 A package id goes onto a command line, and npm, Yarn and Scoop are batch files that Windows runs through `cmd.exe`. The catalog therefore accepts only the characters a real package id uses for that manager, and refuses anything a command prompt would read as an instruction. Extra arguments are passed through as the administrator typed them.
@@ -318,12 +320,21 @@ Device routes below need `Authorization: Bearer <device token>`. `/healthz` is p
 |---|---|
 | `GET /api/v1/catalog` | Approved apps, without package identifiers |
 | `GET /api/v1/device` | The calling device and its Action1 endpoint status |
-| `GET /api/v1/device/installed` | Installed software reported by Action1, matched to catalog IDs |
+| `GET /api/v1/device/installed` | Installed software reported by Action1, the agent's winget sweep and each package manager, matched to catalog IDs; each row names its `source` |
 | `GET /api/v1/installs` | This device's install history, active ones refreshed |
 | `GET /api/v1/installs/{id}` | One install request, refreshed |
 | `POST /api/v1/installs` | `{ "appId": "..." }`, answers 202 with the record; 404 unknown app, 409 already in progress, 422 no matching package version, 429 too many active, 502 Action1 refused |
 | `GET /api/v1/requests` | This device's software requests, newest first |
 | `POST /api/v1/requests` | `{ "text": "..." }`; 201 created, 400 empty or over 500 characters, 429 at the pending limit |
+
+| Agent route (device token) | Purpose |
+|---|---|
+| `POST /api/v1/agent/heartbeat` | Agent and client versions, Windows version and boot time; answers how long to wait before the next one |
+| `GET /api/v1/agent/jobs?wait=25` | Long-polls for the next job for this device; 204 when there is none |
+| `POST /api/v1/agent/jobs/{id}/progress?attempt=` | State, percent and a sentence for the job the agent holds; 409 when its lease has gone |
+| `POST /api/v1/agent/jobs/{id}/complete?attempt=` | The result, exit code and whether a restart is needed |
+| `POST /api/v1/agent/software?account=&source=` | The whole installed list for one scope and one source, replacing only that source's rows. `source` is `winget` or a package manager's name; absent means `winget`, which is what agents before 0.7.0 send |
+| `POST /api/v1/agent/managers` | Every package manager the agent found, with its version, and the account for one that lives in a profile; replaces the device's list |
 
 | Admin session route | Purpose |
 |---|---|

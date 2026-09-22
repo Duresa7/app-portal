@@ -184,7 +184,9 @@ public static class PackageManagers
             PackageTemplate: "{id}",
             VersionFragment: "--version={version}",
             MachineScope: "", UserScope: "",
-            AlreadyInstalled: [],
+            // Windows Installer's own "that product is not installed" codes, which Chocolatey passes
+            // on from a package's uninstaller and lists among its valid exit codes.
+            AlreadyInstalled: [1605, 1614],
             IdRule: Word),
 
         new("scoop", "Scoop",

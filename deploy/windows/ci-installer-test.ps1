@@ -187,6 +187,25 @@ if ($LASTEXITCODE -ne 0) { throw 'Creating the enrollment key failed.' }
 $enrollmentKey = $keyOutput | Where-Object { $_ -match '^ape_' } | Select-Object -Last 1
 if (-not $enrollmentKey) { throw "No enrollment key was printed. Output was: $($keyOutput -join ' / ')" }
 
+# One app from a package manager, so the managed executor runs on a real PC before the tag rather than
+# after it. Windows PowerShell 5.1 is the one manager every Windows PC already has, and a small module
+# from the PowerShell Gallery is quick to install and leaves nothing behind once removed.
+$managedModule = 'powershell-yaml'
+$managedModulePath = Join-Path $env:ProgramFiles "WindowsPowerShell\Modules\$managedModule"
+# A runner that keeps its disk may still carry it from a run that failed half way.
+Remove-Item $managedModulePath -Recurse -Force -ErrorAction SilentlyContinue
+$catalogFile = Join-Path $LogDirectory 'ci-catalog.json'
+@{
+    apps = @(@{
+        id = 'ci-managed'
+        name = 'CI managed package'
+        userRemovable = $true
+        agent = [ordered]@{ kind = 'managed'; manager = 'powershell5-module'; id = $managedModule; scope = 'machine' }
+    })
+} | ConvertTo-Json -Depth 5 | Set-Content -Path $catalogFile -Encoding utf8
+dotnet $ServerDll catalog import $catalogFile
+if ($LASTEXITCODE -ne 0) { throw 'Importing the CI catalog failed.' }
+
 $server = Start-Process dotnet -ArgumentList "`"$ServerDll`"" -PassThru `
     -RedirectStandardOutput (Join-Path $LogDirectory 'server.log') `
     -RedirectStandardError (Join-Path $LogDirectory 'server-error.log')
@@ -290,6 +309,34 @@ try {
     }
     "The installed client rendered $((Get-Item $screenshot).Length) bytes."
 
+    Write-Step 'A package from a package manager installs, shows as installed, and comes off again'
+    # The device asks, as the client would. The agent installs through Windows PowerShell as SYSTEM,
+    # reports the module list, and the server matches the row to the catalog app by its package id.
+    $device = @{ Authorization = "Bearer $($settings.deviceToken)" }
+    function Wait-ForInstall([string] $Id, [string] $What) {
+        Wait-For -Description $What -Seconds 600 -Condition {
+            $script:record = Invoke-RestMethod "$serverUrl/api/v1/installs/$Id" -Headers $device -TimeoutSec 10
+            $script:record.state -in 'Succeeded', 'Failed', 'Cancelled'
+        }
+        if ($script:record.state -ne 'Succeeded') { throw "$What ended $($script:record.state): $($script:record.detail)" }
+    }
+
+    $install = Invoke-RestMethod "$serverUrl/api/v1/installs" -Method Post -Headers $device -TimeoutSec 10 `
+        -ContentType 'application/json' -Body '{"appId":"ci-managed"}'
+    Wait-ForInstall $install.id 'the managed install'
+    if (-not (Test-Path $managedModulePath)) { throw "The install succeeded but $managedModulePath is not there." }
+    Wait-For -Description 'the module to be listed under Installed as the catalog app' -Seconds 120 -Condition {
+        @(Invoke-RestMethod "$serverUrl/api/v1/device/installed" -Headers $device -TimeoutSec 10 |
+            ForEach-Object { $_ } | Where-Object { $_.catalogAppId -eq 'ci-managed' }).Count -gt 0
+    }
+    "$managedModule installed through Windows PowerShell and is listed under Installed."
+
+    $removal = Invoke-RestMethod "$serverUrl/api/v1/uninstalls" -Method Post -Headers $device -TimeoutSec 10 `
+        -ContentType 'application/json' -Body '{"appId":"ci-managed"}'
+    Wait-ForInstall $removal.id 'the managed removal'
+    if (Test-Path $managedModulePath) { throw "The removal succeeded but $managedModulePath is still there." }
+    "$managedModule came off again."
+
     Write-Step 'Uninstall leaves nothing behind'
     Invoke-Msi -Operation '/x' -Name 'uninstall' -Package $msiPath | Out-Null
     if (Get-Service AppPortalAgent -ErrorAction SilentlyContinue) { throw 'The service survived uninstall.' }
@@ -356,6 +403,7 @@ finally {
     # by hand or on a runner that keeps its disk. A failure here must not replace the failure that
     # brought us into this block, so report it and let the original stand.
     try { & $resetScript } catch { Write-Warning "Cleanup failed: $($_.Exception.Message)" }
+    Remove-Item $managedModulePath -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ''

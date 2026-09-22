@@ -169,7 +169,7 @@
             </select>
             <label for="direct-args">Silent arguments</label>
             <input id="direct-args" name="DirectSilentArgs" value="@Model.DirectSilentArgs" placeholder="/S or /qn" />
-            <p class="muted">An msix takes no arguments; leave this empty for one.</p>
+            <p class="muted">Leave this empty for an msix, and for an exe that installs silently on its own. An msi always needs them; the agent adds /qn /norestart itself, so put here whatever else this package takes.</p>
             <label for="direct-size">Download size (bytes)</label>
             <input id="direct-size" name="DirectSizeBytes" type="number" min="1" step="1" value="@Model.DirectSizeBytes" />
             <label for="direct-uninstall">Uninstall key (optional)</label>

@@ -55,8 +55,9 @@ public sealed class AdminDevicesTests
         Assert.Equal("ep-dev-2", page.EditEndpointId);
         Assert.True(page.EditEnabled);
         Assert.Equal(EngineLabel.Agent, page.EditEnginePreference?.Value);
-        Assert.Equal(2, page.RecentInstalls.Count);
-        Assert.Equal(2, page.RecentRequests.Count);
+        // The dashboard's history plus the installs and requests pages' own.
+        Assert.Equal(4, page.RecentInstalls.Count);
+        Assert.Equal(3, page.RecentRequests.Count);
         Assert.Equal(2, page.Managers.Count);
 
         await page.BackCommand.ExecuteAsync(null);
@@ -172,14 +173,16 @@ public sealed class AdminDevicesTests
     public async Task Removing_a_device_goes_back_to_a_table_without_it()
     {
         var page = await LoadedAsync();
-        await page.OpenDeviceCommand.ExecuteAsync(Row(page, "DESIGN-WS-02"));
+        // The demo PC itself, because it is the one device with nothing running on it.
+        var name = Environment.MachineName;
+        await page.OpenDeviceCommand.ExecuteAsync(Row(page, name));
 
         page.RequestRemoveCommand.Execute(null);
         await page.ConfirmRemoveCommand.ExecuteAsync(null);
 
         Assert.True(page.IsListOpen);
-        Assert.DoesNotContain(page.Devices, d => d.Name == "DESIGN-WS-02");
-        Assert.Contains("DESIGN-WS-02", page.Notice);
+        Assert.DoesNotContain(page.Devices, d => d.Name == name);
+        Assert.Contains(name, page.Notice);
         Assert.Null(page.ErrorMessage);
     }
 

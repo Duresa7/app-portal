@@ -83,7 +83,12 @@ public sealed record AdminCatalogImported(int Imported);
 
 public sealed record AdminPackageSearch(string? Term);
 
-public sealed record AdminPackageRef(string PackageId, string? Version = null);
+/// <summary>
+/// A package to look up. <paramref name="Source"/> names which of winget's sources to ask, because a
+/// Microsoft Store product id has no manifest in winget-pkgs and asking for one reports a correct id
+/// as a missing one.
+/// </summary>
+public sealed record AdminPackageRef(string PackageId, string? Version = null, string? Source = null);
 
 /// <summary>One Software Repository package a search found.</summary>
 public sealed record AdminPackageResult(string Id, string Name, string Vendor, bool Builtin);

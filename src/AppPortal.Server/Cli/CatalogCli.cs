@@ -38,7 +38,8 @@ public static class CatalogCli
                         output.WriteLine($"OK       {entry.Id}: agent definition is valid.");
                         if (agent is WingetPackageDefinition winget)
                         {
-                            var lookup = await (helpers ?? PackageHelpers.Shared).LookupWingetAsync(winget.Id, ct);
+                            var lookup = await (helpers ?? PackageHelpers.Shared)
+                                .LookupWingetAsync(winget.Id, ct, winget.Source);
                             output.WriteLine($"INFO     {entry.Id}: {lookup.Message}");
                         }
                     }

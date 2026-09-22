@@ -267,6 +267,27 @@ public sealed class PackageDefinitionTests
     }
 
     [Fact]
+    public async Task Catalog_verify_passes_a_store_app_without_asking_winget_pkgs_about_it()
+    {
+        // The seed catalog carries a Store example, and the gate runs catalog verify over it. A lookup
+        // that forgot the source asked winget-pkgs for a manifest no Store app has, and then reported
+        // a correct product id as an invalid one.
+        using var client = new HttpClient(new StubHandler(_ => throw new InvalidOperationException("winget-pkgs must not be asked about a Store id.")));
+        using var test = new TestDatabase();
+        var store = new CatalogStore(test.Database, "");
+        store.Upsert(new CatalogEntry
+        {
+            Id = "store-app",
+            Name = "Store App",
+            Agent = new WingetPackageDefinition("9WZDNCRFJ3TJ", "user", Source: WingetSources.Store),
+        });
+        using var output = new StringWriter();
+        Assert.Equal(0, await CatalogCli.RunAsync(["catalog", "verify"], store, new FakeAction1Client(),
+            output, CancellationToken.None, new PackageHelpers(client)));
+        Assert.Contains("Store product id", output.ToString());
+    }
+
+    [Fact]
     public async Task Catalog_verify_rejects_an_invalid_stored_hash()
     {
         using var test = new TestDatabase();

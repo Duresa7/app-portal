@@ -150,6 +150,13 @@ jobs:
             -p:PublishSingleFile=true -p:AppPortalMsiPath="$msi" -o out/setup
           if ($LASTEXITCODE -ne 0) { throw 'Bootstrapper publish failed.' }
           if (-not (Test-Path out/setup/AppPortalSetup.exe)) { throw 'No AppPortalSetup.exe was produced.' }
+      - name: Leave nothing of an earlier run in place
+        shell: pwsh
+        run: |
+          # Both checks below assume no App Portal is installed and no %ProgramData%\AppPortal exists.
+          # A GitHub-hosted runner guarantees that by being thrown away; a self-hosted one does not, and
+          # the leftovers make Verify-Msi.ps1 report that REMOVEDATA=1 leaked data that was never its.
+          ./deploy/windows/Reset-AppPortal.ps1
       - name: Check the package on its own
         shell: pwsh
         run: |

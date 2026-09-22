@@ -30,6 +30,8 @@ public sealed class DemoAdminApiClient : IAdminApiClient
     private readonly List<AdminCatalogApp> _catalog = [];
     private readonly List<EnrollmentKeySummary> _keys = [];
     private readonly List<AdminAccount> _admins = [];
+    private readonly List<EnrollmentKeyEvent> _keyEvents = [];
+    private readonly Dictionary<string, IReadOnlyList<DeviceManager>> _managers = [];
     private AdminSettings _settings = new(EngineLabel.Agent);
 
     public DemoAdminApiClient()
@@ -40,9 +42,9 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         _admins.Add(new AdminAccount("adm-2", "helpdesk", false, "local", now.AddDays(-40), now.AddDays(-1)));
         _admins.Add(new AdminAccount("adm-3", "contractor", true, "local", now.AddDays(-200), now.AddDays(-95)));
 
-        _keys.Add(new EnrollmentKeySummary("key-1", "Head office rollout", "ape_7Kq2", EngineLabel.Agent, "active",
+        _keys.Add(new EnrollmentKeySummary("key-1", "Head office rollout", "7Kq2mXa9", EngineLabel.Agent, "active",
             now.AddDays(30), 50, 4, null, DemoUsername, now.AddDays(-14)));
-        _keys.Add(new EnrollmentKeySummary("key-2", "Warehouse tablets", "ape_Vd91", EngineLabel.Action1, "revoked",
+        _keys.Add(new EnrollmentKeySummary("key-2", "Warehouse tablets", "Vd91pQe4", EngineLabel.Action1, "revoked",
             null, null, 2, now.AddDays(-3), "helpdesk", now.AddDays(-60)));
 
         AddDevice("dev-1", "RECEPTION-01", true, "1.0.0", now.AddMinutes(-1), now.AddDays(-14));
@@ -50,6 +52,7 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         AddDevice("dev-3", "DESIGN-WS-02", true, "1.0.0", now.AddHours(-2), now.AddDays(-9));
         AddDevice("dev-4", "WAREHOUSE-TAB-1", false, null, now.AddDays(-2), now.AddDays(-58));
         AddDevice("dev-5", Environment.MachineName, true, "1.0.0", now, now.AddDays(-1));
+        SeedFleetAdministration(now);
 
         AddApp("google-chrome", "Google Chrome", "Google LLC", "Browsers", featured: true);
         AddApp("mozilla-firefox", "Mozilla Firefox", "Mozilla", "Browsers");
@@ -274,7 +277,7 @@ public sealed class DemoAdminApiClient : IAdminApiClient
                 device,
                 [.. _installs.Where(i => i.DeviceId == id).OrderByDescending(i => i.RequestedAt).Take(10)],
                 [.. _requests.Where(r => r.DeviceName == device.Name).OrderByDescending(r => r.CreatedAt).Take(10)],
-                device.HasAgent ? [new DeviceManager("winget", "1.9.25200")] : null);
+                _managers.TryGetValue(id, out var managers) ? managers : []);
         });
 
     public Task<AdminDeviceToken> CreateDeviceAsync(AdminDeviceCreate device, CancellationToken ct)
@@ -301,9 +304,20 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         => Guarded(() =>
         {
             var device = Find(_devices, d => d.Id == id, "No such device.");
+            var name = update.Name.Trim();
+            if (name.Length == 0)
+            {
+                throw new PortalApiException("A device needs a name.", HttpStatusCode.Conflict);
+            }
+
+            if (_devices.Any(d => d.Id != id && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new PortalApiException($"Another device is already called '{name}'.", HttpStatusCode.Conflict);
+            }
+
             return Replace(_devices, device, device with
             {
-                Name = update.Name.Trim(),
+                Name = name,
                 EndpointId = update.Action1EndpointId ?? device.EndpointId,
                 Enabled = update.Enabled,
                 EnginePreference = update.EnginePreference,
@@ -342,7 +356,7 @@ public sealed class DemoAdminApiClient : IAdminApiClient
 
             // Visibly a sample, so nobody mistakes it for a key that would enroll anything.
             var plaintext = "ape_demo" + Guid.NewGuid().ToString("N")[..16];
-            var summary = new EnrollmentKeySummary("key-" + Guid.NewGuid().ToString("N")[..8], key.Name.Trim(), plaintext[..8],
+            var summary = new EnrollmentKeySummary("key-" + Guid.NewGuid().ToString("N")[..8], key.Name.Trim(), plaintext[4..12],
                 key.Engine, "active", key.ExpiresAt, key.MaxUses, 0, null, DemoUsername, DateTimeOffset.Now);
             _keys.Add(summary);
             return new EnrollmentKeyCreated(summary, plaintext);
@@ -358,13 +372,8 @@ public sealed class DemoAdminApiClient : IAdminApiClient
     public Task<IReadOnlyList<EnrollmentKeyEvent>> GetKeyEventsAsync(string id, int? limit, CancellationToken ct)
         => Guarded<IReadOnlyList<EnrollmentKeyEvent>>(() =>
         {
-            var key = Find(_keys, k => k.Id == id, "No such enrollment key.");
-            return
-            [
-                .. _devices.Where(d => d.EnrolledWithKeyId == key.Id)
-                    .Select(d => new EnrollmentKeyEvent("evt-" + d.Id, d.Id, d.Name, "setup", "enrolled", $"{d.Name} enrolled.", d.CreatedAt))
-                    .Take(limit ?? 50),
-            ];
+            Find(_keys, k => k.Id == id, "No such enrollment key.");
+            return [.. _keyEvents.Where(e => e.Id.StartsWith(id + "/", StringComparison.Ordinal)).OrderByDescending(e => e.CreatedAt).Take(limit ?? 50)];
         });
 
     public Task<AdminPage<AdminAccount>> GetAdminsAsync(int offset, int limit, CancellationToken ct)
@@ -552,6 +561,47 @@ public sealed class DemoAdminApiClient : IAdminApiClient
     }
 
     private static string DemoDeviceToken() => "apd_demo" + Guid.NewGuid().ToString("N")[..16];
+
+    /// <summary>
+    /// What the device, enrollment key and admins pages need beyond the basic fleet: a key of every
+    /// status, an attempt that failed, a device of each kind, the package managers agents report, and
+    /// a directory account. Kept in this one method so the other pages' demo data stays apart from it.
+    /// </summary>
+    private void SeedFleetAdministration(DateTimeOffset now)
+    {
+        _keys.Add(new EnrollmentKeySummary("key-3", "Laptop refresh, spring", "Lp3sR8wz", "both", "expired",
+            now.AddDays(-20), null, 7, null, DemoUsername, now.AddDays(-90)));
+        _keys.Add(new EnrollmentKeySummary("key-4", "Pilot group", "Pg4tN2kc", EngineLabel.Agent, "exhausted",
+            now.AddDays(60), 3, 3, null, "helpdesk", now.AddDays(-30)));
+
+        // Every PC a key enrolled, then the attempts that made no new device. The id starts with the
+        // key's, so one key's events are found without a field the contract does not have.
+        foreach (var device in _devices.Where(d => d.EnrolledWithKeyId is not null))
+        {
+            _keyEvents.Add(new EnrollmentKeyEvent($"{device.EnrolledWithKeyId}/evt-{device.Id}", device.Id, device.Name, "setup",
+                "enrolled", $"Enrolled {device.Name}.", device.CreatedAt));
+        }
+
+        _keyEvents.Add(new EnrollmentKeyEvent("key-1/evt-reenrol", "dev-3", "DESIGN-WS-02", "agent", "re-enrolled",
+            "Re-enrolled DESIGN-WS-02 after a reinstall.", now.AddDays(-2)));
+        _keyEvents.Add(new EnrollmentKeyEvent("key-2/evt-gone", "dev-gone", null, "setup", "enrolled",
+            "Enrolled WAREHOUSE-TAB-2.", now.AddDays(-55)));
+        _keyEvents.Add(new EnrollmentKeyEvent("key-2/evt-refused", null, null, "setup", "key-refused",
+            "Refused: the key is revoked.", now.AddDays(-1)));
+
+        // One device of each kind the table tells apart: Action1 and the agent, the agent alone, Action1
+        // alone and disabled, and one that prefers an engine of its own.
+        _devices[1] = _devices[1] with { EnginePreference = EngineLabel.Agent };
+        _devices[2] = _devices[2] with { EndpointId = "" };
+        _devices[3] = _devices[3] with { Enabled = false };
+
+        _managers["dev-1"] = [new DeviceManager("winget", "1.9.25200")];
+        _managers["dev-2"] = [new DeviceManager("winget", "1.9.25200"), new DeviceManager("choco", "2.4.1")];
+        _managers["dev-3"] = [new DeviceManager("winget", "1.8.1911"), new DeviceManager("scoop", "", @"CONTOSO\mjones")];
+        _managers["dev-5"] = [new DeviceManager("winget", "1.9.25200")];
+
+        _admins.Add(new AdminAccount("adm-4", @"CONTOSO\jsmith", false, "directory", now.AddDays(-12), now.AddHours(-20)));
+    }
 
     private void AddDevice(string id, string name, bool hasAgent, string? agentVersion, DateTimeOffset lastSeen, DateTimeOffset created)
     {

@@ -102,7 +102,16 @@ public sealed class DirectInstallerExecutor(
         }
 
         var log = new JobLog(stateDirectory, job.JobId);
-        var command = UninstallCommand(direct, registry);
+        // Whose copy this is has to be settled before the lookup, not after it. A per-user application
+        // writes its uninstall entry into that person's hive and nowhere else, so a lookup that does
+        // not know the account reads the machine, finds nothing, and reports that the application
+        // offers no silent removal when it plainly does.
+        if (direct.Scope == "user" && string.IsNullOrWhiteSpace(job.Requester))
+        {
+            return new ExecutionResult(false, "This package belongs to one person, and the removal does not say who.");
+        }
+
+        var command = UninstallCommand(direct, registry, direct.Scope == "user" ? job.Requester : null);
         if (command is null)
         {
             // An exe whose uninstall entry offers only an interactive command is a dead end from a
@@ -116,12 +125,7 @@ public sealed class DirectInstallerExecutor(
         ProcessResult? result;
         if (direct.Scope == "user")
         {
-            if (string.IsNullOrWhiteSpace(job.Requester))
-            {
-                return new ExecutionResult(false, "This package belongs to one person, and the removal does not say who.");
-            }
-
-            result = await sessions.RunAsAsync(job.Requester, command.Value.File, command.Value.Arguments, log.Write, _timeout, ct);
+            result = await sessions.RunAsAsync(job.Requester!, command.Value.File, command.Value.Arguments, log.Write, _timeout, ct);
             if (result is null)
             {
                 return new ExecutionResult(false, $"Waiting for {job.Requester} to sign in.", null, WaitingForUser: true);
@@ -146,7 +150,8 @@ public sealed class DirectInstallerExecutor(
     /// An msix is removed by name; an msi by its product code; an exe by whatever quiet command its
     /// own uninstall entry documents, which not every vendor bothers to write.
     /// </summary>
-    internal static (string File, string Arguments)? UninstallCommand(DirectPackageDefinition direct, IUninstallRegistry registry)
+    internal static (string File, string Arguments)? UninstallCommand(DirectPackageDefinition direct,
+        IUninstallRegistry registry, string? account = null)
     {
         if (direct.InstallerType == "msix")
         {
@@ -170,7 +175,7 @@ public sealed class DirectInstallerExecutor(
             return ("msiexec.exe", $"/x {direct.UninstallKey} /qn /norestart");
         }
 
-        var quiet = registry.QuietUninstallString(direct.UninstallKey);
+        var quiet = registry.QuietUninstallString(direct.UninstallKey, account);
         if (string.IsNullOrWhiteSpace(quiet))
         {
             return null;

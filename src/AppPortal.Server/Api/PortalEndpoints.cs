@@ -157,7 +157,9 @@ public static class PortalEndpoints
                 var record = requests.CreateForDeviceId(device.Id, DeviceAuthenticationMiddleware.RequestedBy(context), body?.Text ?? "");
                 loggers.CreateLogger("AppPortal.Server.Requests")
                     .LogInformation("Device {Device} asked for {Text}", device.Name, record.Text);
-                return Results.Created($"{ApiRoutes.Requests}/{record.Id}", record.ToPublic());
+                // No Location header: a device reads its requests as one list and there is no route for
+                // one request, so the header would name a path that answers 404.
+                return Results.Created((string?)null, record.ToPublic());
             }
             catch (AppRequestRejectedException ex)
             {

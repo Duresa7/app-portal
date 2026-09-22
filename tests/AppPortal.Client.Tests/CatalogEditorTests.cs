@@ -492,6 +492,23 @@ public sealed class CatalogEditorTests
         Assert.StartsWith("That file is not valid JSON.", page.ErrorMessage);
     }
 
+    /// <summary>
+    /// The server counts the file in bytes, so the client does too. Counting characters would send a
+    /// file of two-byte characters the server is bound to refuse, and show its 413 instead of this.
+    /// </summary>
+    [Fact]
+    public async Task An_import_file_over_the_limit_in_bytes_is_stopped_before_it_is_sent()
+    {
+        var page = new CatalogViewModel(await SignedInDemo());
+        var file = "{ \"apps\": [], \"note\": \"" + new string('é', AdminApiLimits.MaxImportBytes / 2) + "\" }";
+        Assert.True(file.Length < AdminApiLimits.MaxImportBytes);
+
+        await page.ImportTextAsync(file);
+
+        Assert.Equal($"A catalog file may be at most {AdminApiLimits.MaxImportBytes / (1024 * 1024)} MB.", page.ErrorMessage);
+        Assert.Null(page.Notice);
+    }
+
     private static CatalogEditorViewModel Editor(AdminCatalogApp? app)
         => new(new DemoAdminApiClient(), app, _ => { }, () => { });
 

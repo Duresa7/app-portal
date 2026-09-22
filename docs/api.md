@@ -60,7 +60,7 @@ The device token check runs before routing for every path under `/api/v1` except
 | Undecided requests per device | 20 | `POST /api/v1/requests` |
 | Decision reason | 500 characters | `POST /api/v1/admin/requests/{id}/approve` and `/deny` |
 | Active installs per device | 3 by default, `Portal:MaxActiveInstallsPerDevice` | `POST /api/v1/installs` |
-| Catalog import | 4 MB | `POST /api/v1/admin/catalog/import` |
+| Catalog import | 4 MB, counted in bytes | `POST /api/v1/admin/catalog/import` |
 | Installer download for hashing | 2 GiB by default, `Catalog:MaxDownloadBytes` | `POST /api/v1/admin/catalog/package/hash` |
 | Rows in one admin list | 200 | Every paged admin list |
 | Enrollment attempts | 30 per minute per remote address | Both enrollment routes |
@@ -212,7 +212,7 @@ Body `CreateAppRequest`: `{ "text": "..." }`.
 
 | Status | When |
 |---|---|
-| 201 | Created. Body `AppRequest`, `Location: /api/v1/requests/{id}`. |
+| 201 | Created. Body `AppRequest`. No `Location` header: there is no route that reads one request, and `GET /api/v1/requests` lists them all. |
 | 400 | `text` is empty after trimming, or longer than 500 characters. |
 | 429 | The device already has 20 undecided requests. |
 
@@ -443,11 +443,13 @@ Paged, newest first. `AdminPage<AdminInstall>`. Filters combine with AND:
 |---|---|
 | `device` | Device name, exact, any case |
 | `app` | Catalog app id, exact, any case |
-| `state` | An `InstallState` name, any case. An unknown value is ignored. |
+| `state` | An `InstallState` name, any case. Absent or blank is every state. |
 | `requester` | Substring of the requester, any case |
 | `from` | A day, `yyyy-MM-dd`. From midnight of that day, server time. |
 | `to` | A day, `yyyy-MM-dd`. Up to the end of that day, server time. |
 | `restart` | `1` for installs waiting for a restart |
+
+400 when `state` is not one of the five names. A number such as `1` and a list such as `Failed,Succeeded` are refused too.
 
 #### GET /api/v1/admin/installs/{id}
 
@@ -476,7 +478,7 @@ Paged, newest first. `AdminPage<AdminRequest>`.
 |---|---|
 | `status` | `pending`, `approved`, `denied` or `all`, any case. Absent or blank is `all`. |
 
-400 when `status` is anything else.
+400 when `status` is anything else. A number such as `1` and a list such as `Pending,Approved` are refused too.
 
 #### POST /api/v1/admin/requests/{id}/approve
 
@@ -555,7 +557,7 @@ Each entry has the fields of `AdminCatalogApp`. Comments and trailing commas are
 |---|---|
 | 200 | `AdminCatalogImported`: `{ "imported": 3 }`. |
 | 400 | The body is empty; it is not valid JSON; an entry has no id or name, or neither an Action1 package id nor an agent package; an agent definition has no kind or fails its checks; or an id appears twice. |
-| 413 | The body is larger than 4 MB. |
+| 413 | The body is larger than 4 MB (4,194,304 bytes as sent, not characters). |
 
 #### GET /api/v1/admin/catalog/export
 
@@ -707,11 +709,12 @@ No body. Revoking a revoked key succeeds.
 
 #### GET /api/v1/admin/keys/{id}/events
 
-The key's audit trail, newest first. Not paged: it reads `limit` as the paged lists do (default 50, at most 200) and ignores `offset`.
+The key's audit trail, newest first. Not paged, and the answer is a plain array, not an `AdminPage`: it is the newest `limit` attempts (default 50, at most 200, read as the paged lists read it) and there is no way to reach older ones. The key detail page shows the newest 50 the same way.
 
 | Status | When |
 |---|---|
 | 200 | Array of `EnrollmentKeyEvent`. |
+| 400 | `offset` is above 0. |
 | 404 | No such key. |
 
 ### Administrators
@@ -726,7 +729,7 @@ Creates a local administrator. Body `AdminAccountCreate`: `username` and `passwo
 
 | Status | When |
 |---|---|
-| 201 | `AdminAccount`, `Location: /api/v1/admin/admins/{id}`. |
+| 201 | `AdminAccount`. No `Location` header: there is no route that reads one administrator. |
 | 400 | The user name is blank, longer than 64 characters or contains control characters; the password is shorter than 12 characters; or the name is taken. |
 
 #### POST /api/v1/admin/admins/{id}/disable

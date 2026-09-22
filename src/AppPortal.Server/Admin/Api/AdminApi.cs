@@ -80,6 +80,27 @@ public static class AdminApi
     private static int Number(string? text, int fallback)
         => int.TryParse(text, out var parsed) ? parsed : fallback;
 
+    /// <summary>
+    /// An enum filter read by its member names and nothing else, in any case. Not Enum.TryParse: that
+    /// also takes <c>1</c> as the second member and <c>Pending,Approved</c> as a flags value, and a
+    /// caller who typed either did not mean the one status it happens to become.
+    /// </summary>
+    public static bool TryName<TEnum>(string text, out TEnum value) where TEnum : struct, Enum
+    {
+        var trimmed = text.Trim();
+        foreach (var candidate in Enum.GetValues<TEnum>())
+        {
+            if (candidate.ToString().Equals(trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                value = candidate;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
     /// <summary>Turns a store's slice into the page a caller reads, projecting each row on the way.</summary>
     public static AdminPage<TOut> Page<TRow, TOut>(Slice<TRow> slice, ListQuery query, Func<TRow, TOut> project)
         => new([.. slice.Rows.Select(project)], slice.Offset, query.Limit ?? slice.Rows.Count, slice.HasMore, slice.Total);

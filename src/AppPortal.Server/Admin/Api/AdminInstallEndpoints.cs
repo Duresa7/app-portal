@@ -1,3 +1,4 @@
+using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Installs;
 using AppPortal.Shared;
 
@@ -12,7 +13,17 @@ public static class AdminInstallEndpoints
         {
             // InstallFilter reads its own field names off the query string, so device, app, state,
             // requester, from, to and restart mean here exactly what they mean on the page.
-            var filter = InstallFilter.Read(context.Request.FilterValues());
+            var values = context.Request.FilterValues();
+
+            // Except that the page drops a state it does not know, which is right for a link somebody
+            // edited by hand and wrong for an API: a typo would hand back the whole history as if it
+            // were the filtered one. The requests list refuses an unknown status the same way.
+            if (values.Get("State") is { } state && !AdminApi.TryName<InstallState>(state, out _))
+            {
+                return AdminApi.BadRequest("state must be queued, running, succeeded, failed or cancelled.");
+            }
+
+            var filter = InstallFilter.Read(values);
             var query = context.Request.ReadSlice();
             return Results.Ok(AdminApi.Page(installs.List(filter, query), query, Project));
         });

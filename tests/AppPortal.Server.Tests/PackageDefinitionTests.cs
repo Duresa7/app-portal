@@ -76,7 +76,7 @@ public sealed class PackageDefinitionTests
             Direct with { Sha256 = new string('a', 63) },
             Direct with { Sha256 = new string('g', 64) },
             Direct with { InstallerType = "zip" },
-            Direct with { SilentArgs = " " },
+            Direct with { InstallerType = "msi", SilentArgs = " " },
             Direct with { SizeBytes = 0 },
             Direct with { SizeBytes = -1 },
             Direct with { Scope = "everyone" },
@@ -104,7 +104,23 @@ public sealed class PackageDefinitionTests
         // identity is a package family name rather than an entry under the Uninstall key.
         (Direct with { InstallerType = "msix", SilentArgs = "", UninstallKey = null }).Validate();
         Assert.Throws<InvalidDataException>((Direct with { InstallerType = "msi", SilentArgs = "" }).Validate);
-        Assert.Throws<InvalidDataException>((Direct with { InstallerType = "exe", SilentArgs = "" }).Validate);
+    }
+
+    [Fact]
+    public void An_exe_that_is_silent_on_its_own_needs_no_arguments()
+    {
+        // Some installers are silent by default and publish no switch. winget runs those with no
+        // arguments. Demanding a switch here left an administrator to invent one.
+        (Direct with { InstallerType = "exe", SilentArgs = "" }).Validate();
+        (Direct with { InstallerType = "exe", SilentArgs = " " }).Validate();
+    }
+
+    [Fact]
+    public void An_unknown_installer_type_says_what_to_use_instead()
+    {
+        var error = Assert.Throws<InvalidDataException>((Direct with { InstallerType = "nsis" }).Validate);
+        Assert.Contains("exe", error.Message);
+        Assert.Contains("Nullsoft", error.Message);
     }
 
     [Fact]

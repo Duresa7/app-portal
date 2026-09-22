@@ -79,14 +79,24 @@ public sealed record DirectPackageDefinition(
 
         if (InstallerType is not ("msi" or "exe" or "msix"))
         {
-            throw new InvalidDataException("The installer type must be msi, exe or msix.");
+            // Naming only the three leaves somebody holding a Nullsoft or Inno Setup installer to
+            // guess whether it is supported at all. It is: it is an exe.
+            throw new InvalidDataException(
+                "The installer type must be msi, exe or msix. Any other installer, such as Nullsoft or Inno Setup, is an exe.");
         }
 
         // An msix is installed by name through the packaging API and takes no command line at all, so
-        // demanding arguments for one would only invite an administrator to invent some.
-        if (InstallerType is not "msix" && string.IsNullOrWhiteSpace(SilentArgs))
+        // demanding arguments for one would only invite an administrator to invent some. The same is
+        // true of an exe that is silent by default and publishes no switch: winget runs those with no
+        // arguments, and the only way to say so here used to be to invent a switch, which is the very
+        // thing the msix exemption exists to prevent.
+        //
+        // An msi is different and keeps the rule. The executor supplies /qn /norestart itself, so what
+        // goes here is whatever else that particular package needs, and a blank field is far more
+        // likely to be one nobody filled in.
+        if (InstallerType is "msi" && string.IsNullOrWhiteSpace(SilentArgs))
         {
-            throw new InvalidDataException("An msi or exe installer needs silent arguments.");
+            throw new InvalidDataException("An msi installer needs silent arguments.");
         }
 
         if (SizeBytes <= 0)

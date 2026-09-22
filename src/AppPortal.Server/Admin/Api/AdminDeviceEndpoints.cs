@@ -85,6 +85,12 @@ public static class AdminDeviceEndpoints
                     EnginePreference = string.IsNullOrWhiteSpace(body?.EnginePreference) ? null : body!.EnginePreference,
                 });
             }
+            catch (DeviceInvalidException ex)
+            {
+                // What was sent is wrong and sending it again will not help, which is 400. Only a clash
+                // with the fleet as it stands, a taken name or an install in flight, is a conflict.
+                return AdminApi.BadRequest(ex.Message);
+            }
             catch (DeviceRejectedException ex)
             {
                 return AdminApi.Conflict(ex.Message);

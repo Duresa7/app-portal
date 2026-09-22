@@ -639,13 +639,14 @@ Replaces the editable fields. Body `AdminDeviceUpdate`:
 | `name` | string | |
 | `action1EndpointId` | string? | Optional. Left out or blank clears it. |
 | `enabled` | bool | Optional, default `true`. A disabled device's token is refused from its next call. |
-| `enginePreference` | string? | Optional. `action1` or `agent`; left out or blank follows the app and the server. |
+| `enginePreference` | string? | Optional. `action1` or `agent`, any case. Left out or blank follows the app and the server; there is no keyword for that, so `inherit` is refused. |
 
 | Status | When |
 |---|---|
 | 200 | `AdminDevice`. |
+| 400 | The name is blank, or the engine preference is not blank, `action1` or `agent`. |
 | 404 | No such device. |
-| 409 | The name is blank; the engine preference is not `action1` or `agent`; another device has the name; or the Action1 endpoint would change while an install is in progress. |
+| 409 | Another device has the name, or the Action1 endpoint would change while an install is in progress. |
 
 #### POST /api/v1/admin/devices/{id}/rotate-token
 

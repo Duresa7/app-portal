@@ -713,6 +713,29 @@ public sealed class AdminApiTests : IDisposable
         var clash = await client.PutAsJsonAsync($"/api/v1/admin/devices/{a.Id}", new AdminDeviceUpdate("PC-B", "endpoint-a"), Json);
         Assert.Equal(HttpStatusCode.Conflict, clash.StatusCode);
         Assert.Equal("PC-A", _devices.Find(a.Id)!.Name);
+
+        var moved = await client.PutAsJsonAsync($"/api/v1/admin/devices/{a.Id}", new AdminDeviceUpdate("PC-A", "endpoint-moved"), Json);
+        Assert.Equal(HttpStatusCode.Conflict, moved.StatusCode);
+        Assert.Equal("endpoint-a", _devices.Find(a.Id)!.EndpointId);
+    }
+
+    [Theory]
+    [InlineData(" ", "agent", "A device needs a name.")]
+    [InlineData("PC-A", "inherit", "The engine preference must be action1 or agent, or empty to follow the server.")]
+    [InlineData("PC-A", "winget", "The engine preference must be action1 or agent, or empty to follow the server.")]
+    public async Task A_device_update_with_bad_input_is_a_bad_request_not_a_conflict(string name, string engine, string message)
+    {
+        _devices.Add("PC-A", "endpoint-a");
+        var a = _devices.FindByName("PC-A")!;
+
+        var response = await (await Admin()).PutAsJsonAsync($"/api/v1/admin/devices/{a.Id}",
+            new AdminDeviceUpdate(name, "endpoint-a", EnginePreference: engine), Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(message, (await response.Content.ReadFromJsonAsync<ErrorMessage>(Json))!.Message);
+        var stored = _devices.Find(a.Id)!;
+        Assert.Equal("PC-A", stored.Name);
+        Assert.Null(stored.EnginePreference);
     }
 
     [Fact]

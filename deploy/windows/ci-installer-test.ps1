@@ -296,18 +296,22 @@ try {
     }
 
     Write-Step 'The installed client starts, renders, and exits'
-    $screenshot = Join-Path $LogDirectory 'installed-client.png'
-    $client = Start-Process -FilePath (Join-Path $installDir 'AppPortal.exe') -PassThru `
-        -ArgumentList '--demo', '--screenshot', "`"$screenshot`"", '0'
-    if (-not $client.WaitForExit(90000)) {
-        $client.Kill()
-        throw 'The installed AppPortal.exe did not exit within 90 seconds.'
+    # The Apps page, and the admin dashboard: section 10 signs the demo administrator in, so the admin
+    # views are built, composed and drawn by the installed binaries rather than only in the build.
+    foreach ($capture in @(@{ Name = 'installed-client.png'; Section = '0' }, @{ Name = 'installed-client-admin.png'; Section = '10' })) {
+        $screenshot = Join-Path $LogDirectory $capture.Name
+        $client = Start-Process -FilePath (Join-Path $installDir 'AppPortal.exe') -PassThru `
+            -ArgumentList '--demo', '--screenshot', "`"$screenshot`"", $capture.Section
+        if (-not $client.WaitForExit(90000)) {
+            $client.Kill()
+            throw "The installed AppPortal.exe did not exit within 90 seconds rendering section $($capture.Section)."
+        }
+        if ($client.ExitCode -ne 0) { throw "The installed AppPortal.exe exited with $($client.ExitCode) rendering section $($capture.Section)." }
+        if (-not (Test-Path $screenshot) -or (Get-Item $screenshot).Length -lt 1024) {
+            throw "The installed client wrote no screenshot of section $($capture.Section)."
+        }
+        "The installed client rendered section $($capture.Section) in $((Get-Item $screenshot).Length) bytes."
     }
-    if ($client.ExitCode -ne 0) { throw "The installed AppPortal.exe exited with $($client.ExitCode)." }
-    if (-not (Test-Path $screenshot) -or (Get-Item $screenshot).Length -lt 1024) {
-        throw 'The installed client wrote no screenshot.'
-    }
-    "The installed client rendered $((Get-Item $screenshot).Length) bytes."
 
     Write-Step 'A package from a package manager installs, shows as installed, and comes off again'
     # The device asks, as the client would. The agent installs through Windows PowerShell as SYSTEM,

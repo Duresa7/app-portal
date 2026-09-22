@@ -73,17 +73,19 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M3-10](plans/M3-10-prerequisite-chains.md) | Software that needs other software first | M3-01, M3-05 | Done |
 | [M3-11](plans/M3-11-uninstall.md) | Taking software off again | M3-03, M3-04, M3-07 | Done |
 | [M4-01](plans/M4-01-admin-json-api.md) | Admin JSON API and client admin sessions | M1-10, M1-12 | Done |
-| [M4-02](plans/M4-02-client-admin-shell.md) | Client admin sign-in and navigation | M4-01 | In review |
-| [M4-03](plans/M4-03-client-installs-and-requests.md) | Client admin: installs and requests | M4-02 | In review |
-| [M4-04](plans/M4-04-client-catalog.md) | Client admin: catalog | M4-02 | In review |
-| [M4-05](plans/M4-05-client-devices-keys-admins.md) | Client admin: devices, keys, admins | M4-02 | In review |
-| [M4-06](plans/M4-06-release-0.8.0.md) | Release 0.8.0 | M4-03, M4-04, M4-05 | Open |
+| [M4-02](plans/M4-02-client-admin-shell.md) | Client admin sign-in and navigation | M4-01 | Done |
+| [M4-03](plans/M4-03-client-installs-and-requests.md) | Client admin: installs and requests | M4-02 | Done |
+| [M4-04](plans/M4-04-client-catalog.md) | Client admin: catalog | M4-02 | Done |
+| [M4-05](plans/M4-05-client-devices-keys-admins.md) | Client admin: devices, keys, admins | M4-02 | Done |
+| [M4-06](plans/M4-06-release-0.8.0.md) | Release 0.8.0 | M4-03, M4-04, M4-05 | In review |
 | [M5-01](plans/M5-01-microsoft-store-apps.md) | Microsoft Store apps | M3-03 | Done |
 | [M5-02](plans/M5-02-package-managers.md) | Package managers as one kind | M3-02, M3-05 | Done |
 | [M5-03](plans/M5-03-managers-on-a-device.md) | Which package managers a device has | M5-02 | Done |
 | [M5-04](plans/M5-04-managed-packages-in-the-installed-list.md) | Managed packages in the installed list | M5-02 | Done |
 | [M5-05](plans/M5-05-one-way-to-add-an-app.md) | One way to add an app | M5-01, M5-02 | Done |
 | [M5-06](plans/M5-06-release-0.7.0.md) | Release 0.7.0 | M5-03, M5-04, M5-05 | Done |
+
+Milestone 4 is the 0.8.0 release: the Windows client gains an Admin area that does everything the web admin does, over the admin JSON API. Every one of the client's admin calls was run against a real server before the release, and the release gate now draws the installed client's admin dashboard as well as its Apps page. The client's pages themselves have been exercised in demo mode and against test doubles; a session revoked on the web signing the client out, and a key made in the client enrolling a PC, have been proven at the API but not yet clicked through on a PC.
 
 Milestone 5 shipped as [v0.7.0](https://github.com/Duresa7/app-portal/releases/tag/v0.7.0). The full gate, Windows jobs included, passed on the release commit and again on the tag; the downloaded MSI and `AppPortalSetup.exe` match their `SHA256SUMS` lines and `ghcr.io/duresa7/app-portal-server:0.7.0` is readable without credentials. From this release the release gate also has the agent install a real package on a real PC: `ci-installer-test.ps1` asks for a PowerShell module through Windows PowerShell, the agent installs it as SYSTEM, the server lists it under Installed as the catalog app, and the removal takes it off again. So the claim below that no installer has run outside a fake process runner no longer holds for machine-wide installs. **Still unproven on a real PC: a per-user install, which is the Win32 session code, and an install that finishes at a restart.** Prove both on one PC before trusting them to a fleet.
 
@@ -139,7 +141,7 @@ graph LR
   M5-05 --> M4-04
 ```
 
-What can start today: milestones 1, 2 and 3 are Done, and so are M4-01 and M5-01 to M5-05. M5-06 is the 0.7.0 release; after it, M4-02 and M4-04 can start. M4-02 could start at any time; M4-04 waits on M5-05 so that the client's catalog editor is built once.
+What can start today: milestones 1, 2, 3 and 5 have shipped, and milestone 4 is complete apart from its release, M4-06. Milestone 6 is drafted under Next and has no packages yet.
 
 ## Shared interface
 
@@ -154,6 +156,16 @@ Names every package must use so that parallel work fits together. Details live i
 - **Restart:** an install waiting for one carries `reboot_state` of `pending`, then `confirmed`. The UI says "Restart to finish". Never "reboot" in anything a person reads.
 - **Database:** one SQLite file, `Portal:DataDirectory/app-portal.db`. Tables and columns are defined in M1-01 and extended only by the plans that say so.
 
+## Next
+
+Milestone 6 is drafted, not planned: its packages are not cut yet, and what goes in is a decision still to make.
+
+- **Proof on a real PC.** A per-user install and an install that finishes at a restart have never run outside a test double. A gate step, or a scripted check run on a Windows machine before a release, that signs a test account in, installs one per-user app, and restarts through one install, would close the caveat that has stood since 0.5.0.
+- **Code signing.** The MSI, `AppPortalSetup.exe` and the executables are unsigned, so Windows SmartScreen warns on every download and an administrator has nothing to check the files against but `SHA256SUMS`. It needs a certificate, which is a cost and a choice of supplier.
+- **From a request to an app.** An approved request records a decision and nothing else. Letting the approval open a new catalog entry prefilled from the request would remove the step an administrator does by hand every time.
+
 ## Deferred
 
-Not planned in any milestone: installing the content a launcher manages, installing for every account on a device at once, repairing an install in place, version constraints on a prerequisite, OpenID Connect admin sign-in, group-to-role mapping for directory accounts, email notifications, linking requests to catalog apps, per-group catalogs, code signing of the MSI and executables, other RMM engines such as Intune, updater rollback on Action1-only devices.
+Reviewed for 0.8.0: nothing here became urgent, and two items, code signing and turning a request into an app, moved to the draft above.
+
+Not planned in any milestone: installing the content a launcher manages, installing for every account on a device at once, repairing an install in place, version constraints on a prerequisite, OpenID Connect admin sign-in, group-to-role mapping for directory accounts, email notifications, per-group catalogs, other RMM engines such as Intune, updater rollback on Action1-only devices.

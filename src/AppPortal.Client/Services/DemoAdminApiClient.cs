@@ -51,7 +51,7 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         AddDevice("dev-2", "FINANCE-LT-04", true, "1.0.0", now.AddMinutes(-6), now.AddDays(-13));
         AddDevice("dev-3", "DESIGN-WS-02", true, "1.0.0", now.AddHours(-2), now.AddDays(-9));
         AddDevice("dev-4", "WAREHOUSE-TAB-1", false, null, now.AddDays(-2), now.AddDays(-58));
-        AddDevice("dev-5", Environment.MachineName, true, "1.0.0", now, now.AddDays(-1));
+        AddDevice("dev-5", DemoIdentity.MachineName, true, "1.0.0", now, now.AddDays(-1));
         SeedFleetAdministration(now);
 
         AddApp("google-chrome", "Google Chrome", "Google LLC", "Browsers", featured: true);
@@ -103,7 +103,7 @@ public sealed class DemoAdminApiClient : IAdminApiClient
     public Task<IReadOnlyList<AdminSessionSummary>> GetSessionsAsync(CancellationToken ct)
         => Guarded<IReadOnlyList<AdminSessionSummary>>(() =>
         [
-            new("ses-1", Environment.MachineName, "api", DateTimeOffset.Now.AddMinutes(-2), DateTimeOffset.Now.AddDays(30), DateTimeOffset.Now, true),
+            new("ses-1", DemoIdentity.MachineName, "api", DateTimeOffset.Now.AddMinutes(-2), DateTimeOffset.Now.AddDays(30), DateTimeOffset.Now, true),
         ]);
 
     public Task RevokeSessionAsync(string id, CancellationToken ct) => Guarded(() => 0);

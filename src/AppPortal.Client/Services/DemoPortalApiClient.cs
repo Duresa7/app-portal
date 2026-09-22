@@ -47,21 +47,21 @@ public sealed class DemoPortalApiClient : IPortalApiClient
 
     public DemoPortalApiClient()
     {
-        _installs.Add(new InstallRequest(Guid.NewGuid().ToString("N"), "7-zip", "7-Zip", Environment.MachineName,
+        _installs.Add(new InstallRequest(Guid.NewGuid().ToString("N"), "7-zip", "7-Zip", DemoIdentity.MachineName,
             DateTimeOffset.Now.AddHours(-26), DateTimeOffset.Now.AddHours(-26).AddMinutes(1),
-            InstallState.Succeeded, 100, "The packages have been installed successfully.", WindowsAccount.Current()));
-        _installs.Add(new InstallRequest(Guid.NewGuid().ToString("N"), "obs", "OBS Studio", Environment.MachineName,
+            InstallState.Succeeded, 100, "The packages have been installed successfully.", DemoIdentity.Account));
+        _installs.Add(new InstallRequest(Guid.NewGuid().ToString("N"), "obs", "OBS Studio", DemoIdentity.MachineName,
             DateTimeOffset.Now.AddHours(-3), DateTimeOffset.Now.AddHours(-3).AddMinutes(4),
-            InstallState.Failed, 0, "The installer returned exit code 1603.", WindowsAccount.Current()));
+            InstallState.Failed, 0, "The installer returned exit code 1603.", DemoIdentity.Account));
 
         _requests.Add(new AppRequest(Guid.NewGuid().ToString("N"), "Notepad++, for editing config files on this box",
-            Environment.MachineName, WindowsAccount.Current(), AppRequestStatus.Approved,
+            DemoIdentity.MachineName, DemoIdentity.Account, AppRequestStatus.Approved,
             "Added to the catalog, it should appear within the hour.", DateTimeOffset.Now.AddDays(-4), DateTimeOffset.Now.AddDays(-3)));
         _requests.Add(new AppRequest(Guid.NewGuid().ToString("N"), "A licence for the full Acrobat, not just the reader",
-            Environment.MachineName, WindowsAccount.Current(), AppRequestStatus.Denied,
+            DemoIdentity.MachineName, DemoIdentity.Account, AppRequestStatus.Denied,
             "We have no spare licences this quarter. Ask again in April.", DateTimeOffset.Now.AddDays(-9), DateTimeOffset.Now.AddDays(-8)));
         _requests.Add(new AppRequest(Guid.NewGuid().ToString("N"), "Slack",
-            Environment.MachineName, WindowsAccount.Current(), AppRequestStatus.Pending, null, DateTimeOffset.Now.AddHours(-5), null));
+            DemoIdentity.MachineName, DemoIdentity.Account, AppRequestStatus.Pending, null, DateTimeOffset.Now.AddHours(-5), null));
     }
 
     public Task<IReadOnlyList<AppRequest>> GetRequestsAsync(CancellationToken ct)
@@ -74,8 +74,8 @@ public sealed class DemoPortalApiClient : IPortalApiClient
 
     public Task<AppRequest> CreateRequestAsync(string text, CancellationToken ct)
     {
-        var request = new AppRequest(Guid.NewGuid().ToString("N"), text.Trim(), Environment.MachineName,
-            WindowsAccount.Current(), AppRequestStatus.Pending, null, DateTimeOffset.Now, null);
+        var request = new AppRequest(Guid.NewGuid().ToString("N"), text.Trim(), DemoIdentity.MachineName,
+            DemoIdentity.Account, AppRequestStatus.Pending, null, DateTimeOffset.Now, null);
         lock (_gate)
         {
             _requests.Add(request);
@@ -88,7 +88,7 @@ public sealed class DemoPortalApiClient : IPortalApiClient
         => Task.FromResult<IReadOnlyList<CatalogApp>>(Catalog);
 
     public Task<DeviceInfo> GetDeviceAsync(CancellationToken ct)
-        => Task.FromResult(new DeviceInfo($"{Environment.MachineName} (demo)", "demo-endpoint", "Connected", DateTimeOffset.Now));
+        => Task.FromResult(new DeviceInfo($"{DemoIdentity.MachineName} (demo)", "demo-endpoint", "Connected", DateTimeOffset.Now));
 
     public Task<IReadOnlyList<InstalledApp>> GetInstalledAsync(CancellationToken ct)
     {
@@ -122,8 +122,8 @@ public sealed class DemoPortalApiClient : IPortalApiClient
         var app = Catalog.FirstOrDefault(a => a.Id == appId)
                   ?? throw new PortalApiException($"'{appId}' is not in the catalog.");
 
-        var request = new InstallRequest(Guid.NewGuid().ToString("N"), app.Id, app.Name, Environment.MachineName,
-            DateTimeOffset.Now, null, InstallState.Queued, 0, "Sent to the management service.", WindowsAccount.Current(),
+        var request = new InstallRequest(Guid.NewGuid().ToString("N"), app.Id, app.Name, DemoIdentity.MachineName,
+            DateTimeOffset.Now, null, InstallState.Queued, 0, "Sent to the management service.", DemoIdentity.Account,
             Kind: kind);
         lock (_gate)
         {

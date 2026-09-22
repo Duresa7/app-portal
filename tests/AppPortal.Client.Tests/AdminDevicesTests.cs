@@ -174,7 +174,7 @@ public sealed class AdminDevicesTests
     {
         var page = await LoadedAsync();
         // The demo PC itself, because it is the one device with nothing running on it.
-        var name = Environment.MachineName;
+        var name = DemoIdentity.MachineName;
         await page.OpenDeviceCommand.ExecuteAsync(Row(page, name));
 
         page.RequestRemoveCommand.Execute(null);

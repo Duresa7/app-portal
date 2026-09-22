@@ -107,7 +107,12 @@ public static class AgentEndpoints
             }
 
             var device = DeviceAuthenticationMiddleware.Current(context);
-            return jobs.Progress(device.Id, id, request, attempt) ? Results.NoContent() : Results.Conflict(new ErrorMessage("The job has no current lease for this device."));
+            // A report the store chose to ignore, such as one that moves the state backwards, leaves the
+            // job exactly as it was. That is not a conflict, and answering it as one makes the agent
+            // abandon a run it is carrying out correctly.
+            return jobs.Progress(device.Id, id, request, attempt) is JobUpdate.NotLeased
+                ? Results.Conflict(new ErrorMessage("The job has no current lease for this device."))
+                : Results.NoContent();
         });
 
         group.MapPost("/jobs/{id}/complete", (string id, int? attempt, AgentJobCompletion request, HttpContext context, AgentJobStore jobs) =>

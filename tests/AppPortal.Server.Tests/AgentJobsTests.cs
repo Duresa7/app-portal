@@ -81,7 +81,7 @@ public sealed class AgentJobsTests : IDisposable
         Assert.Equal(InstallState.Succeeded, saved.State);
         Assert.Equal(100, saved.PercentComplete);
         Assert.NotNull(saved.CompletedAt);
-        Assert.False(_jobs.Progress(_device.Id, job.Id, new AgentJobProgress("installing", 0, "Installing")));
+        Assert.Equal(JobUpdate.NotLeased, _jobs.Progress(_device.Id, job.Id, new AgentJobProgress("installing", 0, "Installing")));
     }
 
     [Fact]
@@ -108,10 +108,10 @@ public sealed class AgentJobsTests : IDisposable
         var id = CreateJob();
         _jobs.Lease(_device.Id);
         _clock.Advance(TimeSpan.FromMinutes(4));
-        Assert.True(_jobs.Progress(_device.Id, id, new AgentJobProgress("downloading", 43, "Downloading 43%"), 1));
+        Assert.Equal(JobUpdate.Applied, _jobs.Progress(_device.Id, id, new AgentJobProgress("downloading", 43, "Downloading 43%"), 1));
         _clock.Advance(TimeSpan.FromMinutes(2));
         Assert.Null(_jobs.Lease(_device.Id));
-        Assert.True(_jobs.Progress(_device.Id, id, new AgentJobProgress("queued", 0, "Stopped"), 1));
+        Assert.Equal(JobUpdate.Applied, _jobs.Progress(_device.Id, id, new AgentJobProgress("queued", 0, "Stopped"), 1));
         var resumed = _jobs.Lease(_device.Id)!;
         Assert.Equal(id, resumed.Id);
         Assert.Equal(2, resumed.Attempt);
@@ -254,12 +254,42 @@ public sealed class AgentJobsTests : IDisposable
     {
         var id = CreateJob();
         _jobs.Lease(_device.Id);
-        Assert.True(_jobs.Progress(_device.Id, id, new AgentJobProgress("installing", 30, "Installing")));
-        Assert.False(_jobs.Progress(_device.Id, id, new AgentJobProgress("downloading", 10, "Downloading 10%")));
+        Assert.Equal(JobUpdate.Applied, _jobs.Progress(_device.Id, id, new AgentJobProgress("installing", 30, "Installing")));
+        Assert.Equal(JobUpdate.Ignored, _jobs.Progress(_device.Id, id, new AgentJobProgress("downloading", 10, "Downloading 10%")));
         Assert.Equal(30, Assert.Single(_installs.All()).PercentComplete);
         _clock.Advance(TimeSpan.FromMinutes(5));
         Assert.False(_jobs.Complete(_device.Id, id, new AgentJobCompletion(true, null, 0)));
         Assert.Equal(InstallState.Queued, Assert.Single(_installs.All()).State);
+    }
+
+    [Fact]
+    public async Task A_backwards_progress_report_is_accepted_and_changes_nothing()
+    {
+        // Every machine-scope winget install reported "Installing" before winget wrote a word, so
+        // winget's first "Downloading" line moved the state backwards. The store was right to drop it.
+        // Answering 409 was what made the agent abandon the run and take the job again, for ever.
+        using var client = Client();
+        Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest("agent-app"))).StatusCode);
+        var job = (await client.GetFromJsonAsync<AgentJob>("/api/v1/agent/jobs?wait=0"))!;
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.PostAsJsonAsync($"/api/v1/agent/jobs/{job.Id}/progress", new AgentJobProgress("installing", 30, "Installing"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.PostAsJsonAsync($"/api/v1/agent/jobs/{job.Id}/progress", new AgentJobProgress("downloading", 10, "Downloading 10%"))).StatusCode);
+        var visible = Assert.Single(_installs.All());
+        Assert.Equal(30, visible.PercentComplete);
+        Assert.Equal("Installing", visible.Detail);
+    }
+
+    [Fact]
+    public async Task A_progress_report_for_a_job_this_device_no_longer_holds_is_a_conflict()
+    {
+        using var client = Client();
+        Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsJsonAsync(ApiRoutes.Installs, new CreateInstallRequest("agent-app"))).StatusCode);
+        var job = (await client.GetFromJsonAsync<AgentJob>("/api/v1/agent/jobs?wait=0"))!;
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.PostAsJsonAsync($"/api/v1/agent/jobs/{job.Id}/complete", new AgentJobCompletion(true, "Installed.", 0))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await client.PostAsJsonAsync($"/api/v1/agent/jobs/{job.Id}/progress", new AgentJobProgress("installing", 40, "Installing"))).StatusCode);
     }
 
     [Fact]

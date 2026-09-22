@@ -48,7 +48,7 @@ public sealed class LegacyImport(
             catalog.Import(entries);
             logger.LogInformation("Imported {Count} catalog apps from {Path}", entries.Count, catalog.SeedPath);
         }
-        catch (Exception ex) when (ex is JsonException or InvalidDataException)
+        catch (Exception ex) when (ex is JsonException or InvalidDataException or PrerequisiteException)
         {
             // An unreadable seed file leaves an empty catalog rather than stopping the server: the
             // operator can fix the file and run `catalog import`, and devices meanwhile see no apps.

@@ -95,7 +95,7 @@ public static class CatalogCli
                 output.WriteLine($"Imported {entries.Count} app(s) from {path}.");
                 return 0;
             }
-            catch (Exception ex) when (ex is JsonException or InvalidDataException)
+            catch (Exception ex) when (ex is JsonException or InvalidDataException or PrerequisiteException)
             {
                 output.WriteLine($"{path} is not a valid catalog: {ex.Message}");
                 return 1;

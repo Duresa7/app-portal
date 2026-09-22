@@ -277,17 +277,7 @@ public sealed class CatalogStore
             throw new InvalidDataException($"An agent definition needs a kind of {PackageDefinition.Kinds}.", ex);
         }
 
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in file.Apps)
-        {
-            Validate(entry);
-
-            if (!seen.Add(entry.Id.Trim()))
-            {
-                throw new InvalidDataException($"Catalog app id '{entry.Id}' appears more than once.");
-            }
-        }
-
+        Validate(file.Apps);
         return file.Apps;
     }
 
@@ -296,13 +286,12 @@ public sealed class CatalogStore
     /// mention comes from the file, <c>hidden</c> included: an export is meant to restore what it captured,
     /// so a file that omits the flag says the app is visible. Seeding only runs on an empty catalog, so a
     /// restart never walks over an administrator's decision; an upload is a deliberate act.
+    /// The file is checked whole before anything is written, and one bad app writes none of it.
     /// </summary>
     public int Import(IReadOnlyList<CatalogEntry> entries)
     {
-        foreach (var entry in entries)
-        {
-            Validate(entry);
-        }
+        Validate(entries);
+        var ids = EnsurePrerequisites(entries);
 
         using var connection = _database.Open();
         using var transaction = connection.BeginTransaction();
@@ -324,7 +313,7 @@ public sealed class CatalogStore
                         updated_at = excluded.updated_at;
                     """;
                 app.Parameters.AddWithValue("@id", entry.Id.Trim());
-                app.Parameters.AddWithValue("@engine", (object?)entry.EngineOverride ?? DBNull.Value);
+                app.Parameters.AddWithValue("@engine", (object?)Engine(entry.EngineOverride) ?? DBNull.Value);
                 app.Parameters.AddWithValue("@requirements", (object?)entry.Requirements ?? DBNull.Value);
                 app.Parameters.AddWithValue("@removable", entry.UserRemovable ? 1 : 0);
                 app.Parameters.AddWithValue("@name", entry.Name);
@@ -340,16 +329,27 @@ public sealed class CatalogStore
             }
 
             WritePackages(connection, transaction, entry);
-            ReplacePrerequisites(connection, transaction, entry.Id.Trim(), entry.Requires);
+        }
+
+        // Every app first, then what they need: an app may need one further down the same file, and
+        // the prerequisite's row has to exist before the foreign key will take an edge to it.
+        foreach (var entry in entries)
+        {
+            ReplacePrerequisites(connection, transaction, entry.Id.Trim(), Stored(entry, ids));
         }
 
         transaction.Commit();
         return entries.Count;
     }
 
+    /// <summary>
+    /// Writes one app, as the edit form and <c>PUT</c> send it. The same checks as an import of a file
+    /// holding only this app, so an app saves through every route or through none.
+    /// </summary>
     public void Upsert(CatalogEntry entry)
     {
-        Validate(entry);
+        Validate([entry]);
+        var ids = EnsurePrerequisites([entry]);
 
         using var connection = _database.Open();
         using var transaction = connection.BeginTransaction();
@@ -370,7 +370,7 @@ public sealed class CatalogStore
                     updated_at = excluded.updated_at;
                 """;
             app.Parameters.AddWithValue("@id", entry.Id.Trim());
-            app.Parameters.AddWithValue("@engine", (object?)entry.EngineOverride ?? DBNull.Value);
+            app.Parameters.AddWithValue("@engine", (object?)Engine(entry.EngineOverride) ?? DBNull.Value);
             app.Parameters.AddWithValue("@requirements", (object?)entry.Requirements ?? DBNull.Value);
             app.Parameters.AddWithValue("@removable", entry.UserRemovable ? 1 : 0);
             app.Parameters.AddWithValue("@name", entry.Name.Trim());
@@ -386,7 +386,7 @@ public sealed class CatalogStore
         }
 
         WritePackages(connection, transaction, entry);
-        ReplacePrerequisites(connection, transaction, entry.Id.Trim(), entry.Requires);
+        ReplacePrerequisites(connection, transaction, entry.Id.Trim(), Stored(entry, ids));
 
         transaction.Commit();
     }
@@ -436,7 +436,39 @@ public sealed class CatalogStore
         return true;
     }
 
-    /// <summary>The same rules <see cref="Parse"/> applies to a file, for one app coming off a form.</summary>
+    /// <summary>
+    /// Ids that a route takes before an app can: <c>/admin/catalog/new</c> is the create form, and
+    /// <c>GET /api/v1/admin/catalog/export</c> is the export. An app with either id could be written and
+    /// then never opened by id again. An app stored under one before the rule is left where it is: it
+    /// is in the list and the export, devices are still offered it, and it can be hidden or deleted by
+    /// id. Saving it again under that id is refused, so it has to be saved under another.
+    /// </summary>
+    private static readonly Dictionary<string, string> ReservedIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["new"] = "the create form",
+        ["export"] = "the catalog export",
+    };
+
+    /// <summary>
+    /// What every app must be on its own, and that no id appears twice. The one place these rules live:
+    /// a file, a form and a <c>PUT</c> all come through here, so none of them can hold an app another
+    /// would refuse. Throws <see cref="InvalidDataException"/> naming the first fault. The prerequisites
+    /// need the stored catalog as well, so <see cref="EnsurePrerequisites"/> checks those.
+    /// </summary>
+    private static void Validate(IReadOnlyList<CatalogEntry> entries)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in entries)
+        {
+            Validate(entry);
+
+            if (!seen.Add(entry.Id.Trim()))
+            {
+                throw new InvalidDataException($"Catalog app id '{entry.Id}' appears more than once.");
+            }
+        }
+    }
+
     private static void Validate(CatalogEntry entry)
     {
         if (string.IsNullOrWhiteSpace(entry.Id))
@@ -444,9 +476,28 @@ public sealed class CatalogStore
             throw new InvalidDataException("An app needs an id.");
         }
 
+        if (ReservedIds.TryGetValue(entry.Id.Trim(), out var owner))
+        {
+            throw new InvalidDataException($"'{entry.Id.Trim()}' is reserved for {owner}. Give the app another id.");
+        }
+
         if (string.IsNullOrWhiteSpace(entry.Name))
         {
             throw new InvalidDataException("An app needs a name.");
+        }
+
+        // The form and the client stop at the same length; an import or a PUT that went past it would
+        // store a note the form then refuses to save, and the app could not be edited without losing it.
+        if ((entry.Requirements?.Length ?? 0) > CatalogLimits.MaxRequirementsLength)
+        {
+            throw new InvalidDataException($"Requirements must be {CatalogLimits.MaxRequirementsLength} characters or fewer.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(entry.EngineOverride) && Engine(entry.EngineOverride) is not (EngineLabel.Action1 or EngineLabel.Agent))
+        {
+            // Anything else would be stored and then ignored by the engine choice without a word, which
+            // reads as a preference that is being honoured when it is not.
+            throw new InvalidDataException($"engineOverride must be {EngineLabel.Action1}, {EngineLabel.Agent}, or empty to follow the server, not '{entry.EngineOverride}'.");
         }
 
         if (!entry.HasAction1 && entry.Agent is null)
@@ -456,6 +507,64 @@ public sealed class CatalogStore
 
         entry.Agent?.Validate();
     }
+
+    /// <summary>
+    /// The engine override as it is stored: lower case, as the form's list names it, or null for a
+    /// blank. A file saying <c>Agent</c> means the same as the form saying <c>agent</c>, and the form
+    /// has to find its own option again when it opens the app.
+    /// </summary>
+    private static string? Engine(string? engineOverride)
+        => string.IsNullOrWhiteSpace(engineOverride) ? null : engineOverride.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// Refuses prerequisites that name no app or close a loop, judged on the catalog as it will be once
+    /// <paramref name="incoming"/> is written: the stored apps with every incoming one laid over them. A
+    /// file is judged as one set, so an app may need one later in the same file, and an app the file
+    /// names takes its prerequisites from the file rather than from what is stored. Refused on save
+    /// rather than on install, because the administrator who made the loop is the one who can undo it
+    /// and the person pressing Install is not.
+    /// </summary>
+    /// <returns>
+    /// Each app id, in any case, to the id the catalog will hold it under. The id column matches case
+    /// exactly and the foreign key with it, so an edge is written to the app's own spelling of its id.
+    /// </returns>
+    private IReadOnlyDictionary<string, string> EnsurePrerequisites(IReadOnlyList<CatalogEntry> incoming)
+    {
+        // Nothing incoming needs anything, so no id can be missing, and taking edges away never
+        // closes a loop.
+        if (incoming.All(entry => Needs(entry).Count == 0))
+        {
+            return new Dictionary<string, string>();
+        }
+
+        var byId = Entries.ToDictionary(entry => entry.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in incoming)
+        {
+            byId[entry.Id.Trim()] = entry;
+        }
+
+        var edges = byId.ToDictionary(pair => pair.Key, pair => Needs(pair.Value), StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in incoming)
+        {
+            var needs = Needs(entry);
+            foreach (var id in needs.Where(id => !byId.ContainsKey(id)))
+            {
+                throw new PrerequisiteException($"'{id}' is not in the catalog, and {entry.Name.Trim()} needs it.");
+            }
+
+            PrerequisiteResolver.EnsureNoCycle(entry.Id.Trim(), needs, edges, byId);
+        }
+
+        return byId.ToDictionary(pair => pair.Key, pair => pair.Value.Id.Trim(), StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>What an app needs first, blanks dropped and each id trimmed.</summary>
+    private static IReadOnlyList<string> Needs(CatalogEntry entry)
+        => [.. (entry.Requires ?? []).Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id.Trim())];
+
+    /// <summary>What an app needs first, each id spelled the way the app it names is stored.</summary>
+    private static IReadOnlyList<string> Stored(CatalogEntry entry, IReadOnlyDictionary<string, string> ids)
+        => [.. Needs(entry).Select(id => ids.GetValueOrDefault(id, id))];
 
     private static void WritePackages(SqliteConnection connection, SqliteTransaction transaction, CatalogEntry entry)
     {
@@ -562,9 +671,8 @@ public sealed class CatalogStore
     }
 
     /// <summary>
-    /// Writes what an app needs first, refusing anything that would make a loop. Refused on save
-    /// rather than on install, because the administrator who made the loop is the one who can undo it
-    /// and the person pressing Install is not.
+    /// Writes what an app needs first. <see cref="EnsurePrerequisites"/> has refused a missing app or a
+    /// loop before this runs.
     /// </summary>
     private void ReplacePrerequisites(SqliteConnection connection, SqliteTransaction transaction,
         string appId, IReadOnlyList<string> needs)
@@ -591,25 +699,5 @@ public sealed class CatalogStore
             insert.Parameters.AddWithValue("@position", position++);
             insert.ExecuteNonQuery();
         }
-    }
-
-    /// <summary>Refuses a set of prerequisites that would close a loop, naming the apps in it.</summary>
-    public void EnsureNoCycle(string appId, IReadOnlyList<string> needs)
-    {
-        if (needs.Count == 0)
-        {
-            return;
-        }
-
-        var entries = Entries;
-        var byId = entries.ToDictionary(entry => entry.Id, StringComparer.OrdinalIgnoreCase);
-        var edges = entries.Where(entry => entry.Requires.Count > 0)
-            .ToDictionary(entry => entry.Id, entry => (IReadOnlyList<string>)entry.Requires, StringComparer.OrdinalIgnoreCase);
-        foreach (var id in needs.Where(id => !byId.ContainsKey(id)))
-        {
-            throw new PrerequisiteException($"'{id}' is not in the catalog.");
-        }
-
-        PrerequisiteResolver.EnsureNoCycle(appId, needs, edges, byId);
     }
 }

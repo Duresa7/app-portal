@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 using AppPortal.Server.Action1;
 using AppPortal.Server.Admin;
 using AppPortal.Server.Catalog;
@@ -61,9 +59,8 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     [BindProperty]
     public string EngineOverride { get; set; } = "";
 
+    /// <summary>Held to <see cref="CatalogLimits.MaxRequirementsLength"/> by the store, as every route is.</summary>
     [BindProperty]
-    [StringLength(AppPortal.Shared.CatalogLimits.MaxRequirementsLength,
-        ErrorMessage = "Requirements must be 500 characters or fewer.")]
     public string Requirements { get; set; } = "";
 
     /// <summary>App ids this one needs first, one per line, in the order they should be installed.</summary>
@@ -166,12 +163,6 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         IsNew = string.Equals(id, NewId, StringComparison.OrdinalIgnoreCase);
         var target = ((IsNew ? Id : id) ?? "").Trim();
 
-        if (IsNew && string.Equals(target.Trim(), NewId, StringComparison.OrdinalIgnoreCase))
-        {
-            Error = $"'{NewId}' is reserved for the create form. Give the app another id.";
-            return Page();
-        }
-
         if (IsNew && catalog.Find(target) is not null)
         {
             Error = $"An app with id '{target.Trim()}' already exists.";
@@ -188,9 +179,9 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         try
         {
             entry = Build(target);
-            // Before the save, not after: a loop written into the catalog is a loop every install of
-            // those apps has to walk around, and the person who can undo it is the one on this page.
-            catalog.EnsureNoCycle(entry.Id, entry.Requires);
+            // The store refuses a reserved id, an over-long note, an unknown engine, a missing
+            // prerequisite or a loop before anything is written, the same as it does for the API and
+            // an import, and the person who can put it right is the one on this page.
             catalog.Upsert(entry);
         }
         catch (Exception ex) when (ex is PrerequisiteException or InvalidDataException)

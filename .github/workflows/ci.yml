@@ -6,10 +6,10 @@ name: CI
 # second leg. A v* tag then runs the release job, the only place a GitHub release or a
 # registry image is created, and only after all of it passed.
 #
-# Windows minutes bill at several times the Linux rate and the two Windows jobs are most of the cost
-# of this workflow. They are the jobs that must pass before anything ships, not the jobs that must pass
-# before every commit. Run the full gate from the Actions tab in the days before a release, and treat a
-# red result there as blocking the tag.
+# The two Windows jobs are the slow part of this workflow. They are the jobs that must pass before
+# anything ships, not the jobs that must pass before every commit. Run the full gate from the Actions
+# tab in the days before a release, and treat a red result there as blocking the tag. This repository
+# is public, so standard GitHub-hosted runners are free: the gate saves waiting, not money.
 
 on:
   push:
@@ -116,7 +116,8 @@ jobs:
     name: Build, install and verify on Windows
     needs: [gate, version]
     if: needs.gate.outputs.windows == 'true'
-    runs-on: windows-latest
+    # windows-latest unless the WINDOWS_RUNNER repository variable names a different runner.
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:

@@ -1,3 +1,4 @@
+using AppPortal.Agent.Executors;
 using AppPortal.Agent.Jobs;
 
 namespace AppPortal.Agent.Update;
@@ -12,6 +13,7 @@ public sealed class UpdateWorker(
     SelfUpdate update,
     UpdatePaths paths,
     IProcessRunner processes,
+    IUninstallRegistry registry,
     ILogger<UpdateWorker> logger,
     TimeSpan? pollInterval = null,
     bool? windows = null) : BackgroundService
@@ -19,8 +21,20 @@ public sealed class UpdateWorker(
     /// <summary>The scheduled task the zip updater installed, which an MSI upgrade has to be rid of.</summary>
     public const string LegacyTaskName = "App Portal Updater";
 
+    /// <summary>
+    /// The uninstall entry the zip installer wrote by hand. Its UninstallString still runs the retired
+    /// script, which deletes the install folder and the state folder with it.
+    /// </summary>
+    public const string LegacyUninstallKey = "AppPortalClient";
+
     /// <summary>The SID of the local Users group, which is the same on every Windows in every language.</summary>
     private const string UsersSid = "*S-1-5-32-545";
+
+    /// <summary>
+    /// What a zip install left in the folder the MSI now owns: the updater the scheduled task ran, and
+    /// the script the uninstall entry pointed at.
+    /// </summary>
+    private static readonly string[] LegacyFiles = ["AppPortal.Updater.exe", "Uninstall-AppPortalClient.ps1"];
 
     private readonly TimeSpan _poll = pollInterval ?? TimeSpan.FromSeconds(10);
     private readonly bool _windows = windows ?? OperatingSystem.IsWindows();
@@ -38,7 +52,7 @@ public sealed class UpdateWorker(
     {
         if (_windows)
         {
-            await RemoveLegacyTaskAsync(stoppingToken);
+            await RemoveLegacyInstallAsync(stoppingToken);
             await AllowRequestsAsync(stoppingToken);
         }
 
@@ -68,9 +82,24 @@ public sealed class UpdateWorker(
     }
 
     /// <summary>
-    /// A PC upgraded from a zip install still has the SYSTEM scheduled task that ran the old updater.
-    /// Left alone it would go on replacing files Windows Installer now owns, so the first start after
-    /// the upgrade deletes it. Absence is the ordinary answer on every other machine, not a failure.
+    /// A PC upgraded from a zip install carries three things Windows Installer knows nothing about: the
+    /// SYSTEM scheduled task that ran the old updater, the updater and its uninstall script in the folder
+    /// the MSI now owns, and an uninstall entry of its own. The entry is the one that hurts. It sits in
+    /// Apps &amp; Features beside the MSI's under the same name, and the script behind it deletes both the
+    /// install folder and the state folder, so whoever picks the wrong row of two identical ones leaves
+    /// Windows Installer holding a product whose files are gone. The first start after the upgrade takes
+    /// all three away. Absence is the ordinary answer on every machine that was installed from an MSI in
+    /// the first place, and none of it is worth a failed start.
+    /// </summary>
+    internal async Task RemoveLegacyInstallAsync(CancellationToken ct)
+    {
+        await RemoveLegacyTaskAsync(ct);
+        RemoveLegacyUninstallEntry();
+        RemoveLegacyFiles();
+    }
+
+    /// <summary>
+    /// Left alone the task would go on replacing files Windows Installer now owns.
     /// </summary>
     internal async Task RemoveLegacyTaskAsync(CancellationToken ct)
     {
@@ -89,6 +118,52 @@ public sealed class UpdateWorker(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogInformation("Could not look for the {Task} scheduled task ({Reason})", LegacyTaskName, ex.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// Only the key the zip installer wrote, by the name it wrote it under. The MSI's own entry lives
+    /// under its product code and is what uninstalling this product is supposed to go through.
+    /// </summary>
+    private void RemoveLegacyUninstallEntry()
+    {
+        try
+        {
+            if (registry.Remove(LegacyUninstallKey))
+            {
+                logger.LogInformation("Removed the leftover {Key} uninstall entry", LegacyUninstallKey);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Could not remove the {Key} uninstall entry ({Reason})", LegacyUninstallKey, ex.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// A file a stale process still holds open cannot be deleted, and that is worth saying out loud and
+    /// nothing more: the updater without its task and its entry has no way left to run.
+    /// </summary>
+    private void RemoveLegacyFiles()
+    {
+        foreach (var name in LegacyFiles)
+        {
+            var path = Path.Combine(paths.InstallDir, name);
+            try
+            {
+                // The check is for the log line alone. File.Delete says nothing about a file that was
+                // never there, which is what this folder holds on a machine the MSI installed.
+                var there = File.Exists(path);
+                File.Delete(path);
+                if (there)
+                {
+                    logger.LogInformation("Removed {File}, left behind by a zip install", name);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning("Could not remove {File}, left behind by a zip install ({Reason})", name, ex.GetType().Name);
+            }
         }
     }
 

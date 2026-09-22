@@ -131,6 +131,7 @@ public static class AgentRun
                     update,
                     updatePaths,
                     provider.GetRequiredService<IProcessRunner>(),
+                    provider.GetRequiredService<IUninstallRegistry>(),
                     provider.GetRequiredService<ILogger<UpdateWorker>>());
             });
         }

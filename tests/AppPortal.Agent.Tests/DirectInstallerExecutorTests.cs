@@ -227,6 +227,8 @@ public sealed class DirectInstallerExecutorTests : IDisposable
             Asked.Add((uninstallKey, account));
             return quiet;
         }
+
+        public bool Remove(string uninstallKey) => false;
     }
 
     private sealed class FakeProcesses(Func<string, string, ProcessResult> run, params string[] lines) : IProcessRunner

@@ -43,6 +43,19 @@ The agent keeps the client and itself current by downloading the newest release 
 - On a VM with 0.4.0 installed, publishing 0.4.1 leads to the agent applying it within a day without user action when the client is closed, and after "Restart to update" when it is open. Tested by pointing `updateRepository` at a fork with a test release.
 - No scheduled task named "App Portal Updater" remains after upgrade.
 
+One thing differs from this plan as written, and the code is what shipped.
+
+The scheduled task was not the only thing a zip install left behind, and naming only the task is why
+nobody wrote the rest. A zip install also wrote an uninstall entry of its own, `AppPortalClient` under
+`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`, and left `AppPortal.Updater.exe` and
+`Uninstall-AppPortalClient.ps1` in the install folder. The entry is the one that hurts: it sits in Apps
+and Features beside the MSI's under the same name, and the script behind it deletes both the install
+folder and the state folder, so whoever picks the wrong row of two identical ones leaves Windows
+Installer holding a product whose files are gone. Reported as
+[#49](https://github.com/Duresa7/app-portal/issues/49) after two PCs upgraded in place. The agent now
+removes all three on its first start, and the criterion should be read as: nothing a zip install wrote
+remains after upgrade.
+
 ## Verification
 
 `dotnet test`; manual VM test with a fork release; CI Windows job runs the agent update step in `--check` mode against the real feed to ensure parsing still works.

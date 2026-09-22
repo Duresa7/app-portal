@@ -76,6 +76,12 @@ public sealed record EnrollmentKeyCreated(EnrollmentKeyRecord Key, string Plaint
 public sealed class EnrollmentKeyRejectedException(string message) : Exception(message);
 
 /// <summary>
+/// Raised when a key cannot be spent at the moment an enrollment commits: nobody created it, or it is
+/// revoked, expired or used up. The message says no more than that, the same as the route's 401.
+/// </summary>
+public sealed class EnrollmentKeyNotUsableException() : Exception("That enrollment key is not usable.");
+
+/// <summary>
 /// Enrollment keys, one row each. A key is shown once and stored as a SHA-256, the same bargain the
 /// device token makes: a leaked database gives an attacker hashes, not a way onto the portal.
 /// </summary>
@@ -208,7 +214,8 @@ public sealed class EnrollmentKeyStore(Database database)
 
     /// <summary>
     /// Spends one use of a key, or answers null when it is unknown, revoked, expired or used up.
-    /// M2-01 calls this to enroll a device.
+    /// The enrollment route does not call this: it spends through <see cref="TrySpend"/> inside the
+    /// transaction that writes the device, so a refused enrollment leaves the key as it was.
     ///
     /// The check and the increment are one UPDATE on purpose. Reading the row, deciding, then writing
     /// would let two machines racing for the last use of a key both read <c>uses = 0</c> and both win;
@@ -230,13 +237,7 @@ public sealed class EnrollmentKeyStore(Database database)
         using (var spend = connection.CreateCommand())
         {
             spend.Transaction = transaction;
-            spend.CommandText = """
-                UPDATE enrollment_keys SET uses = uses + 1
-                WHERE key_hash = @hash
-                  AND revoked_at IS NULL
-                  AND (expires_at IS NULL OR expires_at > @now)
-                  AND (max_uses IS NULL OR uses < max_uses);
-                """;
+            spend.CommandText = "UPDATE enrollment_keys SET uses = uses + 1 WHERE key_hash = @hash AND " + Usable + ";";
             spend.Parameters.AddWithValue("@hash", hash);
             spend.Parameters.AddWithValue("@now", SqlTime.Now());
             if (spend.ExecuteNonQuery() != 1)
@@ -254,6 +255,32 @@ public sealed class EnrollmentKeyStore(Database database)
         transaction.Commit();
         return record;
     }
+
+    /// <summary>
+    /// Spends one use of the key with this id inside a transaction the caller owns, and answers false
+    /// when the key is revoked, expired or used up. <see cref="Devices.DeviceStore.Enroll"/> calls it, so the
+    /// use commits with the device it paid for and rolls back with any refusal that follows.
+    ///
+    /// It is the same single conditional UPDATE as <see cref="TryConsume"/>, and for the same reason:
+    /// the caller may have seen the key as usable a moment ago, but only this statement, run under the
+    /// write lock, decides whether a use is left.
+    /// </summary>
+    public static bool TrySpend(SqliteConnection connection, SqliteTransaction transaction, string keyId)
+    {
+        using var spend = connection.CreateCommand();
+        spend.Transaction = transaction;
+        spend.CommandText = "UPDATE enrollment_keys SET uses = uses + 1 WHERE id = @id AND " + Usable + ";";
+        spend.Parameters.AddWithValue("@id", keyId);
+        spend.Parameters.AddWithValue("@now", SqlTime.Now());
+        return spend.ExecuteNonQuery() == 1;
+    }
+
+    /// <summary>What a key must be for a use to be spent. The one statement of the rule, shared by both spends.</summary>
+    private const string Usable = """
+        revoked_at IS NULL
+          AND (expires_at IS NULL OR expires_at > @now)
+          AND (max_uses IS NULL OR uses < max_uses)
+        """;
 
     public static string Hash(string key)
         => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)));

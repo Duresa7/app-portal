@@ -88,7 +88,7 @@ Body `EnrollRequest`:
 | `action1EndpointId` | string? | Required when the key enrolls for `action1` or `both` |
 | `agentVersion` | string? | |
 
-The key is spent before the checks that follow the 401. A refusal with 400 for a missing `action1EndpointId`, 403 or 409 has used one of the key's uses.
+A use of the key is spent only when the enrollment succeeds, in the same transaction that writes the device. A refusal of any kind leaves the key's use count as it was. When several machines race for a key's last uses, each use goes to exactly one of them, and the others get 401.
 
 | Status | When |
 |---|---|
@@ -641,13 +641,14 @@ Replaces the editable fields. Body `AdminDeviceUpdate`:
 | `name` | string | |
 | `action1EndpointId` | string? | Optional. Left out or blank clears it. |
 | `enabled` | bool | Optional, default `true`. A disabled device's token is refused from its next call. |
-| `enginePreference` | string? | Optional. `action1` or `agent`; left out or blank follows the app and the server. |
+| `enginePreference` | string? | Optional. `action1` or `agent`, any case. Left out or blank follows the app and the server; there is no keyword for that, so `inherit` is refused. |
 
 | Status | When |
 |---|---|
 | 200 | `AdminDevice`. |
+| 400 | The name is blank, or the engine preference is not blank, `action1` or `agent`. |
 | 404 | No such device. |
-| 409 | The name is blank; the engine preference is not `action1` or `agent`; another device has the name; or the Action1 endpoint would change while an install is in progress. |
+| 409 | Another device has the name, or the Action1 endpoint would change while an install is in progress. |
 
 #### POST /api/v1/admin/devices/{id}/rotate-token
 

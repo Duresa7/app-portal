@@ -6,8 +6,10 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using AppPortal.Server.Data;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Enrollment;
+using AppPortal.Server.Installs;
 using AppPortal.Shared;
 
 using Microsoft.AspNetCore.Hosting;
@@ -206,6 +208,102 @@ public sealed class EnrollmentApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Racing_machines_never_spend_more_uses_than_the_key_has()
+    {
+        var created = Keys.Create("three uses", EnrollmentEngine.Agent, null, maxUses: 3, "tester");
+        var attempts = Enumerable.Range(0, 10)
+            .Select(i => Enroll(Body(created.Plaintext, name: $"PC-{i}", machine: $"machine-{i}")))
+            .ToArray();
+        var codes = (await Task.WhenAll(attempts)).Select(r => r.StatusCode).ToList();
+
+        Assert.Equal(3, codes.Count(c => c == HttpStatusCode.Created));
+        Assert.Equal(7, codes.Count(c => c == HttpStatusCode.Unauthorized));
+        Assert.Equal(3, Keys.Find(created.Key.Id)!.Uses);
+        Assert.Equal(3, Devices.All().Count);
+    }
+
+    [Fact]
+    public async Task A_successful_enrollment_spends_exactly_one_use()
+    {
+        var created = Keys.Create("counted", EnrollmentEngine.Agent, null, null, "tester");
+
+        Assert.Equal(HttpStatusCode.Created, (await Enroll(Body(created.Plaintext))).StatusCode);
+        Assert.Equal(1, Keys.Find(created.Key.Id)!.Uses);
+
+        // A re-enrollment is an enrollment: the machine gets a new token, so the key pays for it.
+        Assert.Equal(HttpStatusCode.Created, (await Enroll(Body(created.Plaintext))).StatusCode);
+        Assert.Equal(2, Keys.Find(created.Key.Id)!.Uses);
+    }
+
+    [Fact]
+    public async Task A_missing_action1_endpoint_spends_no_use_of_the_key()
+    {
+        var created = Keys.Create("action1", EnrollmentEngine.Action1, null, maxUses: 1, "tester");
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await Enroll(Body(created.Plaintext))).StatusCode);
+        Assert.Equal(0, Keys.Find(created.Key.Id)!.Uses);
+
+        // The one use is still there for the machine once it names its endpoint.
+        Assert.Equal(HttpStatusCode.Created, (await Enroll(Body(created.Plaintext, endpoint: "endpoint-1234"))).StatusCode);
+        Assert.Equal(1, Keys.Find(created.Key.Id)!.Uses);
+    }
+
+    [Fact]
+    public async Task A_disabled_device_spends_no_use_of_the_key()
+    {
+        Devices.Add("PC-01", "");
+        var device = Devices.FindByName("PC-01")!;
+        device.Enabled = false;
+        Devices.Update(device);
+        var created = Keys.Create("disabled", EnrollmentEngine.Agent, null, maxUses: 1, "tester");
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await Enroll(Body(created.Plaintext))).StatusCode);
+        Assert.Equal(0, Keys.Find(created.Key.Id)!.Uses);
+
+        Assert.Equal(HttpStatusCode.Created, (await Enroll(Body(created.Plaintext, name: "PC-02", machine: "machine-02"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_conflict_in_the_device_store_spends_no_use_of_the_key()
+    {
+        // An install in flight pins the device to its endpoint, so an enrollment that would move it is refused.
+        Devices.Add("PC-01", "endpoint-old");
+        new InstallStore(_test.Database).Upsert(new InstallRecord
+        {
+            Id = "i1",
+            DeviceName = "PC-01",
+            AppId = "chrome",
+            AppName = "Google Chrome",
+            RequestedAt = DateTimeOffset.UtcNow,
+            State = InstallState.Running,
+        });
+        var created = Keys.Create("conflict", EnrollmentEngine.Action1, null, maxUses: 1, "tester");
+
+        Assert.Equal(HttpStatusCode.Conflict, (await Enroll(Body(created.Plaintext, endpoint: "endpoint-new"))).StatusCode);
+        Assert.Equal(0, Keys.Find(created.Key.Id)!.Uses);
+        Assert.Equal("endpoint-old", Devices.FindByName("PC-01")!.EndpointId);
+
+        var events = new EnrollmentEventStore(_test.Database).ForKey(created.Key.Id);
+        Assert.Equal(EnrollmentOutcome.Rejected, Assert.Single(events).Outcome);
+    }
+
+    [Fact]
+    public async Task A_revoked_or_expired_key_spends_nothing()
+    {
+        var revoked = Keys.Create("revoked", EnrollmentEngine.Agent, null, null, "tester");
+        Keys.Revoke(revoked.Key.Id);
+        var expired = Keys.Create("expired", EnrollmentEngine.Agent, DateTimeOffset.UtcNow.AddHours(1), null, "tester");
+        Expire(expired.Key.Id);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Enroll(Body(revoked.Plaintext))).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Enroll(Body(expired.Plaintext))).StatusCode);
+
+        Assert.Equal(0, Keys.Find(revoked.Key.Id)!.Uses);
+        Assert.Equal(0, Keys.Find(expired.Key.Id)!.Uses);
+        Assert.Empty(Devices.All());
+    }
+
+    [Fact]
     public async Task The_check_route_answers_without_spending_a_use()
     {
         var created = Keys.Create("checked", EnrollmentEngine.Agent, null, maxUses: 1, "tester");
@@ -289,6 +387,17 @@ public sealed class EnrollmentApiTests : IDisposable
         }
 
         return client.GetAsync(ApiRoutes.EnrollCheck);
+    }
+
+    /// <summary>Moved into the past behind the store's back, because Create rightly refuses a past expiry.</summary>
+    private void Expire(string id)
+    {
+        using var connection = _test.Database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE enrollment_keys SET expires_at = @at WHERE id = @id;";
+        command.Parameters.AddWithValue("@at", SqlTime.From(DateTimeOffset.UtcNow.AddMinutes(-1)));
+        command.Parameters.AddWithValue("@id", id);
+        Assert.Equal(1, command.ExecuteNonQuery());
     }
 
     private Task<HttpResponseMessage> Call(string token, string path)

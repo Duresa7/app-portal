@@ -1,5 +1,6 @@
 using AppPortal.Server.Data;
 using AppPortal.Server.Devices;
+using AppPortal.Server.Enrollment;
 using AppPortal.Server.Installs;
 using AppPortal.Shared;
 
@@ -148,15 +149,42 @@ public sealed class DeviceStoreTests
     [Theory]
     [InlineData("winget")]
     [InlineData("both")]
-    public void An_unknown_engine_preference_is_rejected(string engine)
+    [InlineData("inherit")]
+    public void An_unknown_engine_preference_is_rejected_as_bad_input(string engine)
     {
         using var test = new TestDatabase();
         var devices = new DeviceStore(test.Database);
         devices.Add("PC1", "ep-1");
         var device = devices.All().Single();
         device.EnginePreference = engine;
-        Assert.Throws<DeviceRejectedException>(() => devices.Update(device));
+        var refused = Assert.Throws<DeviceInvalidException>(() => devices.Update(device));
+        Assert.Equal("The engine preference must be action1 or agent, or empty to follow the server.", refused.Message);
         Assert.Null(devices.Find(device.Id)!.EnginePreference);
+    }
+
+    [Fact]
+    public void A_blank_name_is_rejected_as_bad_input()
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        var device = devices.All().Single();
+        device.Name = "  ";
+        Assert.Throws<DeviceInvalidException>(() => devices.Update(device));
+        Assert.Equal("PC1", devices.Find(device.Id)!.Name);
+    }
+
+    [Fact]
+    public void A_name_another_device_has_is_a_conflict_not_bad_input()
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        devices.Add("PC2", "ep-2");
+        var device = devices.FindByName("PC1")!;
+        device.Name = "pc2";
+        var refused = Assert.Throws<DeviceRejectedException>(() => devices.Update(device));
+        Assert.IsNotType<DeviceInvalidException>(refused);
     }
 
     [Theory]
@@ -317,5 +345,82 @@ public sealed class DeviceStoreTests
         var ex = Assert.Throws<DeviceInUseException>(() => store.Remove("PC1"));
         Assert.Contains("in progress", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Single(store.All());
+    }
+
+    [Fact]
+    public void Enrolling_spends_a_use_only_when_the_device_is_written()
+    {
+        using var test = new TestDatabase();
+        var store = new DeviceStore(test.Database);
+        var keys = new EnrollmentKeyStore(test.Database);
+        var key = keys.Create("One use", EnrollmentEngine.Action1, null, 1, "admin").Key;
+
+        // A device pinned to its endpoint by an install in flight refuses to move, and the refusal
+        // rolls the use back with everything else the transaction did.
+        store.Add("PC1", "ep-1");
+        new InstallStore(test.Database).Upsert(new InstallRecord
+        {
+            Id = "i1",
+            DeviceName = "PC1",
+            AppId = "chrome",
+            AppName = "Google Chrome",
+            RequestedAt = DateTimeOffset.UtcNow,
+            State = InstallState.Running,
+        });
+        Assert.Throws<DeviceRejectedException>(() => store.Enroll("machine-1", "PC1", "ep-2", grantAgent: false, null, key.Id));
+        Assert.Equal(0, keys.Find(key.Id)!.Uses);
+
+        store.Enroll("machine-2", "PC2", "ep-3", grantAgent: false, null, key.Id);
+        Assert.Equal(1, keys.Find(key.Id)!.Uses);
+
+        Assert.Throws<EnrollmentKeyNotUsableException>(() => store.Enroll("machine-3", "PC3", "ep-4", grantAgent: false, null, key.Id));
+        Assert.Equal(1, keys.Find(key.Id)!.Uses);
+        Assert.Null(store.FindByName("PC3"));
+    }
+
+    [Fact]
+    public void A_revoked_key_enrolls_nothing()
+    {
+        using var test = new TestDatabase();
+        var store = new DeviceStore(test.Database);
+        var keys = new EnrollmentKeyStore(test.Database);
+        var key = keys.Create("Revoked", EnrollmentEngine.Agent, null, null, "admin").Key;
+        keys.Revoke(key.Id);
+
+        Assert.Throws<EnrollmentKeyNotUsableException>(() => store.Enroll("machine-1", "PC1", null, grantAgent: true, null, key.Id));
+        Assert.Empty(store.All());
+        Assert.Equal(0, keys.Find(key.Id)!.Uses);
+    }
+
+    [Fact]
+    public async Task Twenty_machines_racing_for_three_uses_enroll_exactly_three()
+    {
+        using var test = new TestDatabase();
+        var store = new DeviceStore(test.Database);
+        var keys = new EnrollmentKeyStore(test.Database);
+        var key = keys.Create("Three uses", EnrollmentEngine.Agent, null, 3, "admin").Key;
+
+        // Released together, so they contend for the last uses rather than queueing behind each other.
+        using var start = new ManualResetEventSlim(false);
+        var winners = 0;
+        var tasks = Enumerable.Range(0, 20).Select(i => Task.Run(() =>
+        {
+            start.Wait();
+            try
+            {
+                store.Enroll($"machine-{i}", $"PC{i}", null, grantAgent: true, null, key.Id);
+                Interlocked.Increment(ref winners);
+            }
+            catch (EnrollmentKeyNotUsableException)
+            {
+            }
+        })).ToArray();
+
+        start.Set();
+        await Task.WhenAll(tasks);
+
+        Assert.Equal(3, winners);
+        Assert.Equal(3, keys.Find(key.Id)!.Uses);
+        Assert.Equal(3, store.All().Count);
     }
 }

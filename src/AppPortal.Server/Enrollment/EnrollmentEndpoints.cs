@@ -73,7 +73,7 @@ public static class EnrollmentEndpoints
             var logger = loggers.CreateLogger("AppPortal.Server.Enrollment");
             var source = Source(context);
 
-            // Looked up before anything is spent, so a refusal can still name the key it was made with.
+            // Looked up without spending anything, so a refusal can still name the key it was made with.
             // A key nobody has ever created gives null here, and the attempt is recorded against no key.
             var presented = keys.FindByPlaintext(body?.Key);
 
@@ -87,16 +87,12 @@ public static class EnrollmentEndpoints
                 return Results.BadRequest(new ErrorMessage("key, deviceName and machineId are all required."));
             }
 
-            // Spending the key is the authentication step, and it is one statement so that two machines
-            // racing for a key's last use cannot both win. Everything after this point has a key behind it.
-            var key = keys.TryConsume(body.Key);
-            if (key is null)
+            // A key that is refused now is refused before anything else is looked at. A usable one is not
+            // spent here: the use is spent by DeviceStore.Enroll in the transaction that writes the device,
+            // so the refusals below, which enroll nothing, cost the key nothing either.
+            if (presented is not { Status: EnrollmentKeyStatus.Active } key)
             {
-                events.Record(presented?.Id, null, source, EnrollmentOutcome.KeyRefused);
-                logger.LogInformation("Enrollment from {Source} refused: the key is not usable", source);
-                return Results.Json(
-                    new ErrorMessage("That enrollment key is not usable."),
-                    statusCode: StatusCodes.Status401Unauthorized);
+                return KeyRefused(presented?.Id);
             }
 
             var grantAgent = key.DefaultEngine is EnrollmentEngine.Agent or EnrollmentEngine.Both;
@@ -134,6 +130,12 @@ public static class EnrollmentEndpoints
                     body.AgentVersion,
                     key.Id);
             }
+            catch (EnrollmentKeyNotUsableException)
+            {
+                // The key was usable a moment ago and is not now: another machine took its last use,
+                // or an administrator revoked it in between. The same answer as a key refused above.
+                return KeyRefused(key.Id);
+            }
             catch (DeviceRejectedException ex)
             {
                 events.Record(key.Id, known?.Id, source, EnrollmentOutcome.Rejected);
@@ -150,6 +152,15 @@ public static class EnrollmentEndpoints
             return Results.Json(
                 new EnrollResponse(result.Device.Id, result.Token, result.Device.Name, Engines(result.Device)),
                 statusCode: StatusCodes.Status201Created);
+
+            IResult KeyRefused(string? keyId)
+            {
+                events.Record(keyId, null, source, EnrollmentOutcome.KeyRefused);
+                logger.LogInformation("Enrollment from {Source} refused: the key is not usable", source);
+                return Results.Json(
+                    new ErrorMessage("That enrollment key is not usable."),
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
         });
 
         // The setup wizard asks this before it runs the installer, so a key that is already spent is

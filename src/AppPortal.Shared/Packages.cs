@@ -6,6 +6,7 @@ namespace AppPortal.Shared;
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(WingetPackageDefinition), "winget")]
 [JsonDerivedType(typeof(DirectPackageDefinition), "direct")]
+[JsonDerivedType(typeof(ManagedPackageDefinition), "managed")]
 public abstract record PackageDefinition
 {
     public abstract void Validate();
@@ -19,6 +20,7 @@ public abstract record PackageDefinition
     {
         WingetPackageDefinition => "winget",
         DirectPackageDefinition => "direct",
+        ManagedPackageDefinition => "managed",
         _ => throw new InvalidOperationException($"{GetType().Name} has no kind; add it beside the JsonDerivedType attributes."),
     };
 
@@ -84,6 +86,63 @@ public sealed record WingetPackageDefinition(
         }
 
         ValidateScope(Scope);
+    }
+}
+
+/// <summary>
+/// A package one of the PC's own package managers knows: Chocolatey, Scoop, npm, Yarn, Bun, pip,
+/// Cargo, vcpkg, a .NET tool or a PowerShell module. One record and one executor for all of them,
+/// because the only thing that differs between them is a command line, and a command line is data.
+/// <see cref="PackageManagers"/> holds one row per manager.
+/// </summary>
+public sealed record ManagedPackageDefinition(
+    string Manager,
+    string Id,
+    string Scope,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? Version = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? ExtraArgs = null,
+    bool RequiresReboot = false) : PackageDefinition
+{
+    /// <summary>
+    /// What a version may look like. An allowlist for the same reason the id has one: it reaches a
+    /// command line, and several of these managers are batch files.
+    /// </summary>
+    private static readonly Regex VersionRule = new(@"\A[A-Za-z0-9][A-Za-z0-9.+_-]*\z");
+
+    public override void Validate()
+    {
+        var manager = PackageManagers.Find(Manager)
+                      ?? throw new InvalidDataException($"The package manager must be one of: {PackageManagers.Names}.");
+
+        // The id reaches a command line, and npm, Yarn and Scoop are batch files, which Windows runs
+        // through cmd.exe. An id carrying an ampersand or a pipe is a command rather than a package
+        // name, so what is allowed is listed rather than what is not.
+        if (string.IsNullOrWhiteSpace(Id) || !manager.IdRule.IsMatch(Id))
+        {
+            throw new InvalidDataException(
+                $"'{Id}' is not a {manager.DisplayName} package id. Use letters, digits, and the separators {manager.DisplayName} itself uses.");
+        }
+
+        if (Version is { Length: > 0 })
+        {
+            if (!manager.CanPinVersion)
+            {
+                throw new InvalidDataException(
+                    $"{manager.DisplayName} installs the version its own source offers and cannot be asked for another. Leave the version empty.");
+            }
+
+            if (!VersionRule.IsMatch(Version))
+            {
+                throw new InvalidDataException($"'{Version}' is not a version. Use letters, digits, dots and hyphens.");
+            }
+        }
+
+        ValidateScope(Scope);
+        if (!manager.Scopes.Contains(Scope))
+        {
+            var only = string.Join(" or ", manager.Scopes);
+            throw new InvalidDataException($"{manager.DisplayName} can only install at {only} scope on Windows.");
+        }
     }
 }
 

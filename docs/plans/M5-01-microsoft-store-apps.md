@@ -52,10 +52,17 @@ installs it from the portal like anything else.
 
 ## Interface
 
-`{"kind":"winget","id":"9WZDNCRFJ3TJ","source":"msstore","scope":"user","version":null,"extraArgs":null,"requiresReboot":false}`
+`{"kind":"winget","id":"9WZDNCRFJ3TJ","scope":"user","version":null,"extraArgs":null,"requiresReboot":false,"source":"msstore"}`
 
-`source` is written after `id` and before `scope`. `PackageDefinitionTests` freezes the property
-order, so that test is the definition of this contract and changes in the same commit.
+`source` is written last, after `requiresReboot`, and not beside `id` where it reads better.
+`WingetPackageDefinition` is a positional record with seventeen callers, and every one of them passes
+`id` and `scope` positionally. A new parameter anywhere before the end binds a caller's string to the
+wrong place, and because `source`, `scope` and `version` are all strings the compiler accepts it in
+silence. Last is the only position where that cannot happen, and `requiresReboot` being a bool means
+nothing can drift past it either.
+
+`PackageDefinitionTests` freezes the property order, so that test is the definition of this contract
+and changes in the same commit.
 
 ## Steps
 

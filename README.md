@@ -343,6 +343,8 @@ Device routes below need `Authorization: Bearer <device token>`. `/healthz` is p
 
 The admin session API is available in 0.3.0; the full admin JSON API is planned for milestone 4. Browser administration lives under `/admin`.
 
+[`docs/api.md`](docs/api.md) is the full reference: every route with its verb, authentication, body shapes and status codes.
+
 ## Reliability notes
 
 A few behaviours are deliberate and were put in after a review found the failure they prevent:

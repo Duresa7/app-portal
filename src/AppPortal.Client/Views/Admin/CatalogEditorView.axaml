@@ -1,0 +1,353 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:admin="using:AppPortal.Client.ViewModels.Admin"
+             xmlns:shared="using:AppPortal.Shared"
+             x:Class="AppPortal.Client.Views.Admin.CatalogEditorView"
+             x:DataType="admin:CatalogEditorViewModel">
+
+    <UserControl.Styles>
+        <!-- A form card stays put under the pointer; the lift on hover is for cards that are things to pick. -->
+        <Style Selector="Border.card.form">
+            <Setter Property="Padding" Value="20,16,20,20" />
+        </Style>
+        <Style Selector="Border.card.form:pointerover">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+        </Style>
+        <Style Selector="TextBlock.heading">
+            <Setter Property="FontFamily" Value="{DynamicResource PortalDisplayFontFamily}" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+        </Style>
+        <Style Selector="ComboBox.field">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*">
+            <TextBlock Grid.Column="0" Classes="title" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+            <ProgressBar Grid.Column="1" IsIndeterminate="True" Classes="thin" Width="80" HorizontalAlignment="Left"
+                         VerticalAlignment="Center" Margin="12,8,0,0" IsVisible="{Binding IsBusy}" />
+        </Grid>
+        <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,16" TextWrapping="Wrap"
+                   Text="Say where the app comes from and name it there. Devices pick up a saved change on their next refresh." />
+
+        <ScrollViewer Grid.Row="2" Padding="0,0,12,0">
+            <StackPanel Spacing="16" Margin="0,0,0,16">
+
+                <Border Classes="card form">
+                    <StackPanel Spacing="12">
+                        <TextBlock Classes="heading" Text="App" />
+                        <StackPanel IsVisible="{Binding IsNew}">
+                            <TextBlock Classes="label" Text="Id" />
+                            <TextBox Text="{Binding Id}" PlaceholderText="google-chrome" />
+                            <TextBlock Classes="hint" Text="Lower case, no spaces, for example google-chrome. It cannot be changed later." />
+                        </StackPanel>
+                        <StackPanel IsVisible="{Binding !IsNew}">
+                            <TextBlock Classes="label" Text="Id" />
+                            <TextBlock Classes="secondary" Text="{Binding Id}" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,16,*">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Classes="label" Text="Name" />
+                                <TextBox Text="{Binding Name}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Classes="label" Text="Publisher" />
+                                <TextBox Text="{Binding Publisher}" />
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel>
+                            <TextBlock Classes="label" Text="Description" />
+                            <TextBox Text="{Binding Description}" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,16,*">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Classes="label" Text="Category" />
+                                <TextBox Text="{Binding Category}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Classes="label" Text="Icon URL" />
+                                <TextBox Text="{Binding IconUrl}" />
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel Spacing="4">
+                            <CheckBox IsChecked="{Binding Featured}">
+                                <TextBlock Text="Featured, which sorts it to the front of the client's list" TextWrapping="Wrap" />
+                            </CheckBox>
+                            <CheckBox IsChecked="{Binding Hidden}">
+                                <TextBlock Text="Hidden, which keeps the app and its history but stops offering it to devices" TextWrapping="Wrap" />
+                            </CheckBox>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card form">
+                    <StackPanel Spacing="12">
+                        <TextBlock Classes="heading" Text="Where it comes from" />
+                        <StackPanel>
+                            <TextBlock Classes="label" Text="Source" />
+                            <ComboBox Classes="field" ItemsSource="{x:Static admin:CatalogEditorViewModel.Sources}"
+                                      SelectedItem="{Binding SelectedSource}" MaxDropDownHeight="420">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="admin:CatalogSourceOption">
+                                        <!-- The managers are one group, as the web page's optgroup makes them. -->
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Grid.Column="0" Text="{Binding DisplayName}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Classes="caption" Text="Package manager on the PC" Margin="16,0,0,0"
+                                                       VerticalAlignment="Center" IsVisible="{Binding IsManager}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Classes="hint" Text="{Binding SourcePurpose}" />
+                        </StackPanel>
+
+                        <!-- winget, the Store and every package manager: an id, a version and extra arguments. -->
+                        <StackPanel Spacing="12" IsVisible="{Binding ShowPackageFields}">
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="{Binding SourceIdLabel}" />
+                                <TextBox Text="{Binding SourceId}" PlaceholderText="{Binding SourceIdPlaceholder}" />
+                                <TextBlock Classes="hint" IsVisible="{Binding ShowStoreHint}"
+                                           Text="A Store product id is the last part of the app's address in the Store, such as 9WZDNCRFJ3TJ. Some Store apps need the person signed in to the Store before the Store will grant a licence; say so under Requirements and the portal will show it before they install." />
+                                <TextBlock Classes="hint" IsVisible="{Binding ShowManagerHint}"
+                                           Text="Exactly as the package manager names it: letters, digits and the separators that manager uses, and nothing a command prompt would read as an instruction. The manager itself has to be on the PC; if it might not be, add it to the catalog and list it under Needs first, and the portal installs it first." />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,16,*">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Classes="label" Text="Version (optional)" />
+                                    <TextBox Text="{Binding SourceVersion}" IsEnabled="{Binding VersionEnabled}"
+                                             PlaceholderText="{Binding VersionPlaceholder}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Classes="label" Text="Extra arguments (optional)" />
+                                    <TextBox Text="{Binding SourceExtraArgs}" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Classes="hint" Margin="0" Text="Extra arguments are passed on as you type them. The agent does not check these; they are yours." />
+                            <Button Classes="standard" HorizontalAlignment="Left" Content="Look up this id"
+                                    Command="{Binding LookUpCommand}" IsVisible="{Binding ShowLookup}" />
+                        </StackPanel>
+
+                        <!-- A direct download: the one source that needs a URL, a hash and a size. -->
+                        <StackPanel Spacing="12" IsVisible="{Binding ShowDirectFields}">
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="Installer URL" />
+                                <TextBox Text="{Binding DirectUrl}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="SHA-256" />
+                                <TextBox Text="{Binding DirectSha256}" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="13" />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,16,*">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Classes="label" Text="Installer type" />
+                                    <ComboBox Classes="field" ItemsSource="{x:Static admin:CatalogEditorViewModel.InstallerTypes}"
+                                              SelectedItem="{Binding DirectInstallerType}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Classes="label" Text="Download size (bytes)" />
+                                    <TextBox Text="{Binding DirectSizeBytes}" />
+                                </StackPanel>
+                            </Grid>
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="Silent arguments" />
+                                <TextBox Text="{Binding DirectSilentArgs}" PlaceholderText="/S or /qn" />
+                                <TextBlock Classes="hint"
+                                           Text="Leave this empty for an msix, and for an exe that installs silently on its own. An msi always needs them; the agent adds /qn /norestart itself, so put here whatever else this package takes." />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="Uninstall key (optional)" />
+                                <TextBox Text="{Binding DirectUninstallKey}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <Button Classes="standard" HorizontalAlignment="Left" Content="Fetch and hash" Command="{Binding FetchAndHashCommand}" />
+                                <TextBlock Classes="hint"
+                                           Text="Fetch and hash has the server download the installer to calculate its hash and size. For files over the server's limit, enter these values yourself." />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border Classes="infoBar informational" Classes.critical="{Binding HelperFailed}"
+                                IsVisible="{Binding HelperMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <TextBlock Text="{Binding HelperMessage}" TextWrapping="Wrap" />
+                        </Border>
+
+                        <!-- Who it is for and whether it needs a restart, for every agent source alike. -->
+                        <Grid ColumnDefinitions="*,16,*" IsVisible="{Binding ShowAgentFields}">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Classes="label" Text="Installs for" />
+                                <ComboBox Classes="field" ItemsSource="{Binding ScopeOptions}" SelectedItem="{Binding SelectedScope}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="admin:CatalogChoice">
+                                            <TextBlock Text="{Binding Label}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
+                            <CheckBox Grid.Column="2" IsChecked="{Binding SourceRequiresReboot}" VerticalAlignment="Bottom">
+                                <TextBlock Text="The software only works after a restart" TextWrapping="Wrap" />
+                            </CheckBox>
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,4" />
+
+                        <!-- Action1: the source itself, or an optional second way to the same app. -->
+                        <StackPanel Spacing="12">
+                            <StackPanel>
+                                <TextBlock Classes="bodyStrong" Text="{Binding Action1Heading}" />
+                                <TextBlock Classes="hint" IsVisible="{Binding !IsAction1Source}"
+                                           Text="Leave the package id empty when this app only comes from the source above." />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,16,200">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Classes="label" Text="Action1 package id" />
+                                    <TextBox Text="{Binding PackageId}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Classes="label" Text="Action1 version" />
+                                    <TextBox Text="{Binding PackageVersion}" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Classes="hint" Margin="0" Text="latest, or an exact version published in the Software Repository." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Classes="standard" Content="Search the repository" Command="{Binding SearchPackagesCommand}" />
+                                <Button Classes="standard" Content="Verify" Command="{Binding VerifyPackageCommand}" />
+                            </StackPanel>
+                            <Border Classes="infoBar informational" Classes.critical="{Binding !VerifyOk}"
+                                    IsVisible="{Binding VerifyMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <TextBlock Text="{Binding VerifyMessage}" TextWrapping="Wrap" />
+                            </Border>
+                            <TextBlock Classes="secondary" Text="{Binding PackageSearchMessage}" TextWrapping="Wrap"
+                                       IsVisible="{Binding PackageSearchMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            <ItemsControl ItemsSource="{Binding PackageResults}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="shared:AdminPackageResult">
+                                        <Border Classes="row" Padding="8,6">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" Classes="bodyStrong" />
+                                                    <TextBlock Text="{Binding Id}" Classes="caption" />
+                                                    <TextBlock Text="{Binding Vendor}" Classes="caption" />
+                                                </StackPanel>
+                                                <!-- Fills the field rather than saving: the administrator still reviews and saves. -->
+                                                <Button Grid.Column="1" Classes="standard" Content="Use this" VerticalAlignment="Center"
+                                                        Command="{Binding $parent[UserControl].((admin:CatalogEditorViewModel)DataContext).UsePackageCommand}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <StackPanel IsVisible="{Binding ShowEngineOverride}">
+                            <TextBlock Classes="label" Text="When a device could use either Action1 or the agent" />
+                            <ComboBox Classes="field" ItemsSource="{x:Static admin:CatalogEditorViewModel.EngineOverrides}"
+                                      SelectedItem="{Binding SelectedEngine}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="admin:CatalogChoice">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Classes="hint" Text="A device set to prefer an engine still wins over this." />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card form">
+                    <StackPanel Spacing="12">
+                        <StackPanel>
+                            <TextBlock Classes="heading" Text="Inventory match" />
+                            <TextBlock Classes="hint" Margin="0"
+                                       Text="How the portal decides this app is already installed. Left empty, the app name is used; an app from a package manager is also found by its package id." />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,16,*">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Classes="label" Text="Installed name contains" />
+                                <TextBox Text="{Binding MatchNameContains}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Classes="label" Text="Installed name equals" />
+                                <TextBox Text="{Binding MatchNameEquals}" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Classes="hint" Margin="0" Text="An exact name takes precedence over the contains rule." />
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card form">
+                    <StackPanel Spacing="12">
+                        <StackPanel>
+                            <CheckBox IsChecked="{Binding UserRemovable}">
+                                <TextBlock Text="Let the person who installed this remove it themselves" TextWrapping="Wrap" />
+                            </CheckBox>
+                            <TextBlock Classes="hint" Text="Off by default. An administrator can always remove it from the device page." />
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Classes="heading" Text="Needs first" />
+                            <TextBlock Classes="label" Text="Catalog app ids to install before this one, one per line (optional)" />
+                            <TextBox Text="{Binding Requires}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" />
+                            <TextBlock Classes="hint" Text="Installed in the order written, as one install. Anything already on the PC is skipped." />
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Classes="heading" Text="Requirements" />
+                            <TextBlock Classes="label" Text="What this app needs, in your own words (optional)" />
+                            <TextBox Text="{Binding Requirements}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72"
+                                     MaxLength="{x:Static shared:CatalogLimits.MaxRequirementsLength}"
+                                     PlaceholderText="Needs Secure Boot and TPM 2.0 turned on. Needs a vendor account. Windows 11 only." />
+                            <TextBlock Classes="hint"
+                                       Text="Shown on the app and confirmed by the person before they install it. The portal does not check any of this and will never refuse an install because of it." />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card form">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="heading" Text="What this will do" />
+                        <TextBlock Text="{Binding Sentence}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- The footer stays in view, so the reason a save was refused is beside the button that was pressed. -->
+        <Border Grid.Row="3" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="0,12,0,16">
+            <StackPanel Spacing="12">
+                <Border Classes="infoBar critical" IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <PathIcon Grid.Column="0" Data="{DynamicResource IconError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                        <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+                    </Grid>
+                </Border>
+                <Border Classes="infoBar caution" IsVisible="{Binding IsConfirmingDiscard}">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                        <PathIcon Grid.Column="0" Data="{DynamicResource IconWarning}" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                        <TextBlock Grid.Column="1" Text="This app has changes that are not saved. Leave without saving them?" TextWrapping="Wrap" VerticalAlignment="Center" />
+                        <Button Grid.Column="2" Classes="standard" Content="Discard changes" Margin="16,0,0,0" VerticalAlignment="Center" Command="{Binding DiscardCommand}" />
+                        <Button Grid.Column="3" Classes="standard" Content="Keep editing" Margin="8,0,0,0" VerticalAlignment="Center" Command="{Binding KeepEditingCommand}" />
+                    </Grid>
+                </Border>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" MinWidth="96" />
+                    <Button Classes="standard" Content="Cancel" Command="{Binding CancelCommand}" MinWidth="96" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

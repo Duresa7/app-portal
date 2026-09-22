@@ -57,6 +57,7 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         AddApp("vscode", "Visual Studio Code", "Microsoft Corporation", "Developer tools", featured: true);
         AddApp("obs", "OBS Studio", "OBS Project", "Media");
         AddApp("legacy-vpn", "Legacy VPN client", "Contoso", "Networking", hidden: true);
+        AddCatalogSources();
 
         // Today, this week and running now, so every tile on the dashboard has something to count.
         AddInstall("dev-1", "google-chrome", InstallState.Succeeded, now.AddHours(-1), 100, "The packages have been installed successfully.");
@@ -169,13 +170,8 @@ public sealed class DemoAdminApiClient : IAdminApiClient
     public Task<AdminCatalogApp> SaveCatalogAppAsync(AdminCatalogApp app, CancellationToken ct)
         => Guarded(() =>
         {
-            if (string.IsNullOrWhiteSpace(app.Id) || string.IsNullOrWhiteSpace(app.Name))
-            {
-                throw new PortalApiException("An app needs an id and a name.", HttpStatusCode.BadRequest);
-            }
-
-            _catalog.RemoveAll(a => string.Equals(a.Id, app.Id, StringComparison.OrdinalIgnoreCase));
-            _catalog.Add(app);
+            ValidateApp(app);
+            UpsertApp(app);
             return app;
         });
 
@@ -204,22 +200,37 @@ public sealed class DemoAdminApiClient : IAdminApiClient
     public Task<AdminCatalogImported> ImportCatalogAsync(string catalogJson, CancellationToken ct)
         => Guarded(() =>
         {
+            DemoCatalogFile? file;
             try
             {
-                using var document = JsonDocument.Parse(catalogJson);
-                var apps = document.RootElement.ValueKind == JsonValueKind.Array
-                    ? document.RootElement.GetArrayLength()
-                    : document.RootElement.TryGetProperty("apps", out var list) && list.ValueKind == JsonValueKind.Array ? list.GetArrayLength() : 0;
-                return new AdminCatalogImported(apps);
+                file = JsonSerializer.Deserialize<DemoCatalogFile>(catalogJson, CatalogJson);
             }
             catch (JsonException ex)
             {
                 throw new PortalApiException("That file is not valid JSON. " + ex.Message, HttpStatusCode.BadRequest);
             }
+            catch (NotSupportedException)
+            {
+                throw new PortalApiException($"An agent definition needs a kind of {PackageDefinition.Kinds}.", HttpStatusCode.BadRequest);
+            }
+
+            // Every app checked before any is written, as the server does, so a bad file changes nothing.
+            var apps = file?.Apps ?? [];
+            foreach (var app in apps)
+            {
+                ValidateApp(app);
+            }
+
+            foreach (var app in apps)
+            {
+                UpsertApp(app with { Requires = app.Requires ?? [], Action1 = app.Action1 ?? new AdminAction1Package("") });
+            }
+
+            return new AdminCatalogImported(apps.Count);
         });
 
     public Task<string> ExportCatalogAsync(CancellationToken ct)
-        => Guarded(() => JsonSerializer.Serialize(new { apps = _catalog }, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+        => Guarded(() => JsonSerializer.Serialize(new DemoCatalogFile(_catalog), CatalogJson));
 
     public Task<IReadOnlyList<AdminPackageResult>> SearchAction1PackagesAsync(string term, CancellationToken ct)
         => Guarded<IReadOnlyList<AdminPackageResult>>(() =>
@@ -470,6 +481,67 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         });
     }
 
+    /// <summary>
+    /// The catalog file format, close enough to the server's that an export from here imports there:
+    /// camel case, indented, and nothing written for a field that is not set.
+    /// </summary>
+    private static readonly JsonSerializerOptions CatalogJson = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    private sealed record DemoCatalogFile(List<AdminCatalogApp>? Apps);
+
+    /// <summary>The rules the server applies to an app on a save or an import, with its wording.</summary>
+    private static void ValidateApp(AdminCatalogApp app)
+    {
+        if (string.Equals(app.Id?.Trim(), "new", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new PortalApiException("'new' is reserved for the create form. Give the app another id.", HttpStatusCode.BadRequest);
+        }
+
+        if (string.IsNullOrWhiteSpace(app.Id))
+        {
+            throw new PortalApiException("An app needs an id.", HttpStatusCode.BadRequest);
+        }
+
+        if (string.IsNullOrWhiteSpace(app.Name))
+        {
+            throw new PortalApiException("An app needs a name.", HttpStatusCode.BadRequest);
+        }
+
+        if (string.IsNullOrWhiteSpace(app.Action1?.PackageId) && app.Agent is null)
+        {
+            throw new PortalApiException("An app needs an Action1 package id or an agent package.", HttpStatusCode.BadRequest);
+        }
+
+        try
+        {
+            app.Agent?.Validate();
+        }
+        catch (System.IO.InvalidDataException ex)
+        {
+            throw new PortalApiException(ex.Message, HttpStatusCode.BadRequest);
+        }
+    }
+
+    /// <summary>Replaces the app with the same id where it stands in the list, or adds it at the end.</summary>
+    private void UpsertApp(AdminCatalogApp app)
+    {
+        var index = _catalog.FindIndex(a => string.Equals(a.Id, app.Id, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0)
+        {
+            _catalog[index] = app;
+        }
+        else
+        {
+            _catalog.Add(app);
+        }
+    }
+
     private static string DemoDeviceToken() => "apd_demo" + Guid.NewGuid().ToString("N")[..16];
 
     private void AddDevice(string id, string name, bool hasAgent, string? agentVersion, DateTimeOffset lastSeen, DateTimeOffset created)
@@ -493,5 +565,50 @@ public sealed class DemoAdminApiClient : IAdminApiClient
             null, null, 0, 0, requestedAt, finished, finished ?? DateTimeOffset.Now, null));
         var index = _devices.IndexOf(device);
         _devices[index] = device with { InstallCount = device.InstallCount + 1 };
+    }
+
+    /// <summary>
+    /// The catalog editor's demo data: at least one app from every kind of source the Source selector
+    /// offers, and one with both an Action1 and an agent package so the engine override has something
+    /// to decide. Kept apart from the fleet above so other pages' demo data does not have to move.
+    /// </summary>
+    private void AddCatalogSources()
+    {
+        void With(string id, Func<AdminCatalogApp, AdminCatalogApp> change)
+        {
+            var app = _catalog.First(a => a.Id == id);
+            Replace(_catalog, app, change(app));
+        }
+
+        With("vscode", app => app with
+        {
+            EngineOverride = EngineLabel.Agent,
+            Requires = ["git"],
+            Agent = new WingetPackageDefinition("Microsoft.VisualStudioCode", "machine"),
+        });
+        With("7-zip", app => app with
+        {
+            Action1 = new AdminAction1Package(""),
+            Agent = new ManagedPackageDefinition("choco", "7zip", "machine"),
+        });
+        With("obs", app => app with
+        {
+            Action1 = new AdminAction1Package(""),
+            Agent = new WingetPackageDefinition("OBSProject.OBSStudio", "machine", RequiresReboot: true),
+        });
+
+        _catalog.Add(new AdminCatalogApp("git", "Git", "The Git Development Community", "Distributed version control.", "Developer tools",
+            Action1: new AdminAction1Package(""), Agent: new WingetPackageDefinition("Git.Git", "machine")));
+        _catalog.Add(new AdminCatalogApp("whatsapp", "WhatsApp", "WhatsApp Inc.", "Messaging, from the Microsoft Store.", "Communication",
+            Requirements: "Needs the person signed in to the Microsoft Store.",
+            Action1: new AdminAction1Package(""), Agent: new WingetPackageDefinition("9NKSQGP7F2NH", "user", Source: WingetSources.Store)));
+        _catalog.Add(new AdminCatalogApp("ripgrep", "ripgrep", "BurntSushi", "Searches files for a pattern, fast.", "Developer tools",
+            UserRemovable: true, Match: new AdminMatchRule(null, "ripgrep"),
+            Action1: new AdminAction1Package(""), Agent: new ManagedPackageDefinition("scoop", "main/ripgrep", "user")));
+        _catalog.Add(new AdminCatalogApp("steam", "Steam", "Valve Corporation", "The Steam game launcher.", "Games",
+            Requirements: "Needs a Steam account.",
+            Action1: new AdminAction1Package(""),
+            Agent: new DirectPackageDefinition("https://cdn.vendor.example/SteamSetup.exe",
+                "3f1c7d0e9b8a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f10", "exe", "/S", 3_145_728, "Steam", "machine")));
     }
 }

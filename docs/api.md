@@ -60,7 +60,7 @@ The device token check runs before routing for every path under `/api/v1` except
 | Undecided requests per device | 20 | `POST /api/v1/requests` |
 | Decision reason | 500 characters | `POST /api/v1/admin/requests/{id}/approve` and `/deny` |
 | Active installs per device | 3 by default, `Portal:MaxActiveInstallsPerDevice` | `POST /api/v1/installs` |
-| Catalog import | 4 MB | `POST /api/v1/admin/catalog/import` |
+| Catalog import | 4 MB, counted in bytes | `POST /api/v1/admin/catalog/import` |
 | Installer download for hashing | 2 GiB by default, `Catalog:MaxDownloadBytes` | `POST /api/v1/admin/catalog/package/hash` |
 | Rows in one admin list | 200 | Every paged admin list |
 | Enrollment attempts | 30 per minute per remote address | Both enrollment routes |
@@ -88,7 +88,7 @@ Body `EnrollRequest`:
 | `action1EndpointId` | string? | Required when the key enrolls for `action1` or `both` |
 | `agentVersion` | string? | |
 
-The key is spent before the checks that follow the 401. A refusal with 400 for a missing `action1EndpointId`, 403 or 409 has used one of the key's uses.
+A use of the key is spent only when the enrollment succeeds, in the same transaction that writes the device. A refusal of any kind leaves the key's use count as it was. When several machines race for a key's last uses, each use goes to exactly one of them, and the others get 401.
 
 | Status | When |
 |---|---|
@@ -212,7 +212,7 @@ Body `CreateAppRequest`: `{ "text": "..." }`.
 
 | Status | When |
 |---|---|
-| 201 | Created. Body `AppRequest`, `Location: /api/v1/requests/{id}`. |
+| 201 | Created. Body `AppRequest`. No `Location` header: there is no route that reads one request, and `GET /api/v1/requests` lists them all. |
 | 400 | `text` is empty after trimming, or longer than 500 characters. |
 | 429 | The device already has 20 undecided requests. |
 
@@ -443,11 +443,13 @@ Paged, newest first. `AdminPage<AdminInstall>`. Filters combine with AND:
 |---|---|
 | `device` | Device name, exact, any case |
 | `app` | Catalog app id, exact, any case |
-| `state` | An `InstallState` name, any case. An unknown value is ignored. |
+| `state` | An `InstallState` name, any case. Absent or blank is every state. |
 | `requester` | Substring of the requester, any case |
 | `from` | A day, `yyyy-MM-dd`. From midnight of that day, server time. |
 | `to` | A day, `yyyy-MM-dd`. Up to the end of that day, server time. |
 | `restart` | `1` for installs waiting for a restart |
+
+400 when `state` is not one of the five names. A number such as `1` and a list such as `Failed,Succeeded` are refused too.
 
 #### GET /api/v1/admin/installs/{id}
 
@@ -476,7 +478,7 @@ Paged, newest first. `AdminPage<AdminRequest>`.
 |---|---|
 | `status` | `pending`, `approved`, `denied` or `all`, any case. Absent or blank is `all`. |
 
-400 when `status` is anything else.
+400 when `status` is anything else. A number such as `1` and a list such as `Pending,Approved` are refused too.
 
 #### POST /api/v1/admin/requests/{id}/approve
 
@@ -560,7 +562,7 @@ The prerequisites are checked on the catalog as the file would leave it. A `requ
 | 200 | `AdminCatalogImported`: `{ "imported": 3 }`. |
 | 400 | The body is empty; it is not valid JSON; an id appears twice; or an entry fails a check `PUT` answers with 400: a reserved id, no name, a `requirements` note longer than 500 characters, an unknown `engineOverride`, neither an Action1 package id nor an agent package, or an agent definition with no kind or that fails its checks. |
 | 422 | A `requires` entry names an app that is neither in the file nor in the catalog, or the prerequisites would form a loop. |
-| 413 | The body is larger than 4 MB. |
+| 413 | The body is larger than 4 MB (4,194,304 bytes as sent, not characters). |
 
 #### GET /api/v1/admin/catalog/export
 
@@ -644,13 +646,14 @@ Replaces the editable fields. Body `AdminDeviceUpdate`:
 | `name` | string | |
 | `action1EndpointId` | string? | Optional. Left out or blank clears it. |
 | `enabled` | bool | Optional, default `true`. A disabled device's token is refused from its next call. |
-| `enginePreference` | string? | Optional. `action1` or `agent`; left out or blank follows the app and the server. |
+| `enginePreference` | string? | Optional. `action1` or `agent`, any case. Left out or blank follows the app and the server; there is no keyword for that, so `inherit` is refused. |
 
 | Status | When |
 |---|---|
 | 200 | `AdminDevice`. |
+| 400 | The name is blank, or the engine preference is not blank, `action1` or `agent`. |
 | 404 | No such device. |
-| 409 | The name is blank; the engine preference is not `action1` or `agent`; another device has the name; or the Action1 endpoint would change while an install is in progress. |
+| 409 | Another device has the name, or the Action1 endpoint would change while an install is in progress. |
 
 #### POST /api/v1/admin/devices/{id}/rotate-token
 
@@ -711,11 +714,12 @@ No body. Revoking a revoked key succeeds.
 
 #### GET /api/v1/admin/keys/{id}/events
 
-The key's audit trail, newest first. Not paged: it reads `limit` as the paged lists do (default 50, at most 200) and ignores `offset`.
+The key's audit trail, newest first. Not paged, and the answer is a plain array, not an `AdminPage`: it is the newest `limit` attempts (default 50, at most 200, read as the paged lists read it) and there is no way to reach older ones. The key detail page shows the newest 50 the same way.
 
 | Status | When |
 |---|---|
 | 200 | Array of `EnrollmentKeyEvent`. |
+| 400 | `offset` is above 0. |
 | 404 | No such key. |
 
 ### Administrators
@@ -730,7 +734,7 @@ Creates a local administrator. Body `AdminAccountCreate`: `username` and `passwo
 
 | Status | When |
 |---|---|
-| 201 | `AdminAccount`, `Location: /api/v1/admin/admins/{id}`. |
+| 201 | `AdminAccount`. No `Location` header: there is no route that reads one administrator. |
 | 400 | The user name is blank, longer than 64 characters or contains control characters; the password is shorter than 12 characters; or the name is taken. |
 
 #### POST /api/v1/admin/admins/{id}/disable

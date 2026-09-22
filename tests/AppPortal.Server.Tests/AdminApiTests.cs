@@ -402,6 +402,39 @@ public sealed class AdminApiTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/v1/admin/installs/nothing")).StatusCode);
     }
 
+    /// <summary>
+    /// The requests list refuses a status it does not know, and this list has to answer the same way:
+    /// a typo that is ignored hands back the whole history as if it were the filtered one.
+    /// </summary>
+    [Theory]
+    [InlineData("Faild")]
+    [InlineData("1")]
+    [InlineData("Failed,Succeeded")]
+    public async Task Installs_refuse_a_state_that_is_not_a_state_name(string state)
+    {
+        var client = await Admin();
+
+        var response = await client.GetAsync($"/api/v1/admin/installs?state={Uri.EscapeDataString(state)}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("state", (await response.Content.ReadFromJsonAsync<ErrorMessage>(Json))!.Message);
+    }
+
+    [Fact]
+    public async Task Installs_read_a_state_name_in_any_case_and_a_blank_one_as_no_filter()
+    {
+        _devices.Add("PC-A", "endpoint-a");
+        SeedInstall("PC-A", "chrome", InstallState.Failed, DateTimeOffset.Now.AddHours(-2));
+        SeedInstall("PC-A", "vlc", InstallState.Succeeded, DateTimeOffset.Now.AddHours(-1));
+        var client = await Admin();
+
+        var lower = await client.GetFromJsonAsync<AdminPage<AdminInstall>>("/api/v1/admin/installs?state=failed", Json);
+        Assert.Equal("chrome", Assert.Single(lower!.Items).AppId);
+
+        var blank = await client.GetFromJsonAsync<AdminPage<AdminInstall>>("/api/v1/admin/installs?state=", Json);
+        Assert.Equal(2, blank!.Total);
+    }
+
     // ---- requests -----------------------------------------------------------------------------
 
     [Fact]
@@ -467,6 +500,26 @@ public sealed class AdminApiTests : IDisposable
 
         // A typo must not quietly narrow the list to one status, which is what the page's tab does.
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/admin/requests?status=pendign")).StatusCode);
+
+        var upper = await client.GetFromJsonAsync<AdminPage<AdminRequest>>("/api/v1/admin/requests?status=PENDING", Json);
+        Assert.Equal(pending, Assert.Single(upper!.Items).Id);
+    }
+
+    /// <summary>
+    /// Enum parsing also takes a number and a comma-separated list, so <c>1</c> would read as approved
+    /// and <c>Pending,Approved</c> as a flags value no request carries. Neither is a status name.
+    /// </summary>
+    [Theory]
+    [InlineData("1")]
+    [InlineData("0")]
+    [InlineData("Pending,Approved")]
+    public async Task Requests_refuse_a_status_that_is_a_number_or_a_list(string status)
+    {
+        var client = await Admin();
+
+        var response = await client.GetAsync($"/api/v1/admin/requests?status={Uri.EscapeDataString(status)}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     // ---- catalog ------------------------------------------------------------------------------
@@ -621,6 +674,42 @@ public sealed class AdminApiTests : IDisposable
         Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
     }
 
+    /// <summary>
+    /// The limit is in bytes. A file of two-byte characters is half as many characters as bytes, so a
+    /// count of characters let a file of nearly twice the limit through.
+    /// </summary>
+    [Fact]
+    public async Task A_catalog_import_is_measured_in_bytes_not_characters()
+    {
+        var client = await Admin();
+        var name = new string('é', AdminApiLimits.MaxImportBytes / 2);
+        var file = $$"""{ "apps": [ { "id": "vlc", "name": "{{name}}", "action1": { "packageId": "vlc_builtin", "version": "latest" } } ] }""";
+        Assert.True(file.Length < AdminApiLimits.MaxImportBytes);
+        Assert.True(Encoding.UTF8.GetByteCount(file) > AdminApiLimits.MaxImportBytes);
+
+        var response = await client.PostAsync("/api/v1/admin/catalog/import",
+            new StringContent(file, Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        Assert.Null(_catalog.Find("vlc"));
+    }
+
+    [Fact]
+    public async Task A_catalog_import_of_exactly_the_limit_is_read()
+    {
+        var client = await Admin();
+        // A multi-byte character in the file, so a reader that counted characters would see less than the limit.
+        var catalog = "{ \"apps\": [ { \"id\": \"vlc\", \"name\": \"VLÇ\", \"action1\": { \"packageId\": \"vlc_builtin\", \"version\": \"latest\" } } ] }";
+        var file = catalog + new string(' ', AdminApiLimits.MaxImportBytes - Encoding.UTF8.GetByteCount(catalog));
+        Assert.Equal(AdminApiLimits.MaxImportBytes, Encoding.UTF8.GetByteCount(file));
+
+        var response = await client.PostAsync("/api/v1/admin/catalog/import",
+            new StringContent(file, Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("VLÇ", _catalog.Find("vlc")!.Name);
+    }
+
     [Fact]
     public async Task The_package_helpers_answer_the_way_the_edit_form_does()
     {
@@ -713,6 +802,29 @@ public sealed class AdminApiTests : IDisposable
         var clash = await client.PutAsJsonAsync($"/api/v1/admin/devices/{a.Id}", new AdminDeviceUpdate("PC-B", "endpoint-a"), Json);
         Assert.Equal(HttpStatusCode.Conflict, clash.StatusCode);
         Assert.Equal("PC-A", _devices.Find(a.Id)!.Name);
+
+        var moved = await client.PutAsJsonAsync($"/api/v1/admin/devices/{a.Id}", new AdminDeviceUpdate("PC-A", "endpoint-moved"), Json);
+        Assert.Equal(HttpStatusCode.Conflict, moved.StatusCode);
+        Assert.Equal("endpoint-a", _devices.Find(a.Id)!.EndpointId);
+    }
+
+    [Theory]
+    [InlineData(" ", "agent", "A device needs a name.")]
+    [InlineData("PC-A", "inherit", "The engine preference must be action1 or agent, or empty to follow the server.")]
+    [InlineData("PC-A", "winget", "The engine preference must be action1 or agent, or empty to follow the server.")]
+    public async Task A_device_update_with_bad_input_is_a_bad_request_not_a_conflict(string name, string engine, string message)
+    {
+        _devices.Add("PC-A", "endpoint-a");
+        var a = _devices.FindByName("PC-A")!;
+
+        var response = await (await Admin()).PutAsJsonAsync($"/api/v1/admin/devices/{a.Id}",
+            new AdminDeviceUpdate(name, "endpoint-a", EnginePreference: engine), Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(message, (await response.Content.ReadFromJsonAsync<ErrorMessage>(Json))!.Message);
+        var stored = _devices.Find(a.Id)!;
+        Assert.Equal("PC-A", stored.Name);
+        Assert.Null(stored.EnginePreference);
     }
 
     [Fact]
@@ -772,6 +884,32 @@ public sealed class AdminApiTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsync("/api/v1/admin/keys/nothing/revoke", null)).StatusCode);
     }
 
+    /// <summary>
+    /// The audit trail is the newest attempts and does not page. A caller that sends an offset expects
+    /// the next slice, and answering with the first one again would loop a paging script forever.
+    /// </summary>
+    [Fact]
+    public async Task Key_events_are_the_newest_few_and_an_offset_is_refused()
+    {
+        var key = _keys.Create("rollout", EnrollmentEngine.Both, null, null, "admin");
+        var events = new EnrollmentEventStore(_test.Database);
+        events.Record(key.Key.Id, null, "10.0.0.5", EnrollmentOutcome.KeyRefused);
+        await Task.Delay(20);
+        events.Record(key.Key.Id, null, "10.0.0.6", EnrollmentOutcome.KeyRefused);
+        var client = await Admin();
+
+        var newest = await client.GetFromJsonAsync<List<EnrollmentKeyEvent>>($"/api/v1/admin/keys/{key.Key.Id}/events?limit=1", Json);
+        Assert.Equal("10.0.0.6", Assert.Single(newest!).Source);
+
+        var paged = await client.GetAsync($"/api/v1/admin/keys/{key.Key.Id}/events?limit=1&offset=1");
+        Assert.Equal(HttpStatusCode.BadRequest, paged.StatusCode);
+        Assert.Contains("offset", (await paged.Content.ReadFromJsonAsync<ErrorMessage>(Json))!.Message);
+
+        // Zero is where every list starts, so saying it is not asking for a page this list lacks.
+        var fromStart = await client.GetAsync($"/api/v1/admin/keys/{key.Key.Id}/events?offset=0");
+        Assert.Equal(HttpStatusCode.OK, fromStart.StatusCode);
+    }
+
     [Fact]
     public async Task A_key_with_no_name_or_a_dead_expiry_is_refused()
     {
@@ -799,6 +937,9 @@ public sealed class AdminApiTests : IDisposable
         var account = await added.Content.ReadFromJsonAsync<AdminAccount>(Json);
         Assert.Equal("second", account!.Username);
         Assert.False(account.Disabled);
+
+        // There is no route that reads one administrator, so a Location header would point nowhere.
+        Assert.Null(added.Headers.Location);
 
         var page = await client.GetFromJsonAsync<AdminPage<AdminAccount>>("/api/v1/admin/admins", Json);
         Assert.Equal(2, page!.Total);

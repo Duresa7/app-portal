@@ -307,7 +307,14 @@ public sealed class DemoAdminApiClient : IAdminApiClient
             var name = update.Name.Trim();
             if (name.Length == 0)
             {
-                throw new PortalApiException("A device needs a name.", HttpStatusCode.Conflict);
+                throw new PortalApiException("A device needs a name.", HttpStatusCode.BadRequest);
+            }
+
+            var engine = string.IsNullOrWhiteSpace(update.EnginePreference) ? null : update.EnginePreference.Trim().ToLowerInvariant();
+            if (engine is not (null or EngineLabel.Action1 or EngineLabel.Agent))
+            {
+                throw new PortalApiException(
+                    "The engine preference must be action1 or agent, or empty to follow the server.", HttpStatusCode.BadRequest);
             }
 
             if (_devices.Any(d => d.Id != id && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
@@ -320,7 +327,7 @@ public sealed class DemoAdminApiClient : IAdminApiClient
                 Name = name,
                 EndpointId = update.Action1EndpointId ?? device.EndpointId,
                 Enabled = update.Enabled,
-                EnginePreference = update.EnginePreference,
+                EnginePreference = engine,
             });
         });
 

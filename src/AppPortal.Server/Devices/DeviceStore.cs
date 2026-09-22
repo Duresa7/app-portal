@@ -3,6 +3,7 @@ using System.Text;
 
 using AppPortal.Server.Admin.Lists;
 using AppPortal.Server.Data;
+using AppPortal.Server.Enrollment;
 
 using Microsoft.Data.Sqlite;
 
@@ -133,8 +134,14 @@ public sealed class DeviceStore(Database database)
     }
 
     /// <summary>
-    /// Turns a spent enrollment key into a device and its token. The key has already been validated and
-    /// counted by the caller; this is the half that decides which row the PC owns.
+    /// Turns an enrollment key into a device and its token, and spends one of the key's uses to do it.
+    /// The caller has already looked the key up and checked the request; this is the half that decides
+    /// which row the PC owns, and the only place a use is spent on an enrollment.
+    ///
+    /// The use is spent in the same transaction as the device write, so the two commit together or not
+    /// at all. A refusal here rolls the use back, and so does anything that throws before the commit.
+    /// When the key cannot be spent, because it was revoked or ran out between the caller's look and
+    /// this write, <see cref="EnrollmentKeyNotUsableException"/> is thrown and nothing is written.
     ///
     /// A PC is recognised by <paramref name="machineId"/> first, so a reinstall updates the row it
     /// already has. Failing that it is recognised by name, which is what a reimage looks like: a fresh
@@ -171,6 +178,14 @@ public sealed class DeviceStore(Database database)
 
         using var connection = database.Open();
         using var transaction = connection.BeginTransaction();
+
+        // First, so that a key refusal outranks a device refusal the way the route orders them. The
+        // transaction already holds the write lock, and the spend is one conditional UPDATE, so two
+        // machines racing for a key's last use cannot both get past this line.
+        if (!EnrollmentKeyStore.TrySpend(connection, transaction, keyId))
+        {
+            throw new EnrollmentKeyNotUsableException();
+        }
 
         var existing = FindIdBy(connection, transaction, "machine_id = @value", trimmedMachine)
                        ?? FindIdBy(connection, transaction, "name = @value COLLATE NOCASE", trimmedName);
@@ -317,13 +332,15 @@ public sealed class DeviceStore(Database database)
         var name = (device.Name ?? "").Trim();
         if (name.Length == 0)
         {
-            throw new DeviceRejectedException("A device needs a name.");
+            throw new DeviceInvalidException("A device needs a name.");
         }
 
+        // Following the server has no word of its own: it is the absence of a preference, stored as
+        // null, so the message names the empty value rather than a keyword nothing here would accept.
         var engine = string.IsNullOrWhiteSpace(device.EnginePreference) ? null : device.EnginePreference.Trim().ToLowerInvariant();
         if (engine is not null and not "action1" and not "agent")
         {
-            throw new DeviceRejectedException("The engine preference must be action1, agent, or inherit.");
+            throw new DeviceInvalidException("The engine preference must be action1 or agent, or empty to follow the server.");
         }
 
         using var connection = database.Open();
@@ -586,4 +603,12 @@ public sealed class DeviceStore(Database database)
 public sealed class DeviceInUseException(string message) : Exception(message);
 
 /// <summary>Raised when a change to a device is not allowed, with wording meant for an administrator.</summary>
-public sealed class DeviceRejectedException(string message) : Exception(message);
+public class DeviceRejectedException(string message) : Exception(message);
+
+/// <summary>
+/// Raised when a change to a device is refused for what was sent rather than for what it met: a blank
+/// name, an engine preference that names no engine. It is still a rejection, so a caller that only shows
+/// the reason can catch the base type; the API tells the two apart because bad input is 400 and a
+/// clash with the fleet is 409.
+/// </summary>
+public sealed class DeviceInvalidException(string message) : DeviceRejectedException(message);

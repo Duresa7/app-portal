@@ -100,6 +100,22 @@ public sealed class AdminDevicesTests
         Assert.Equal("RECEPTION-01", page.Selected?.Name);
     }
 
+    [Theory]
+    [InlineData(" ", null, "A device needs a name.")]
+    [InlineData("RECEPTION-01", "inherit", "The engine preference must be action1 or agent, or empty to follow the server.")]
+    public async Task The_demo_refuses_bad_device_input_as_the_server_does(string name, string? engine, string message)
+    {
+        var api = new DemoAdminApiClient();
+        api.Token = (await api.SignInAsync(DemoAdminApiClient.DemoUsername, DemoAdminApiClient.DemoPassword, null, CancellationToken.None)).Token;
+        var device = (await api.GetDevicesAsync(null, 0, 100, CancellationToken.None)).Items.Single(d => d.Name == "RECEPTION-01");
+
+        var refused = await Assert.ThrowsAsync<PortalApiException>(() =>
+            api.UpdateDeviceAsync(device.Id, new AdminDeviceUpdate(name, device.EndpointId, EnginePreference: engine), CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, refused.Status);
+        Assert.Equal(message, refused.Message);
+    }
+
     [Fact]
     public async Task Following_the_server_is_saved_as_no_preference_at_all()
     {

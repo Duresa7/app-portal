@@ -241,6 +241,9 @@ public static class AdminApiLimits
     /// </summary>
     public const int MaxLimit = 200;
 
-    /// <summary>The largest catalog file an import will read, so a body cannot exhaust memory.</summary>
+    /// <summary>
+    /// The largest catalog file an import will read, in bytes as sent, so a body cannot exhaust memory.
+    /// Bytes and not characters: a character can take up to four bytes in UTF-8.
+    /// </summary>
     public const int MaxImportBytes = 4 * 1024 * 1024;
 }

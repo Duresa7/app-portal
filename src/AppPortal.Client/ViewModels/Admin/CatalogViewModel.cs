@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -208,7 +209,9 @@ public sealed partial class CatalogViewModel(IAdminApiClient api) : AdminPageVie
             return;
         }
 
-        if (json.Length > AdminApiLimits.MaxImportBytes)
+        // Bytes as UTF-8, which is what the server counts. A count of characters would send a file of
+        // multi-byte characters the server is bound to refuse.
+        if (Encoding.UTF8.GetByteCount(json) > AdminApiLimits.MaxImportBytes)
         {
             ErrorMessage = $"A catalog file may be at most {AdminApiLimits.MaxImportBytes / (1024 * 1024)} MB.";
             return;

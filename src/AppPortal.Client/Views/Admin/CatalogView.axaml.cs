@@ -53,8 +53,9 @@ public partial class CatalogView : UserControl, ICatalogFiles
             return null;
         }
 
-        // One character past the limit and no further, the same as the server reads an upload: enough
-        // to tell the file is too big, without holding all of a file somebody picked by mistake.
+        // One character past the limit and no further: enough to tell the file is too big, without
+        // holding all of a file somebody picked by mistake. The limit is in bytes and a character is at
+        // least one, so a file over it still reads as over it when the page counts the bytes.
         await using var stream = await files[0].OpenReadAsync();
         using var reader = new StreamReader(stream, Encoding.UTF8);
         var buffer = new char[AdminApiLimits.MaxImportBytes + 1];

@@ -57,6 +57,10 @@ public sealed class RequestsApiTests : IDisposable
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
+        // A device reads its requests as one list and there is no route for one request, so a
+        // Location header would name a path that answers 404.
+        Assert.Null(response.Headers.Location);
+
         var created = await response.Content.ReadFromJsonAsync<AppRequest>(Json);
         Assert.Equal("Notepad++, for config files", created!.Text);
         Assert.Equal("TESTPC", created.DeviceName);

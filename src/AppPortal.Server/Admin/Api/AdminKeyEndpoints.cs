@@ -63,7 +63,16 @@ public static class AdminKeyEndpoints
                 return AdminApi.NotFound("No such enrollment key.");
             }
 
+            // The newest attempts and no paging, the same as the key detail page shows them. The attempts
+            // that matter are the recent ones, and a key's history is read to see why a rollout is failing
+            // now, not to walk it to the start. An offset is refused rather than ignored: a script paging
+            // through would be handed the first slice again on every call and never reach the end.
             var query = context.Request.ReadSlice();
+            if (query.Offset > 0)
+            {
+                return AdminApi.BadRequest("This list is the newest attempts only and does not page. Leave out offset and raise limit instead.");
+            }
+
             return Results.Ok(events.ForKey(id, query.Limit ?? EnrollmentEventStore.PageSize)
                 .Select(e => new EnrollmentKeyEvent(e.Id, e.DeviceId, e.DeviceName, e.Source,
                     EnrollmentEventStore.Name(e.Outcome), e.Describe, e.CreatedAt))

@@ -315,7 +315,7 @@ public sealed class AdminDevicesPageTests : IDisposable
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("The engine preference must be action1, agent, or inherit.", await response.Content.ReadAsStringAsync());
+        Assert.Contains("The engine preference must be action1 or agent, or empty to follow the server.", await response.Content.ReadAsStringAsync());
         Assert.Null(_devices.Find(device.Id)!.EnginePreference);
     }
 

@@ -26,6 +26,12 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
+    /// <summary>
+    /// How many times the agent may be handed one job before the install is called failed. The two
+    /// messages that report it spell the number out, so change both if this changes.
+    /// </summary>
+    private const int MaxAttempts = 3;
+
     public string Create(InstallRecord install, PackageDefinition definition)
     {
         var id = Guid.NewGuid().ToString("N");
@@ -151,6 +157,69 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
     public JobUpdate Progress(string deviceId, string id, AgentJobProgress progress, int? attempt = null)
         => Update(deviceId, id, progress.State, progress.Percent, progress.Detail, attempt);
 
+    /// <summary>
+    /// Stops an install the agent has not finished, whatever state it is in. Every unfinished job of
+    /// the install goes at once, which is what a prerequisite chain needs: its later steps have no job
+    /// yet and would otherwise start after the one being stopped.
+    /// <para>
+    /// This does not ask the device first and does not wait for it. A job the agent is running right
+    /// now loses its lease here, so its next progress report is answered with a conflict and the
+    /// runner cancels the executor. An installer already running on the PC finishes on the PC. What
+    /// stops is the portal tracking it and handing the job out again, which is what an administrator
+    /// needs when an install has been retrying for an hour.
+    /// </para>
+    /// </summary>
+    /// <returns>True when something was stopped, false when there was nothing left to stop.</returns>
+    public bool Cancel(string installId, string detail)
+    {
+        var now = _time.GetUtcNow();
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using var jobs = connection.CreateCommand();
+        jobs.Transaction = transaction;
+        jobs.CommandText = """
+            UPDATE agent_jobs SET state = 'cancelled', leased_until = NULL, updated_at = @now
+            WHERE install_id = @install
+              AND state IN ('queued', 'leased', 'downloading', 'installing', 'waiting_for_user')
+            RETURNING id;
+            """;
+        jobs.Parameters.AddWithValue("@install", installId);
+        jobs.Parameters.AddWithValue("@now", SqlTime.From(now));
+        var stopped = 0;
+        using (var reader = jobs.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                stopped++;
+            }
+        }
+
+        if (stopped == 0)
+        {
+            transaction.Rollback();
+            return false;
+        }
+
+        // A step that never reached the agent has no job to cancel, and would be left saying Queued
+        // underneath an install that has stopped.
+        using var steps = connection.CreateCommand();
+        steps.Transaction = transaction;
+        steps.CommandText = """
+            UPDATE install_steps SET state = @cancelled, detail = @detail
+            WHERE install_id = @install AND state IN (@queued, @running);
+            """;
+        steps.Parameters.AddWithValue("@install", installId);
+        steps.Parameters.AddWithValue("@cancelled", InstallState.Cancelled.ToString());
+        steps.Parameters.AddWithValue("@queued", InstallState.Queued.ToString());
+        steps.Parameters.AddWithValue("@running", InstallState.Running.ToString());
+        steps.Parameters.AddWithValue("@detail", detail);
+        steps.ExecuteNonQuery();
+
+        Mirror(connection, transaction, installId, "cancelled", 0, detail, now);
+        transaction.Commit();
+        return true;
+    }
+
     public bool Complete(string deviceId, string id, AgentJobCompletion completion, int? attempt = null)
     {
         var detail = completion.Detail ?? (completion.Ok ? "Installed." : "Installation failed.");
@@ -271,11 +340,12 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            UPDATE agent_jobs SET state = CASE WHEN attempt < 3 THEN 'queued' ELSE 'failed' END,
+            UPDATE agent_jobs SET state = CASE WHEN attempt < @max THEN 'queued' ELSE 'failed' END,
                                   leased_until = NULL, updated_at = @now
             WHERE state IN ('leased', 'downloading', 'installing') AND leased_until <= @now
             RETURNING install_id, state;
             """;
+        command.Parameters.AddWithValue("@max", MaxAttempts);
         command.Parameters.AddWithValue("@now", SqlTime.From(now));
         var expired = new List<(string installId, string state)>();
         using (var reader = command.ExecuteReader())
@@ -292,7 +362,43 @@ public sealed class AgentJobStore(Database database, TimeProvider? timeProvider 
                 state == "failed" ? "Agent lease expired after three attempts." : "Waiting for the agent to retry.", now);
         }
 
+        FailExhausted(connection, transaction, now);
         FailAbandoned(connection, transaction, now);
+    }
+
+    /// <summary>
+    /// Fails a job that has used its attempts and is sitting in the queue waiting for another one.
+    /// The sweep above caps the retries of a lease that ran out, and that was the only cap there was.
+    /// Every other way back to the queue went round it, including the agent's own catch block, which
+    /// returns the lease on purpose so a restart can resume at once. A job that came back that way was
+    /// handed straight out again, with the counter climbing and nothing reading it. One install
+    /// reached attempt 135, and the three installs queued behind it never ran, because a device is
+    /// leased one job at a time.
+    /// </summary>
+    private static void FailExhausted(SqliteConnection connection, SqliteTransaction transaction, DateTimeOffset now)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE agent_jobs SET state = 'failed', leased_until = NULL, updated_at = @now
+            WHERE state = 'queued' AND attempt >= @max
+            RETURNING install_id;
+            """;
+        command.Parameters.AddWithValue("@now", SqlTime.From(now));
+        command.Parameters.AddWithValue("@max", MaxAttempts);
+        var exhausted = new List<string>();
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                exhausted.Add(reader.GetString(0));
+            }
+        }
+
+        foreach (var installId in exhausted)
+        {
+            Mirror(connection, transaction, installId, "failed", 0, "The agent gave up after three attempts.", now);
+        }
     }
 
     /// <summary>

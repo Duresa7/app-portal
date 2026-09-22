@@ -96,6 +96,7 @@ public sealed class AdminApiTests : IDisposable
         ("GET", "/api/v1/admin/dashboard"),
         ("GET", "/api/v1/admin/installs"),
         ("GET", "/api/v1/admin/installs/any-id"),
+        ("POST", "/api/v1/admin/installs/any-id/cancel"),
         ("GET", "/api/v1/admin/requests"),
         ("POST", "/api/v1/admin/requests/any-id/approve"),
         ("POST", "/api/v1/admin/requests/any-id/deny"),
@@ -350,6 +351,27 @@ public sealed class AdminApiTests : IDisposable
     }
 
     // ---- installs -----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Stopping_an_install_refuses_what_it_does_not_own_and_what_has_finished()
+    {
+        _devices.Add("PC-A", "endpoint-a");
+        var finished = SeedInstall("PC-A", "chrome", InstallState.Succeeded, DateTimeOffset.Now.AddHours(-2));
+        var running = SeedInstall("PC-A", "vlc", InstallState.Running, DateTimeOffset.Now.AddMinutes(-5));
+        var client = await Admin();
+
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.PostAsync("/api/v1/admin/installs/nothing/cancel", null)).StatusCode);
+
+        var done = await client.PostAsync($"/api/v1/admin/installs/{finished.Id}/cancel", null);
+        Assert.Equal(HttpStatusCode.Conflict, done.StatusCode);
+        Assert.Contains("already finished", (await done.Content.ReadFromJsonAsync<ErrorMessage>(Json))!.Message);
+
+        // Action1 owns what Action1 started, and this install is one of its own.
+        var wrongEngine = await client.PostAsync($"/api/v1/admin/installs/{running.Id}/cancel", null);
+        Assert.Equal(HttpStatusCode.Conflict, wrongEngine.StatusCode);
+        Assert.Contains("Action1", (await wrongEngine.Content.ReadFromJsonAsync<ErrorMessage>(Json))!.Message);
+    }
 
     [Fact]
     public async Task Installs_list_with_the_filters_the_page_offers_and_read_one()

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 
 using AppPortal.Server.Action1;
+using AppPortal.Server.Agent;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Options;
@@ -39,7 +40,8 @@ public sealed class InstallService(
     SettingsStore settings,
     PrerequisiteStore prerequisites,
     InstallStepStore steps,
-    DeviceStore devices)
+    DeviceStore devices,
+    AgentJobStore jobs)
 {
     private readonly Dictionary<string, IInstallEngine> _engines = engines.ToDictionary(e => e.Name);
 
@@ -62,6 +64,37 @@ public sealed class InstallService(
         {
             gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Stops an install that has not finished. Only an install the agent is carrying out can be
+    /// stopped here: Action1 owns what Action1 started, and reaching around it would leave the two
+    /// disagreeing about what is running.
+    /// </summary>
+    public InstallRecord Cancel(string installId, string by)
+    {
+        var record = store.Find(installId)
+                     ?? throw new InstallRejectedException(InstallRejection.UnknownApp, "No such install.");
+        if (!record.IsActive)
+        {
+            throw new InstallRejectedException(InstallRejection.NotAllowed,
+                $"{record.AppName} has already finished, so there is nothing to stop.");
+        }
+
+        if (record.Engine != EngineLabel.Agent)
+        {
+            throw new InstallRejectedException(InstallRejection.NotAllowed,
+                $"{record.AppName} is being installed by Action1 and has to be stopped there.");
+        }
+
+        if (!jobs.Cancel(installId, $"Stopped by {by}."))
+        {
+            throw new InstallRejectedException(InstallRejection.NotAllowed,
+                $"{record.AppName} finished before it could be stopped.");
+        }
+
+        logger.LogInformation("Install {Install} stopped by {By}", installId, by);
+        return store.Find(installId)!;
     }
 
     /// <summary>

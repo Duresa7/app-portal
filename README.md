@@ -211,7 +211,7 @@ The MSI installs the client and agent to `%ProgramFiles%\App Portal`, registers 
 
 Upgrade silently with `msiexec /i AppPortal-<new-version>-x64.msi /qn`; no enrollment properties are needed. The token and local data survive, and the service restarts. Uninstall with `msiexec /x AppPortal-<version>-x64.msi /qn`. Data under `%ProgramData%\AppPortal` stays unless you also pass `REMOVEDATA=1`.
 
-`AppPortal-client-win-x64.zip` is gone from 0.6.0 onwards, and the PowerShell installer scripts with it. A PC put on from one of those zips cannot reach this release by itself: the updater it carries replaces files by renaming them, which is not how an MSI arrives. Move those machines once by deploying `AppPortal-0.6.0-x64.msi` through whatever channel the zip went through. The MSI reuses the existing `client.json`, so the device keeps its token and does not enroll twice, and the agent deletes the leftover **App Portal Updater** scheduled task the first time it starts. From there the agent keeps the machine current on its own.
+`AppPortal-client-win-x64.zip` is gone from 0.6.0 onwards, and the PowerShell installer scripts with it. A PC put on from one of those zips cannot reach this release by itself: the updater it carries replaces files by renaming them, which is not how an MSI arrives. Move those machines once by deploying `AppPortal-0.6.0-x64.msi` through whatever channel the zip went through. The MSI reuses the existing `client.json`, so the device keeps its token and does not enroll twice, and the agent clears what the zip left behind the first time it starts. From there the agent keeps the machine current on its own.
 
 The **Agent** column on `/admin/devices` is how to find the machines that need this. Only the agent's enrollment and heartbeat write that column, so a device showing `—` has never run one and is still a zip installation. Those PCs go on working at the version they have and keep their place in the portal; they simply never move again, and they say nothing about it, so look rather than wait to notice.
 
@@ -229,7 +229,7 @@ Applying it needs the client closed, because Windows Installer cannot replace fi
 
 An `"updateRepository": "owner/name"` in `client.json` points a test fleet at a fork. `AppPortal.Agent.exe --check` prints what that repository publishes and downloads nothing.
 
-A PC upgraded from a zip installation still carries the **App Portal Updater** scheduled task. The agent deletes it on its first start, so the retired updater cannot replace files Windows Installer now owns.
+A PC upgraded from a zip installation still carries three things Windows Installer knows nothing about: the **App Portal Updater** scheduled task, `AppPortal.Updater.exe` and `Uninstall-AppPortalClient.ps1` in `%ProgramFiles%\App Portal`, and an `AppPortalClient` entry in Apps & Features. The agent removes all three on its first start. The task and the updater would otherwise go on replacing files Windows Installer now owns. The entry is worse than that: it puts a second **App Portal** row beside the MSI's, and removing through it runs the retired script, which deletes both `%ProgramFiles%\App Portal` and `%ProgramData%\AppPortal` while Windows Installer still holds the product as installed. A machine upgraded before the agent knew to do this is put right the first time it starts an agent that does.
 
 ## Development
 

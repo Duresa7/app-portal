@@ -1,12 +1,23 @@
+using System.Collections.Concurrent;
+
+using AppPortal.Agent.Executors;
 using AppPortal.Agent.Jobs;
 using AppPortal.Agent.Update;
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AppPortal.Agent.Tests;
 
 public sealed class UpdateWorkerTests : IDisposable
 {
+    /// <summary>
+    /// An entry that is not ours, shaped like the product code Windows Installer registers a product
+    /// under. Nothing pins this particular GUID: it stands for every other row in Apps and Features,
+    /// and it is here to be left alone.
+    /// </summary>
+    private const string SomebodyElsesEntry = "{8E0F9B3C-2A41-4D77-9C58-3B6E1F0A7D42}";
+
     private readonly string _root = Path.Combine(Path.GetTempPath(), "app-portal-update-worker-tests", Guid.NewGuid().ToString("N"));
     private readonly UpdatePaths _paths;
 
@@ -110,6 +121,71 @@ public sealed class UpdateWorkerTests : IDisposable
     }
 
     [Fact]
+    public async Task The_uninstall_entry_from_a_zip_install_is_deleted()
+    {
+        var registry = new FakeRegistry(UpdateWorker.LegacyUninstallKey, SomebodyElsesEntry);
+
+        await Worker(new CountingFeed(), new FakeProcesses(), registry).RemoveLegacyInstallAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(UpdateWorker.LegacyUninstallKey, registry.Entries);
+    }
+
+    [Fact]
+    public async Task The_entry_Windows_Installer_owns_is_left_where_it_is()
+    {
+        // Both rows read "App Portal" in Apps & Features. Taking the wrong one away would leave Windows
+        // Installer with a product it thinks is there, which is the state this whole cleanup exists to avoid.
+        var registry = new FakeRegistry(UpdateWorker.LegacyUninstallKey, SomebodyElsesEntry);
+
+        await Worker(new CountingFeed(), new FakeProcesses(), registry).RemoveLegacyInstallAsync(CancellationToken.None);
+
+        Assert.Equal([SomebodyElsesEntry], registry.Entries);
+    }
+
+    [Fact]
+    public async Task The_retired_updater_and_its_script_go_from_the_install_folder()
+    {
+        WriteInstallFile("AppPortal.Updater.exe");
+        WriteInstallFile("Uninstall-AppPortalClient.ps1");
+        WriteInstallFile("AppPortal.Agent.exe");
+
+        await Worker(new CountingFeed(), new FakeProcesses()).RemoveLegacyInstallAsync(CancellationToken.None);
+
+        Assert.False(File.Exists(Path.Combine(_paths.InstallDir, "AppPortal.Updater.exe")));
+        Assert.False(File.Exists(Path.Combine(_paths.InstallDir, "Uninstall-AppPortalClient.ps1")));
+        Assert.True(File.Exists(Path.Combine(_paths.InstallDir, "AppPortal.Agent.exe")), "the MSI owns the rest of that folder");
+    }
+
+    [Fact]
+    public async Task A_machine_that_was_never_a_zip_install_has_nothing_to_report()
+    {
+        // Nothing to find anywhere: schtasks exits non-zero because there is no such task, there is no
+        // uninstall entry and no leftover file. That is nearly every PC in the fleet, every time it starts.
+        var logs = new RecordedLogs();
+
+        await Worker(new CountingFeed(), new FakeProcesses(1), new FakeRegistry(SomebodyElsesEntry), logs)
+            .RemoveLegacyInstallAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(logs.Entries, entry => entry.Level >= LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task A_file_that_will_not_go_is_a_warning_and_the_cleanup_carries_on()
+    {
+        // A directory standing where the updater should be. File.Delete refuses it on Windows and on
+        // Linux alike, which is as close as a test gets to a stale process holding the real one open.
+        Directory.CreateDirectory(Path.Combine(_paths.InstallDir, "AppPortal.Updater.exe"));
+        WriteInstallFile("Uninstall-AppPortalClient.ps1");
+        var logs = new RecordedLogs();
+
+        await Worker(new CountingFeed(), new FakeProcesses(), new FakeRegistry(), logs)
+            .RemoveLegacyInstallAsync(CancellationToken.None);
+
+        Assert.Contains(logs.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.False(File.Exists(Path.Combine(_paths.InstallDir, "Uninstall-AppPortalClient.ps1")));
+    }
+
+    [Fact]
     public async Task Users_are_allowed_to_leave_a_request_and_nothing_more()
     {
         var processes = new FakeProcesses();
@@ -138,13 +214,19 @@ public sealed class UpdateWorkerTests : IDisposable
         }
     }
 
-    private UpdateWorker Worker(IReleaseFeed feed, IProcessRunner processes)
+    private void WriteInstallFile(string name) => File.WriteAllText(Path.Combine(_paths.InstallDir, name), "");
+
+    private UpdateWorker Worker(
+        IReleaseFeed feed,
+        IProcessRunner processes,
+        IUninstallRegistry? registry = null,
+        ILogger<UpdateWorker>? logger = null)
     {
         var update = new SelfUpdate(feed, new UnusedDownloader(), processes, new ClosedClient(), _paths,
             NullLogger<SelfUpdate>.Instance, () => Version.Parse("0.4.0.0"));
         // windows: false keeps schtasks and icacls out of the loop; both have tests that call them directly.
-        return new UpdateWorker(update, _paths, processes, NullLogger<UpdateWorker>.Instance,
-            TimeSpan.FromMilliseconds(20), windows: false);
+        return new UpdateWorker(update, _paths, processes, registry ?? new FakeRegistry(),
+            logger ?? NullLogger<UpdateWorker>.Instance, TimeSpan.FromMilliseconds(20), windows: false);
     }
 
     private sealed class CountingFeed : IReleaseFeed
@@ -166,9 +248,62 @@ public sealed class UpdateWorkerTests : IDisposable
             => throw new InvalidOperationException("The feed has no newer release, so nothing should be downloaded.");
     }
 
+    [Theory]
+    [InlineData("AppPortalClient")]
+    [InlineData("{8E0F9B3C-2A41-4D77-9C58-3B6E1F0A7D42}")]
+    [InlineData("7-Zip 24.09 (x64)")]
+    [InlineData("Python 3.12.1 (64-bit)")]
+    public void A_real_uninstall_key_name_is_one_that_may_be_removed(string name)
+        => Assert.True(UninstallKeyName.NamesOneKey(name));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(@"AppPortalClient\..\..")]
+    [InlineData("/")]
+    [InlineData("*")]
+    public void A_name_that_reaches_wider_than_one_key_is_refused(string? name)
+    {
+        // A registry delete takes a path. A blank name is the Uninstall branch itself, and removing
+        // that tree takes every entry on the PC with it. Today the only caller passes a constant; this
+        // is what keeps the promise true of the next one.
+        Assert.False(UninstallKeyName.NamesOneKey(name));
+    }
+
     private sealed class ClosedClient : IClientPresence
     {
         public bool IsRunning() => false;
+    }
+
+    /// <summary>The uninstall entries a PC has, which a removal takes one of.</summary>
+    private sealed class FakeRegistry(params string[] entries) : IUninstallRegistry
+    {
+        public List<string> Entries { get; } = [.. entries];
+
+        public string? QuietUninstallString(string uninstallKey, string? account = null) => null;
+
+        public bool Remove(string uninstallKey) => Entries.Remove(uninstallKey);
+    }
+
+    /// <summary>Everything the worker logged, so a test can say what is not in it.</summary>
+    private sealed class RecordedLogs : ILogger<UpdateWorker>
+    {
+        private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
+
+        public IReadOnlyList<(LogLevel Level, string Message)> Entries => [.. _entries];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => _entries.Enqueue((logLevel, formatter(state, exception)));
     }
 
     private sealed class FakeProcesses(int exitCode = 0) : IProcessRunner

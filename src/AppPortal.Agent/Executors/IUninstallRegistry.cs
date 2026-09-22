@@ -7,8 +7,9 @@ using Microsoft.Win32;
 namespace AppPortal.Agent.Executors;
 
 /// <summary>
-/// Reading what Windows records about how to remove something. Behind an interface because the only
-/// thing it does is touch the registry, and that is not a thing to need a Windows machine to test.
+/// What Windows records about how to remove something, and taking an entry out of that record. Behind
+/// an interface because the only thing it does is touch the registry, and that is not a thing to need a
+/// Windows machine to test.
 /// </summary>
 public interface IUninstallRegistry
 {
@@ -24,12 +25,44 @@ public interface IUninstallRegistry
     /// never theirs.
     /// </param>
     string? QuietUninstallString(string uninstallKey, string? account = null);
+
+    /// <summary>
+    /// Takes one entry out of the list Windows shows in Apps and Features, and says whether there was
+    /// one to take. Only the named key goes; every other entry, this product's own included, is left
+    /// exactly as it was.
+    /// </summary>
+    bool Remove(string uninstallKey);
+}
+
+/// <summary>
+/// What may be handed to a registry delete as the name of one uninstall entry. Its own type, and not a
+/// private check inside the Windows implementation, because the rule is the interesting part and a rule
+/// nobody can test on a build machine is a rule nobody checks.
+/// </summary>
+public static class UninstallKeyName
+{
+    /// <summary>
+    /// Whether this names one entry and nothing wider. A registry delete takes a path, so a blank name
+    /// names the Uninstall branch itself and would take every entry on the PC with it, and a name
+    /// carrying a separator reaches somewhere nobody asked for.
+    /// <para>
+    /// An allowlist, not a list of characters to fear: these are what a real uninstall key is made of,
+    /// a product code's braces and hyphens included.
+    /// </para>
+    /// </summary>
+    public static bool NamesOneKey(string? uninstallKey)
+        => !string.IsNullOrWhiteSpace(uninstallKey) && uninstallKey.All(Allowed);
+
+    private static bool Allowed(char c)
+        => char.IsAsciiLetterOrDigit(c) || c is '{' or '}' or '(' or ')' or '-' or '_' or '.' or '+' or '~' or ' ';
 }
 
 /// <summary>What the agent uses away from Windows, and in tests: nothing is removable.</summary>
 public sealed class NoUninstallRegistry : IUninstallRegistry
 {
     public string? QuietUninstallString(string uninstallKey, string? account = null) => null;
+
+    public bool Remove(string uninstallKey) => false;
 }
 
 [SupportedOSPlatform("windows")]
@@ -62,6 +95,39 @@ public sealed class WindowsUninstallRegistry : IUninstallRegistry
         }
 
         return Read(Registry.LocalMachine, uninstallKey);
+    }
+
+    public bool Remove(string uninstallKey)
+    {
+        if (!UninstallKeyName.NamesOneKey(uninstallKey))
+        {
+            return false;
+        }
+
+        var removed = false;
+        foreach (var branch in Roots)
+        {
+            try
+            {
+                using (var key = Registry.LocalMachine.OpenSubKey(branch + uninstallKey))
+                {
+                    if (key is null)
+                    {
+                        continue;
+                    }
+                }
+
+                Registry.LocalMachine.DeleteSubKeyTree(branch + uninstallKey, throwOnMissingSubKey: false);
+                removed = true;
+            }
+            catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
+            {
+                // An entry that will not come away stays where it is, and the caller hears that nothing
+                // was removed. Whatever wanted it gone has better things to do than fail over it.
+            }
+        }
+
+        return removed;
     }
 
     private static string? Read(RegistryKey root, string uninstallKey)

@@ -116,6 +116,17 @@ public sealed class ManagedPackageExecutorTests : IDisposable
     }
 
     [Fact]
+    public async Task Removing_a_chocolatey_package_that_is_already_gone_is_not_a_failure()
+    {
+        // A retried job, or somebody who removed it by hand first: the PC is already as asked.
+        var result = await Executor(new FakeProcesses((_, _) => new ProcessResult(1605, "")))
+            .UninstallAsync(new JobContext("job-1", null), Choco, new Progress(), CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Equal("It was not installed.", result.Detail);
+    }
+
+    [Fact]
     public async Task A_manager_that_runs_too_long_fails_with_a_sentence_rather_than_a_crash()
     {
         var result = await Executor(new FakeProcesses((_, _) => throw new TimeoutException("choco.exe did not finish within 60 minutes.")))

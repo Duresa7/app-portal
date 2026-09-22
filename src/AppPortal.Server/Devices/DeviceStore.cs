@@ -317,13 +317,15 @@ public sealed class DeviceStore(Database database)
         var name = (device.Name ?? "").Trim();
         if (name.Length == 0)
         {
-            throw new DeviceRejectedException("A device needs a name.");
+            throw new DeviceInvalidException("A device needs a name.");
         }
 
+        // Following the server has no word of its own: it is the absence of a preference, stored as
+        // null, so the message names the empty value rather than a keyword nothing here would accept.
         var engine = string.IsNullOrWhiteSpace(device.EnginePreference) ? null : device.EnginePreference.Trim().ToLowerInvariant();
         if (engine is not null and not "action1" and not "agent")
         {
-            throw new DeviceRejectedException("The engine preference must be action1, agent, or inherit.");
+            throw new DeviceInvalidException("The engine preference must be action1 or agent, or empty to follow the server.");
         }
 
         using var connection = database.Open();
@@ -586,4 +588,12 @@ public sealed class DeviceStore(Database database)
 public sealed class DeviceInUseException(string message) : Exception(message);
 
 /// <summary>Raised when a change to a device is not allowed, with wording meant for an administrator.</summary>
-public sealed class DeviceRejectedException(string message) : Exception(message);
+public class DeviceRejectedException(string message) : Exception(message);
+
+/// <summary>
+/// Raised when a change to a device is refused for what was sent rather than for what it met: a blank
+/// name, an engine preference that names no engine. It is still a rejection, so a caller that only shows
+/// the reason can catch the base type; the API tells the two apart because bad input is 400 and a
+/// clash with the fleet is 409.
+/// </summary>
+public sealed class DeviceInvalidException(string message) : DeviceRejectedException(message);

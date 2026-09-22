@@ -148,15 +148,42 @@ public sealed class DeviceStoreTests
     [Theory]
     [InlineData("winget")]
     [InlineData("both")]
-    public void An_unknown_engine_preference_is_rejected(string engine)
+    [InlineData("inherit")]
+    public void An_unknown_engine_preference_is_rejected_as_bad_input(string engine)
     {
         using var test = new TestDatabase();
         var devices = new DeviceStore(test.Database);
         devices.Add("PC1", "ep-1");
         var device = devices.All().Single();
         device.EnginePreference = engine;
-        Assert.Throws<DeviceRejectedException>(() => devices.Update(device));
+        var refused = Assert.Throws<DeviceInvalidException>(() => devices.Update(device));
+        Assert.Equal("The engine preference must be action1 or agent, or empty to follow the server.", refused.Message);
         Assert.Null(devices.Find(device.Id)!.EnginePreference);
+    }
+
+    [Fact]
+    public void A_blank_name_is_rejected_as_bad_input()
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        var device = devices.All().Single();
+        device.Name = "  ";
+        Assert.Throws<DeviceInvalidException>(() => devices.Update(device));
+        Assert.Equal("PC1", devices.Find(device.Id)!.Name);
+    }
+
+    [Fact]
+    public void A_name_another_device_has_is_a_conflict_not_bad_input()
+    {
+        using var test = new TestDatabase();
+        var devices = new DeviceStore(test.Database);
+        devices.Add("PC1", "ep-1");
+        devices.Add("PC2", "ep-2");
+        var device = devices.FindByName("PC1")!;
+        device.Name = "pc2";
+        var refused = Assert.Throws<DeviceRejectedException>(() => devices.Update(device));
+        Assert.IsNotType<DeviceInvalidException>(refused);
     }
 
     [Theory]

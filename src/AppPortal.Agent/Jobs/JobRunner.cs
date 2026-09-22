@@ -133,8 +133,16 @@ public sealed class JobRunner(
                 // person waiting on the card should not wait for an inventory sweep to say so.
                 // A per-user install is swept inside that person's session, because what it put in
                 // their profile cannot be seen from outside it.
+                // Software a package manager installed is invisible to winget, so that manager is asked.
                 var perUser = definition.Scope == "user" ? requester : null;
-                await software.ReportAsync(settings, ct, perUser);
+                if (definition is ManagedPackageDefinition managed && PackageManagers.Find(managed.Manager) is { } manager)
+                {
+                    await software.ReportManagerAsync(settings, manager, ct, perUser);
+                }
+                else
+                {
+                    await software.ReportAsync(settings, ct, perUser);
+                }
             }
         }
         catch

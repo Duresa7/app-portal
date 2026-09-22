@@ -78,9 +78,21 @@ public sealed class CatalogEntry
     [JsonIgnore]
     public bool HasAction1 => !string.IsNullOrWhiteSpace(Action1?.PackageId);
 
-    /// <summary>True when an inventory row names this app.</summary>
-    public bool MatchesInstalled(string installedName)
+    /// <summary>
+    /// True when an inventory row names this app. A package manager's row is matched on the app's own
+    /// package id first, because that is how the manager lists it, and on the name after that like any
+    /// other row. <paramref name="source"/> is what found the row: <c>winget</c>, a manager, or null.
+    /// </summary>
+    public bool MatchesInstalled(string installedName, string? source = null)
     {
+        if (Agent is ManagedPackageDefinition managed
+            && string.Equals(source, managed.Manager, StringComparison.Ordinal)
+            && PackageManagers.Find(managed.Manager) is { } manager
+            && string.Equals(installedName, manager.ListedAs(managed.Id), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         if (Match?.NameEquals is { Length: > 0 } exact)
         {
             return string.Equals(installedName, exact, StringComparison.OrdinalIgnoreCase);

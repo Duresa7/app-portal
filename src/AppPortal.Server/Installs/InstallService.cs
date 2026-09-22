@@ -187,7 +187,7 @@ public sealed class InstallService(
         // needs nothing first yields a chain of one, so there is no second code path to keep in step.
         var installed = software.ForDevice(device.Id, requestedBy);
         var chain = PrerequisiteResolver.Expand(app, catalog.Entries.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase),
-            prerequisites.All(), entry => installed.Any(item => entry.MatchesInstalled(item.Name)));
+            prerequisites.All(), entry => installed.Any(item => entry.MatchesInstalled(item.Name, item.Source)));
 
         var plan = new List<(CatalogEntry App, string Engine)>();
         foreach (var entry in chain)
@@ -373,18 +373,20 @@ public sealed class InstallService(
             foreach (var item in await action1.GetInstalledSoftwareAsync(device.EndpointId, ct))
             {
                 merged[item.Name] = new InstalledApp(item.Name, item.Vendor, item.Version,
-                    entries.FirstOrDefault(e => e.MatchesInstalled(item.Name))?.Id);
+                    entries.FirstOrDefault(e => e.MatchesInstalled(item.Name))?.Id, "action1");
             }
         }
 
         // Action1 reports a vendor and the agent cannot, so where both saw the same software the richer
-        // row stays and the agent's is dropped rather than overwriting it with a blank.
+        // row stays and the agent's is dropped rather than overwriting it with a blank. Two of the
+        // agent's own sources are kept apart: Git from winget and git from Scoop are two copies.
+        var agent = new Dictionary<(string Source, string Name), InstalledApp>();
         foreach (var item in software.ForDevice(device.Id, requester).Where(item => !merged.ContainsKey(item.Name)))
         {
-            merged[item.Name] = new InstalledApp(item.Name, "", item.Version,
-                entries.FirstOrDefault(e => e.MatchesInstalled(item.Name))?.Id);
+            agent[(item.Source, item.Name.ToUpperInvariant())] = new InstalledApp(item.Name, "", item.Version,
+                entries.FirstOrDefault(e => e.MatchesInstalled(item.Name, item.Source))?.Id, item.Source);
         }
 
-        return merged.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        return merged.Values.Concat(agent.Values).OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 }

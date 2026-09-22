@@ -62,11 +62,16 @@ public sealed record InstallRequest(
     string Kind = InstallKind.Install);
 
 /// <summary>Software the management plane reports as present on the device.</summary>
+/// <param name="Source">
+/// What found it: <c>action1</c>, <c>winget</c>, or the name of the package manager that installed it.
+/// Empty from a server older than package managers.
+/// </param>
 public sealed record InstalledApp(
     string Name,
     string Vendor,
     string Version,
-    string? CatalogAppId);
+    string? CatalogAppId,
+    string Source = "");
 
 public sealed record CreateInstallRequest(string AppId);
 

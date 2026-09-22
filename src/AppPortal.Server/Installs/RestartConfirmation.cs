@@ -41,7 +41,7 @@ public sealed class RestartConfirmation(
         // A person's own list cannot be: the sweep would have to run inside their session, and they may
         // not have signed in yet. Theirs is as fresh as their last install, which is the moment before
         // the restart. An empty list counts as found for exactly this reason.
-        var byAccount = new Dictionary<string, IReadOnlyList<InstalledSoftware>>(StringComparer.OrdinalIgnoreCase);
+        var byAccount = new Dictionary<string, IReadOnlyList<ReportedSoftware>>(StringComparer.OrdinalIgnoreCase);
         var entries = catalog.Entries;
         foreach (var install in waiting)
         {
@@ -52,7 +52,7 @@ public sealed class RestartConfirmation(
             }
 
             var entry = entries.FirstOrDefault(e => e.Id == install.AppId);
-            var found = present.Any(item => entry?.MatchesInstalled(item.Name)
+            var found = present.Any(item => entry?.MatchesInstalled(item.Name, item.Source)
                                             ?? item.Name.Contains(install.AppName, StringComparison.OrdinalIgnoreCase));
 
             install.RebootState = RebootState.Confirmed;

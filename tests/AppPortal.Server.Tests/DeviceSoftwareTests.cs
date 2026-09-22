@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
+using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Shared;
 
@@ -141,6 +142,59 @@ public sealed class DeviceSoftwareTests : IDisposable
         var stored = Assert.Single(_software.ForDevice(id));
         Assert.Equal("Steam", stored.Name);
         Assert.Equal("1.0", stored.Version);
+    }
+
+    [Fact]
+    public async Task Each_source_replaces_only_its_own_rows_and_no_source_means_winget()
+    {
+        using var client = Client(_agentToken);
+        var id = _devices.FindByName("AGENT-ONLY")!.Id;
+
+        await client.PostAsJsonAsync("/api/v1/agent/software", new[] { new InstalledSoftware("Steam", "2.10") });
+        await client.PostAsJsonAsync("/api/v1/agent/software?source=scoop", new[] { new InstalledSoftware("7zip", "24.08") });
+        // An agent from before package managers sends no source. It must go on replacing exactly the
+        // rows it always did, and leave Scoop's alone.
+        await client.PostAsJsonAsync("/api/v1/agent/software", new[] { new InstalledSoftware("Discord", "1.0") });
+        Assert.Equal(["7zip:scoop", "Discord:winget"], _software.ForDevice(id).Select(row => row.Name + ":" + row.Source));
+
+        // And Scoop's own empty list clears only Scoop's rows.
+        await client.PostAsJsonAsync("/api/v1/agent/software?source=scoop", Array.Empty<InstalledSoftware>());
+        Assert.Equal("Discord", Assert.Single(_software.ForDevice(id)).Name);
+    }
+
+    [Fact]
+    public async Task A_source_this_server_has_never_heard_of_is_refused()
+    {
+        using var client = Client(_agentToken);
+
+        var posted = await client.PostAsJsonAsync("/api/v1/agent/software?source=apt", new[] { new InstalledSoftware("vim", "9.0") });
+
+        Assert.Equal(HttpStatusCode.BadRequest, posted.StatusCode);
+        Assert.Empty(_software.ForDevice(_devices.FindByName("AGENT-ONLY")!.Id));
+    }
+
+    [Fact]
+    public async Task A_package_a_manager_installed_is_matched_to_its_app_by_id_and_says_where_it_came_from()
+    {
+        // Scoop lists the app without its bucket, and the app's name is nothing like its id, so only the
+        // id can tie the two together. That is what brings back the Remove button.
+        new CatalogStore(_test.Database, "").Upsert(new CatalogEntry
+        {
+            Id = "vscode",
+            Name = "Visual Studio Code",
+            Agent = new ManagedPackageDefinition("scoop", "extras/vscode", "user"),
+        });
+        using var client = Client(_agentToken);
+        await client.PostAsJsonAsync("/api/v1/agent/software?source=scoop", new[] { new InstalledSoftware("vscode", "1.93.1") });
+        await client.PostAsJsonAsync("/api/v1/agent/software", new[] { new InstalledSoftware("vscode", "0.1") });
+
+        var installed = (await client.GetFromJsonAsync<List<InstalledApp>>(ApiRoutes.Installed))!;
+
+        // Both rows are there, and only the one Scoop reported is the catalog's app.
+        Assert.Equal(2, installed.Count);
+        var scoop = Assert.Single(installed, a => a.Source == "scoop");
+        Assert.Equal("vscode", scoop.CatalogAppId);
+        Assert.Null(Assert.Single(installed, a => a.Source == "winget").CatalogAppId);
     }
 
     private HttpClient Client(string token)

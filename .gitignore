@@ -507,6 +507,7 @@ client.json
 AGENTS.md
 CLAUDE.md
 .claude/settings.local.json
+.cloud/
 src/**/appsettings.Local.json
 src/**/appsettings.Production.json
 secrets.json

@@ -68,7 +68,7 @@ public sealed class CatalogEntry
             (false, true) => ["agent"],
             _ => [],
         },
-        (Agent as DirectPackageDefinition)?.SizeBytes,
+        Agent?.DownloadSizeBytes,
         // Only an agent package can be per-user; Action1 always installs for the whole device.
         Agent?.Scope,
         null,
@@ -207,7 +207,7 @@ public sealed class CatalogStore
         }
         catch (NotSupportedException ex)
         {
-            throw new InvalidDataException("An agent definition needs a kind of winget or direct.", ex);
+            throw new InvalidDataException($"An agent definition needs a kind of {PackageDefinition.Kinds}.", ex);
         }
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

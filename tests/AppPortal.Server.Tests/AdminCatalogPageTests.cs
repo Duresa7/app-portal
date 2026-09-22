@@ -302,6 +302,7 @@ public sealed class AdminCatalogPageTests : IDisposable
     [Theory]
     [InlineData("direct")]
     [InlineData("winget")]
+    [InlineData("managed")]
     public async Task Agent_only_apps_can_be_created_edited_and_served_to_devices_with_an_agent(string kind)
     {
         // An app only the agent can install reaches a device only once that device has an agent. It
@@ -318,7 +319,7 @@ public sealed class AdminCatalogPageTests : IDisposable
         Assert.Equal(["agent"], app.Engines);
         Assert.Equal(kind == "direct" ? (long?)5_000_000_000L : null, app.DownloadSizeBytes);
         var html = await admin.GetStringAsync("/admin/catalog/vendor");
-        Assert.Contains(kind == "direct" ? "5000000000" : "Valve.Steam", html);
+        Assert.Contains(kind switch { "direct" => "5000000000", "managed" => "notepadplusplus", _ => "Valve.Steam" }, html);
         form["Name"] = "Renamed";
         response = await admin.PostAsync("/admin/catalog/vendor", new FormUrlEncodedContent(form));
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
@@ -328,12 +329,16 @@ public sealed class AdminCatalogPageTests : IDisposable
     [Theory]
     [InlineData("DirectSha256", "", "sha256")]
     [InlineData("AgentKind", "unknown", "kind")]
+    [InlineData("ManagedId", "notepadplusplus&calc", "not a Chocolatey package id")]
+    [InlineData("ManagedId", "7zip|calc", "not a Chocolatey package id")]
+    [InlineData("ManagedScope", "user", "machine scope")]
+    [InlineData("ManagedManager", "apt", "must be one of")]
     [InlineData("DirectSizeBytes", "not a number", "whole number")]
     [InlineData("DirectSizeBytes", "9223372036854775808", "whole number")]
     public async Task Invalid_agent_definitions_show_a_message_without_saving(string field, string value, string message)
     {
         var admin = await SignedIn();
-        var form = AgentForm("direct");
+        var form = AgentForm(field.StartsWith("Managed", StringComparison.Ordinal) ? "managed" : "direct");
         form[field] = value;
         form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");
         var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(form));
@@ -429,6 +434,9 @@ public sealed class AdminCatalogPageTests : IDisposable
         ["DirectSilentArgs"] = "/S",
         ["DirectSizeBytes"] = "5000000000",
         ["DirectUninstallKey"] = "Vendor Application",
+        ["ManagedManager"] = "choco",
+        ["ManagedId"] = "notepadplusplus",
+        ["ManagedScope"] = "machine",
     };
 
     public void Dispose()

@@ -18,6 +18,43 @@ public sealed class PackageDefinitionTests
         "exe", "/S", 5_000_000_000L, "Vendor Application");
 
     [Fact]
+    public void Managed_json_preserves_the_frozen_shape()
+    {
+        PackageDefinition definition = new ManagedPackageDefinition("npm", "@angular/cli", "machine", "18.2.0");
+        definition.Validate();
+        var json = JsonSerializer.Serialize(definition, Json);
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(["kind", "manager", "id", "scope", "version", "extraArgs", "requiresReboot"],
+            document.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal("managed", document.RootElement.GetProperty("kind").GetString());
+        Assert.Equal(definition, JsonSerializer.Deserialize<PackageDefinition>(json, Json));
+        Assert.Null(definition.DownloadSizeBytes);
+    }
+
+    [Fact]
+    public void A_managed_app_survives_export_and_import_unchanged()
+    {
+        using var test = new TestDatabase();
+        var store = new CatalogStore(test.Database, "");
+        var managed = new ManagedPackageDefinition("scoop", "extras/vscode", "user", "1.95.0", "--no-cache", RequiresReboot: true);
+        store.Upsert(new CatalogEntry { Id = "vscode", Name = "Visual Studio Code", Agent = managed });
+
+        var reimported = CatalogStore.Parse(store.ExportJson());
+
+        Assert.Equal(managed, Assert.Single(reimported).Agent);
+        Assert.Equal(["agent"], Assert.Single(reimported).ToPublic().Engines);
+    }
+
+    [Fact]
+    public void A_definition_with_no_kind_names_every_kind_there_is()
+    {
+        var error = Assert.Throws<InvalidDataException>(() => CatalogStore.Parse("""
+            {"apps":[{"id":"bad","name":"Bad","agent":{"manager":"npm","id":"typescript"}}]}
+            """));
+        Assert.Contains("managed", error.Message);
+    }
+
+    [Fact]
     public void Direct_json_preserves_the_frozen_shape_and_a_multi_gigabyte_size()
     {
         PackageDefinition definition = Direct;

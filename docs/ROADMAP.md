@@ -78,8 +78,8 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M4-04](plans/M4-04-client-catalog.md) | Client admin: catalog | M4-02 | Open |
 | [M4-05](plans/M4-05-client-devices-keys-admins.md) | Client admin: devices, keys, admins | M4-02 | Open |
 | [M4-06](plans/M4-06-release-0.8.0.md) | Release 0.8.0 | M4-03, M4-04, M4-05 | Open |
-| [M5-01](plans/M5-01-microsoft-store-apps.md) | Microsoft Store apps | M3-03 | In review |
-| [M5-02](plans/M5-02-package-managers.md) | Package managers as one kind | M3-02, M3-05 | Open |
+| [M5-01](plans/M5-01-microsoft-store-apps.md) | Microsoft Store apps | M3-03 | Done |
+| [M5-02](plans/M5-02-package-managers.md) | Package managers as one kind | M3-02, M3-05 | In review |
 | [M5-03](plans/M5-03-managers-on-a-device.md) | Which package managers a device has | M5-02 | Open |
 | [M5-04](plans/M5-04-managed-packages-in-the-installed-list.md) | Managed packages in the installed list | M5-02 | Open |
 | [M5-05](plans/M5-05-one-way-to-add-an-app.md) | One way to add an app | M5-01, M5-02 | Open |

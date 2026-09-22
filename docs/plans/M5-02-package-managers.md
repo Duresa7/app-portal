@@ -80,11 +80,13 @@ a row in that table.
 ## Interface
 
 ```json
-{"kind":"managed","manager":"npm","id":"typescript","version":null,"extraArgs":null,
- "scope":"machine","requiresReboot":false}
+{"kind":"managed","manager":"npm","id":"typescript","scope":"machine","version":null,
+ "extraArgs":null,"requiresReboot":false}
 ```
 
-Property order above is the contract and is frozen by `PackageDefinitionTests`. Manager names are
+Property order above is the contract and is frozen by `PackageDefinitionTests`. It follows the winget
+definition's order, `id` then `scope` then the optional fields, so the two records read alike in a
+catalog file; the first draft of this plan put `scope` after `extraArgs` for no reason worth keeping. Manager names are
 lower case with a hyphen, exactly as listed, in JSON, the database and the UI.
 
 `PackageManagers.All`, `PackageManagers.Find(name)` and `PackageManagerDescriptor` are the shared

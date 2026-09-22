@@ -63,9 +63,17 @@ public sealed class PackageHelpers(HttpClient client)
         return new InstallerHash(Convert.ToHexStringLower(hash.GetHashAndReset()), size);
     }
 
-    public async Task<WingetLookup> LookupWingetAsync(string id, CancellationToken ct)
+    public async Task<WingetLookup> LookupWingetAsync(string id, CancellationToken ct, string source = WingetSources.Winget)
     {
-        new WingetPackageDefinition(id, "machine").Validate();
+        new WingetPackageDefinition(id, "machine", Source: source).Validate();
+        if (source == WingetSources.Store)
+        {
+            // winget-pkgs holds no manifest for a Store app, so asking it would report a correct id as
+            // a missing one. The shape of the id is all we can check from a server, and Validate has
+            // just checked it.
+            return new WingetLookup(null, $"{id} looks like a Store product id. The Store cannot be checked from the server, so try it on one PC before offering it to everybody.");
+        }
+
         var path = string.Join('/', id.Split('.').Select(Uri.EscapeDataString));
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));

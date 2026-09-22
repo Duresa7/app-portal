@@ -87,6 +87,9 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     public string AgentKind { get; set; } = "";
 
     [BindProperty]
+    public string WingetSource { get; set; } = WingetSources.Winget;
+
+    [BindProperty]
     public string WingetId { get; set; } = "";
 
     [BindProperty]
@@ -201,7 +204,8 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             {
                 null or "" => null,
                 "winget" => new WingetPackageDefinition((WingetId ?? "").Trim(), WingetScope,
-                    EmptyToNull(WingetVersion), EmptyToNull(WingetExtraArgs), WingetRequiresReboot),
+                    EmptyToNull(WingetVersion), EmptyToNull(WingetExtraArgs), WingetRequiresReboot,
+                    WingetSource),
                 "direct" => new DirectPackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
                     DirectInstallerType, DirectSilentArgs, DirectSizeBytes ?? 0, EmptyToNull(DirectUninstallKey),
                     DirectScope, DirectRequiresReboot),
@@ -299,7 +303,8 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
 
         try
         {
-            HelperMessage = (await (helpers ?? PackageHelpers.Shared).LookupWingetAsync((WingetId ?? "").Trim(), ct)).Message;
+            HelperMessage = (await (helpers ?? PackageHelpers.Shared)
+                .LookupWingetAsync((WingetId ?? "").Trim(), ct, WingetSource)).Message;
         }
         catch (InvalidDataException ex)
         {
@@ -337,6 +342,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         {
             case WingetPackageDefinition winget:
                 AgentKind = "winget";
+                WingetSource = winget.Source;
                 WingetId = winget.Id;
                 WingetScope = winget.Scope;
                 WingetVersion = winget.Version ?? "";

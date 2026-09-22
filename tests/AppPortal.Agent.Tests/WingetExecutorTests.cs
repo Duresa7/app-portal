@@ -16,6 +16,29 @@ public sealed class WingetExecutorTests : IDisposable
     private static WingetPackageDefinition Package => new("Valve.Steam", "machine");
 
     [Fact]
+    public void A_winget_package_names_the_winget_source()
+    {
+        var arguments = WingetExecutor.Arguments(new WingetPackageDefinition("Valve.Steam", "machine"));
+
+        Assert.Contains("--source winget", arguments);
+        Assert.DoesNotContain("msstore", arguments);
+    }
+
+    [Fact]
+    public void A_store_package_names_the_store_source()
+    {
+        // The Store is a winget source, not a second mechanism. Naming it is the whole change: without
+        // --source, winget resolves a Store product id against winget-pkgs and reports that no
+        // installer matches this PC, which reads like a packaging fault rather than a wrong source.
+        var arguments = WingetExecutor.Arguments(
+            new WingetPackageDefinition("9WZDNCRFJ3TJ", "user", Source: WingetSources.Store));
+
+        Assert.Contains("--source msstore", arguments);
+        Assert.Contains("--id 9WZDNCRFJ3TJ", arguments);
+        Assert.Contains("--scope user", arguments);
+    }
+
+    [Fact]
     public async Task A_machine_scope_install_runs_winget_with_the_arguments_that_make_it_silent()
     {
         string? command = null;

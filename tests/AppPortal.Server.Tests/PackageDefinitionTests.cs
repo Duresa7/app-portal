@@ -36,7 +36,7 @@ public sealed class PackageDefinitionTests
     [Fact]
     public void Winget_json_preserves_optional_fields()
     {
-        const string json = """{"kind":"winget","id":"Valve.Steam","scope":"machine","version":null,"extraArgs":null,"requiresReboot":false}""";
+        const string json = """{"kind":"winget","id":"Valve.Steam","scope":"machine","version":null,"extraArgs":null,"requiresReboot":false,"source":"winget"}""";
         var definition = JsonSerializer.Deserialize<PackageDefinition>(json, Json)!;
         definition.Validate();
         Assert.Equal(json, JsonSerializer.Serialize(definition, Json));
@@ -150,6 +150,48 @@ public sealed class PackageDefinitionTests
     public void Winget_validation_rejects_invalid_ids_and_scope(string id, string scope)
     {
         Assert.Throws<InvalidDataException>(() => new WingetPackageDefinition(id, scope).Validate());
+    }
+
+    [Fact]
+    public void A_catalog_written_before_the_store_still_parses_and_still_means_winget()
+    {
+        // Source is the one field an existing catalog does not carry, so every app in one has to come
+        // back meaning what it meant before.
+        const string json = """{"kind":"winget","id":"Valve.Steam","scope":"machine","version":null,"extraArgs":null,"requiresReboot":false}""";
+        var definition = Assert.IsType<WingetPackageDefinition>(JsonSerializer.Deserialize<PackageDefinition>(json, Json));
+        definition.Validate();
+        Assert.Equal(WingetSources.Winget, definition.Source);
+    }
+
+    [Fact]
+    public void A_store_package_round_trips_and_keeps_its_source()
+    {
+        var store = new WingetPackageDefinition("9WZDNCRFJ3TJ", "user", Source: WingetSources.Store);
+        store.Validate();
+        var json = JsonSerializer.Serialize<PackageDefinition>(store, Json);
+        Assert.Contains("""  "source":"msstore" """.Trim(), json);
+        Assert.Equal(store, JsonSerializer.Deserialize<PackageDefinition>(json, Json));
+    }
+
+    [Theory]
+    // A Store product id has no publisher and no dot, so the winget rule rejects every one of them.
+    [InlineData("9WZDNCRFJ3TJ", WingetSources.Winget)]
+    // And a dotted winget id is not a Store product id, which is twelve characters of one word.
+    [InlineData("Valve.Steam", WingetSources.Store)]
+    [InlineData("9WZDNCRFJ3T", WingetSources.Store)]
+    [InlineData("9WZDNCRFJ3TJ9", WingetSources.Store)]
+    [InlineData("", WingetSources.Store)]
+    public void Each_source_refuses_the_other_sources_id(string id, string source)
+    {
+        Assert.Throws<InvalidDataException>(() => new WingetPackageDefinition(id, "user", Source: source).Validate());
+    }
+
+    [Fact]
+    public void A_source_that_is_neither_is_refused()
+    {
+        var error = Assert.Throws<InvalidDataException>(
+            () => new WingetPackageDefinition("Valve.Steam", "machine", Source: "chocolatey").Validate());
+        Assert.Contains("msstore", error.Message);
     }
 
     [Fact]

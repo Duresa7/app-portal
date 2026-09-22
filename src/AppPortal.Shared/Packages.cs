@@ -41,22 +41,65 @@ public abstract record PackageDefinition
     }
 }
 
+/// <summary>
+/// A package winget can install, from either of the two sources it reads. The Microsoft Store is not a
+/// separate install mechanism: it is winget's own <c>msstore</c> source, so the locator that finds
+/// winget.exe for SYSTEM, the output parser, the exit-code map and the inventory sweep all apply to a
+/// Store app unchanged.
+/// <para>
+/// <c>Source</c> is last rather than beside <c>Id</c> where it reads better. This is a positional
+/// record with callers that pass id and scope positionally, and a new string parameter anywhere before
+/// the end binds one of their strings to the wrong place, in silence, because the compiler has no way
+/// to tell three strings apart.
+/// </para>
+/// </summary>
 public sealed record WingetPackageDefinition(
     string Id,
     string Scope,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? Version = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? ExtraArgs = null,
-    bool RequiresReboot = false) : PackageDefinition
+    bool RequiresReboot = false,
+    string Source = WingetSources.Winget) : PackageDefinition
 {
     public override void Validate()
     {
-        if (string.IsNullOrWhiteSpace(Id) || !Regex.IsMatch(Id, @"\A[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+\z"))
+        if (Source is not (WingetSources.Winget or WingetSources.Store))
+        {
+            throw new InvalidDataException($"The source must be {WingetSources.Winget} or {WingetSources.Store}.");
+        }
+
+        if (Source == WingetSources.Store)
+        {
+            // A Store product id is twelve characters with no publisher and no dot in it, so the rule
+            // below would reject every Store app there is.
+            if (string.IsNullOrWhiteSpace(Id) || !Regex.IsMatch(Id, @"\A[A-Za-z0-9]{12}\z"))
+            {
+                throw new InvalidDataException(
+                    "A Microsoft Store package needs a twelve-character product id such as 9WZDNCRFJ3TJ, which is the last part of its address in the Store.");
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(Id) || !Regex.IsMatch(Id, @"\A[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+\z"))
         {
             throw new InvalidDataException("A winget package needs an id such as Valve.Steam.");
         }
 
         ValidateScope(Scope);
     }
+}
+
+/// <summary>The two sources winget reads, named once so nothing spells them twice.</summary>
+public static class WingetSources
+{
+    public const string Winget = "winget";
+
+    public const string Store = "msstore";
+
+    /// <summary>
+    /// What a Store package installs into. Every one of them is an MSIX and lands in a profile, so
+    /// machine scope is refusable by winget rather than by us, and the executor's existing message
+    /// explains a refusal without a code path of its own.
+    /// </summary>
+    public const string StoreScope = "user";
 }
 
 public sealed record DirectPackageDefinition(

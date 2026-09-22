@@ -47,7 +47,7 @@ public sealed partial class MainViewModel : ViewModelBase
             // still honours it is found out by the first call, which ends it with a notice if not.
             if (adminSession.IsSignedIn)
             {
-                AdminArea = new AdminAreaViewModel(adminSession.Api, NavigateTo);
+                AdminArea = new AdminAreaViewModel(adminSession.Api, NavigateTo, adminSession.Username);
             }
         }
         IsDemo = isDemo;
@@ -382,7 +382,7 @@ public sealed partial class MainViewModel : ViewModelBase
         IsSignInOpen = false;
         AdminNotice = null;
         // The area first, then the page: a section of 10 or more with no area is what opens this dialog.
-        AdminArea = new AdminAreaViewModel(_adminSession.Api, NavigateTo);
+        AdminArea = new AdminAreaViewModel(_adminSession.Api, NavigateTo, _adminSession.Username);
         if (SelectedSection < AdminSections.Dashboard)
         {
             SelectedSection = AdminSections.Dashboard;

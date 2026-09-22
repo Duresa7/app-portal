@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations;
 using AppPortal.Server.Action1;
 using AppPortal.Server.Admin;
 using AppPortal.Server.Catalog;
+using AppPortal.Server.Devices;
 using AppPortal.Shared;
 
 using Microsoft.AspNetCore.Authorization;
@@ -16,9 +17,16 @@ namespace AppPortal.Server.Pages.Admin.Catalog;
 /// every other id edits the app it names.
 /// </summary>
 [Authorize(Policy = AdminAuth.Policy)]
-public sealed class EditModel(CatalogStore catalog, IAction1Client action1, IConfiguration configuration, PackageHelpers? helpers = null) : PageModel
+public sealed class EditModel(CatalogStore catalog, IAction1Client action1, IConfiguration configuration,
+    DeviceManagerStore managers, PackageHelpers? helpers = null) : PageModel
 {
     public const string NewId = "new";
+
+    private IReadOnlyDictionary<string, int>? _devicesByManager;
+
+    /// <summary>How many enrolled devices report this package manager, read once per request.</summary>
+    public int DevicesWith(string manager)
+        => (_devicesByManager ??= managers.DevicesByManager()).GetValueOrDefault(manager);
 
     public bool IsNew { get; private set; }
 

@@ -29,7 +29,8 @@ public static class AdminDeviceEndpoints
             DeviceStore devices,
             EnrollmentKeyStore keys,
             InstallStore installs,
-            AppRequestStore requests) =>
+            AppRequestStore requests,
+            DeviceManagerStore managers) =>
         {
             if (devices.Find(id) is not { } device)
             {
@@ -42,7 +43,8 @@ public static class AdminDeviceEndpoints
             return Results.Ok(new AdminDeviceDetail(
                 Project(device, devices.InstallCounts(), keyNames),
                 [.. installs.ForDeviceId(device.Id).Take(RecentRows).Select(AdminInstallEndpoints.Project)],
-                [.. requests.ListForDeviceId(device.Id).Take(RecentRows).Select(AdminRequestEndpoints.Project)]));
+                [.. requests.ListForDeviceId(device.Id).Take(RecentRows).Select(AdminRequestEndpoints.Project)],
+                managers.ForDevice(device.Id)));
         });
 
         group.MapPost("/devices", (AdminDeviceCreate body, DeviceStore devices) =>

@@ -61,6 +61,10 @@ namespace AppPortal.Shared;
 /// An allowlist, never a list of characters to fear, because the list of characters to fear is the one
 /// nobody finishes writing.
 /// </param>
+/// <param name="VersionArguments">
+/// What makes the manager print its own version. Detection runs it, so a manager that is on the PC but
+/// broken does not get reported as present.
+/// </param>
 public sealed record PackageManagerDescriptor(
     string Name,
     string DisplayName,
@@ -76,7 +80,8 @@ public sealed record PackageManagerDescriptor(
     string MachineScope,
     string UserScope,
     int[] AlreadyInstalled,
-    Regex IdRule)
+    Regex IdRule,
+    string VersionArguments = "--version")
 {
     /// <summary>What this manager does when the catalog does not say.</summary>
     public string DefaultScope => Scopes[0];
@@ -262,7 +267,8 @@ public static class PackageManagers
             VersionFragment: null,
             MachineScope: "", UserScope: "",
             AlreadyInstalled: [],
-            IdRule: Port),
+            IdRule: Port,
+            VersionArguments: "version"),
 
         new("dotnet-tool", ".NET tool",
             "Command line tools published to NuGet. They install into one person's profile.",
@@ -289,7 +295,8 @@ public static class PackageManagers
             VersionFragment: "-RequiredVersion {version}",
             MachineScope: "-Scope AllUsers", UserScope: "-Scope CurrentUser",
             AlreadyInstalled: [],
-            IdRule: Word),
+            IdRule: Word,
+            VersionArguments: Pwsh + " \"$PSVersionTable.PSVersion.ToString()\""),
 
         new("powershell5-module", "Windows PowerShell module",
             "The same, for the Windows PowerShell 5.1 that every Windows PC already has.",
@@ -308,7 +315,8 @@ public static class PackageManagers
             VersionFragment: "-RequiredVersion {version}",
             MachineScope: "-Scope AllUsers", UserScope: "-Scope CurrentUser",
             AlreadyInstalled: [],
-            IdRule: Word),
+            IdRule: Word,
+            VersionArguments: Pwsh + " \"$PSVersionTable.PSVersion.ToString()\""),
     ];
 
     /// <summary>The manager of this name, or null when this build has never heard of it.</summary>

@@ -14,6 +14,12 @@ public static class AgentEndpoints
     /// <summary>A bound on one report, so a device cannot fill the database by mistake or on purpose.</summary>
     private const int MaxSoftwareEntries = 5000;
 
+    /// <summary>
+    /// Every manager the agent knows, once machine-wide and once for each of a few signed-in accounts.
+    /// Far more than a real PC reports, and far less than a device could use to fill the table.
+    /// </summary>
+    private const int MaxManagerEntries = 256;
+
     public static void MapAgentApi(this WebApplication app)
     {
         var group = app.MapGroup(ApiRoutes.Prefix + "/agent");
@@ -95,6 +101,24 @@ public static class AgentEndpoints
             // No account is the machine-wide sweep; an account is one profile's own software. They are
             // separate lists, so one sweep never erases the other.
             software.Replace(device.Id, request, account);
+            return Results.NoContent();
+        });
+
+        group.MapPost("/managers", (IReadOnlyList<DeviceManager> request, HttpContext context, DeviceManagerStore managers) =>
+        {
+            // Every manager the agent found, every time, so one that was removed leaves the record.
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            if (request.Count > MaxManagerEntries)
+            {
+                return Results.BadRequest(new ErrorMessage($"A device may report at most {MaxManagerEntries} package managers."));
+            }
+
+            if (request.Any(m => m.Account is { Length: > ApiHeaders.RequesterMaxLength }))
+            {
+                return Results.BadRequest(new ErrorMessage("That account name is too long."));
+            }
+
+            managers.Replace(device.Id, request);
             return Results.NoContent();
         });
 

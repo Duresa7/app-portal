@@ -42,7 +42,7 @@ public static class AdminRequestEndpoints
 
         // Not RequestFilter.Read: that falls back to pending for anything it does not know, which is
         // right for a tab in a browser and wrong for an API, where a typo would quietly narrow the list.
-        if (!Enum.TryParse<AppRequestStatus>(status, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed))
+        if (!AdminApi.TryName<AppRequestStatus>(status, out var parsed))
         {
             return false;
         }

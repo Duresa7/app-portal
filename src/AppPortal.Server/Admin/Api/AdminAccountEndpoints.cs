@@ -19,7 +19,9 @@ public static class AdminAccountEndpoints
             try
             {
                 var record = admins.Add(body?.Username ?? "", body?.Password ?? "");
-                return Results.Created($"{AdminApiRoutes.Admins}/{record.Id}", Project(record));
+                // No Location header: there is no route that reads one administrator, and a header that
+                // names a path answering 404 is worse than none. The body is the account as created.
+                return Results.Created((string?)null, Project(record));
             }
             catch (AdminRejectedException ex)
             {

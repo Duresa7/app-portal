@@ -76,18 +76,22 @@ public static class AdminCatalogEndpoints
         // has the bytes already and multipart would only be a shape to build and take apart again.
         group.MapPost("/catalog/import", async (HttpContext context, CatalogStore catalog) =>
         {
-            string json;
-            using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8))
+            // Bytes, one past the limit and no further: enough to tell the body is too big without holding
+            // all of it. Counting decoded characters instead let a file of multi-byte characters reach
+            // nearly twice the limit in memory before anything noticed.
+            var buffer = new byte[AdminApiLimits.MaxImportBytes + 1];
+            var read = await context.Request.Body.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false);
+            if (read > AdminApiLimits.MaxImportBytes)
             {
-                var buffer = new char[AdminApiLimits.MaxImportBytes + 1];
-                var read = await reader.ReadBlockAsync(buffer);
-                if (read > AdminApiLimits.MaxImportBytes)
-                {
-                    return AdminApi.Problem(StatusCodes.Status413PayloadTooLarge,
-                        $"A catalog file may be at most {AdminApiLimits.MaxImportBytes / (1024 * 1024)} MB.");
-                }
+                return AdminApi.Problem(StatusCodes.Status413PayloadTooLarge,
+                    $"A catalog file may be at most {AdminApiLimits.MaxImportBytes / (1024 * 1024)} MB.");
+            }
 
-                json = new string(buffer, 0, read);
+            // Decoded by a reader rather than GetString so a byte order mark is dropped, as it was before.
+            string json;
+            using (var reader = new StreamReader(new MemoryStream(buffer, 0, read), Encoding.UTF8))
+            {
+                json = await reader.ReadToEndAsync();
             }
 
             if (json.Trim().Length == 0)

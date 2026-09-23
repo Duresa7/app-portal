@@ -31,6 +31,7 @@ Settled on 2026-09-19. Change them here first, then in the plans that depend on 
 | 3 | 0.5.0 | Agent install engine: every shape a Windows install takes. winget and direct installers, job protocol with progress, engine preference and labels, per-user installs, device requirements, restarts, prerequisite chains, uninstall |
 | 5 | 0.7.0 | Every way software arrives: Microsoft Store apps, ten more package managers behind one package kind, which managers each PC has, managed packages in the installed list, and one way to add an app |
 | 4 | 0.8.0 | Full admin parity in the Windows client over an admin JSON API |
+| 6 | 0.9.0 | Per-user and restart installs proven on a real PC, approved requests that point to an app, and releases that can be signed |
 
 Milestone 2 was meant to be 0.4.0. Milestone 3 finished first and shipped as 0.5.0, so 0.4.0 was never cut and milestone 2's remainder ships as 0.6.0 instead. Versions only go forwards, so the number a milestone carries is a label rather than a promise.
 
@@ -84,6 +85,10 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M5-04](plans/M5-04-managed-packages-in-the-installed-list.md) | Managed packages in the installed list | M5-02 | Done |
 | [M5-05](plans/M5-05-one-way-to-add-an-app.md) | One way to add an app | M5-01, M5-02 | Done |
 | [M5-06](plans/M5-06-release-0.7.0.md) | Release 0.7.0 | M5-03, M5-04, M5-05 | Done |
+| [M6-01](plans/M6-01-proof-on-a-real-pc.md) | Proof on a real PC | M2-06, M3-07, M3-09, M3-11 | Open |
+| [M6-02](plans/M6-02-request-to-app.md) | From a request to an app | None | Open |
+| [M6-03](plans/M6-03-signed-releases.md) | Signed releases | M2-04, M2-06 | Open |
+| [M6-04](plans/M6-04-release-0.9.0.md) | Release 0.9.0 | M6-01, M6-02, M6-03 | Open |
 
 Milestone 4 shipped as [v0.8.0](https://github.com/Duresa7/app-portal/releases/tag/v0.8.0): the Windows client gains an Admin area that does everything the web admin does, over the admin JSON API. Every one of the client's admin calls was run against a real server before the release, and the release gate now draws the installed client's admin dashboard as well as its Apps page. The full gate, Windows jobs included, passed on the release commit and again on the tag, after four API fixes found in review (#71 to #74) had merged; the downloaded MSI and `AppPortalSetup.exe` match their `SHA256SUMS` lines and `ghcr.io/duresa7/app-portal-server:0.8.0` is readable without credentials. The client's pages themselves have been exercised in demo mode and against test doubles; a session revoked on the web signing the client out, and a key made in the client enrolling a PC, have been proven at the API but not yet clicked through on a PC.
 
@@ -139,9 +144,12 @@ graph LR
   M5-01 & M5-02 --> M5-05
   M5-03 & M5-04 & M5-05 --> M5-06
   M5-05 --> M4-04
+  M2-06 & M3-07 & M3-09 & M3-11 --> M6-01
+  M2-04 & M2-06 --> M6-03
+  M6-01 & M6-02 & M6-03 --> M6-04
 ```
 
-What can start today: milestones 1 to 5 have shipped. Milestone 6 is drafted under Next and has no packages yet.
+What can start today: milestones 1 to 5 have shipped. M6-01, M6-02 and M6-03 have no unfinished dependency and can be worked in parallel; M6-01 and M6-03 both change the Windows job in `ci.yml`, so whichever merges second rebases onto the first. M6-03 builds everything, but signs nothing until the owner's SignPath Foundation application is approved.
 
 ## Shared interface
 
@@ -158,14 +166,10 @@ Names every package must use so that parallel work fits together. Details live i
 
 ## Next
 
-Milestone 6 is drafted, not planned: its packages are not cut yet, and what goes in is a decision still to make.
-
-- **Proof on a real PC.** A per-user install and an install that finishes at a restart have never run outside a test double. A gate step, or a scripted check run on a Windows machine before a release, that signs a test account in, installs one per-user app, and restarts through one install, would close the caveat that has stood since 0.5.0.
-- **Code signing.** The MSI, `AppPortalSetup.exe` and the executables are unsigned, so Windows SmartScreen warns on every download and an administrator has nothing to check the files against but `SHA256SUMS`. It needs a certificate, which is a cost and a choice of supplier.
-- **From a request to an app.** An approved request records a decision and nothing else. Letting the approval open a new catalog entry prefilled from the request would remove the step an administrator does by hand every time.
+Milestone 6 is planned: see its packages in the table above. The next milestone is drafted when 0.9.0 ships.
 
 ## Deferred
 
-Reviewed for 0.8.0: nothing here became urgent, and two items, code signing and turning a request into an app, moved to the draft above.
+Reviewed for 0.8.0: nothing here became urgent, and two items, code signing and turning a request into an app, became milestone 6.
 
 Not planned in any milestone: installing the content a launcher manages, installing for every account on a device at once, repairing an install in place, version constraints on a prerequisite, OpenID Connect admin sign-in, group-to-role mapping for directory accounts, email notifications, per-group catalogs, other RMM engines such as Intune, updater rollback on Action1-only devices.

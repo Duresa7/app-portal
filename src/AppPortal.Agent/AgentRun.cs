@@ -145,6 +145,10 @@ public static class AgentRun
                     provider.GetRequiredService<IProcessRunner>(),
                     new InstalledClientPresence(updatePaths.InstallDir),
                     updatePaths,
+                    new UpdateSignaturePolicy(
+                        new WindowsFileSignatureReader(),
+                        Environment.ProcessPath ?? Path.Combine(updatePaths.InstallDir, "AppPortal.Agent.exe"),
+                        provider.GetRequiredService<ILogger<UpdateSignaturePolicy>>()),
                     provider.GetRequiredService<ILogger<SelfUpdate>>());
                 return new UpdateWorker(
                     update,

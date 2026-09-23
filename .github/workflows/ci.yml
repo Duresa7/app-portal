@@ -6,10 +6,19 @@ name: CI
 # second leg. A v* tag then runs the release job, the only place a GitHub release or a
 # registry image is created, and only after all of it passed.
 #
-# The two Windows jobs are the slow part of this workflow. They are the jobs that must pass before
+# The Windows jobs are the slow part of this workflow. They are the jobs that must pass before
 # anything ships, not the jobs that must pass before every commit. Run the full gate from the Actions
 # tab in the days before a release, and treat a red result there as blocking the tag. This repository
 # is public, so standard GitHub-hosted runners are free: the gate saves waiting, not money.
+#
+# The Windows release files are built once, by build-windows, always on a GitHub-hosted runner, and
+# installer-verify installs and tests exactly those files wherever WINDOWS_RUNNER sends it. The release
+# job publishes the same artifacts, so what reaches devices is byte for byte what was tested.
+#
+# Signing through SignPath Foundation is switched on by the SIGNPATH_ORGANIZATION_ID repository
+# variable and needs the SIGNPATH_API_TOKEN secret. The gate turns that into one of three modes: release
+# on a v* tag, test on a dispatch of main with "sign" ticked, and off everywhere else, including every
+# pull request and fork. With it off, the release is built exactly as before, unsigned.
 
 on:
   push:
@@ -20,6 +29,10 @@ on:
     inputs:
       windows:
         description: Run the Windows jobs as well
+        type: boolean
+        default: true
+      sign:
+        description: Test-sign the Windows build through SignPath (main only, when SignPath is set up)
         type: boolean
         default: true
 
@@ -76,16 +89,40 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       windows: ${{ steps.decide.outputs.windows }}
+      signing: ${{ steps.decide.outputs.signing }}
     steps:
       - id: decide
+        env:
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          # Secrets cannot appear in an if:, so only whether it exists is passed, never its value.
+          HAS_SIGNPATH_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+          SIGN_INPUT: ${{ inputs.sign }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "windows=${{ inputs.windows }}" >> "$GITHUB_OUTPUT"
+            windows="${{ inputs.windows }}"
           elif [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
-            echo "windows=true" >> "$GITHUB_OUTPUT"
+            windows=true
           else
-            echo "windows=false" >> "$GITHUB_OUTPUT"
+            windows=false
           fi
+          echo "windows=$windows" >> "$GITHUB_OUTPUT"
+
+          # Only a push or a dispatch can sign, so no pull request ever reaches SignPath, and a fork
+          # fails the repository test even if it copies the variable.
+          signing=off
+          if [ "$windows" = true ] && [ "$GITHUB_REPOSITORY" = Duresa7/app-portal ] && [ -n "$SIGNPATH_ORGANIZATION_ID" ]; then
+            if [ "$GITHUB_EVENT_NAME" = push ] && [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              signing=release
+            elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" = refs/heads/main ] && [ "$SIGN_INPUT" = true ]; then
+              signing=test
+            fi
+            if [ "$signing" != off ] && [ "$HAS_SIGNPATH_TOKEN" != true ]; then
+              echo "::error::SIGNPATH_ORGANIZATION_ID is set but the SIGNPATH_API_TOKEN secret is not. Add the secret, or delete the variable to build unsigned."
+              exit 1
+            fi
+          fi
+          echo "signing=$signing" >> "$GITHUB_OUTPUT"
+          echo "Signing: $signing"
 
   test:
     name: Test (${{ matrix.os }})
@@ -112,14 +149,26 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: '**/TestResults/*.trx'
 
-  installer-verify:
-    name: Build, install and verify on Windows
+  build-windows:
+    name: Build the Windows release files
     needs: [gate, version]
     if: needs.gate.outputs.windows == 'true'
-    # windows-latest unless the WINDOWS_RUNNER repository variable names a different runner.
-    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    # GitHub-hosted whatever WINDOWS_RUNNER says. SignPath signs only what a GitHub-hosted runner built
+    # from this repository, and building here in every run means the files installer-verify tests are
+    # the files the release publishes, signed or not.
+    runs-on: windows-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      actions: read        # lets SignPath fetch the artifacts it signs, through github.token
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      SIGNING: ${{ needs.gate.outputs.signing || 'off' }}
+      SIGNPATH_POLICY: ${{ needs.gate.outputs.signing == 'release' && 'release-signing' || 'test-signing' }}
+    # Each stage embeds the one before it, so signing follows the build: the payload before WiX
+    # harvests it, the MSI after Protect-EnrollmentLogging.ps1 and before the bootstrapper carries it,
+    # and the bootstrapper last. Each signing stage uploads, submits, then puts the signed files back
+    # and checks them. A release request waits for a person to approve it, hence the hour.
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -132,11 +181,73 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Client publish failed.' }
           dotnet publish src/AppPortal.Agent -c Release -r win-x64 --self-contained -o out/agent
           if ($LASTEXITCODE -ne 0) { throw 'Agent publish failed.' }
+      - name: Hand the payloads to SignPath
+        id: payloads
+        if: env.SIGNING == 'test' || env.SIGNING == 'release'
+        uses: actions/upload-artifact@v7
+        with:
+          # Zipped and rooted at out/, which is what .signpath/artifact-configurations/payloads.xml expects.
+          name: unsigned-payloads
+          path: |
+            out/client/AppPortal*.exe
+            out/client/AppPortal*.dll
+            out/agent/AppPortal.Agent.exe
+          retention-days: 1
+          if-no-files-found: error
+      - name: Sign the payloads
+        if: env.SIGNING == 'test' || env.SIGNING == 'release'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'app-portal' }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: payloads
+          github-artifact-id: ${{ steps.payloads.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/payloads
+      - name: Put the signed payloads back and check them
+        if: env.SIGNING == 'test' || env.SIGNING == 'release'
+        shell: pwsh
+        run: |
+          Copy-Item signed/payloads/client/* out/client -Force
+          Copy-Item signed/payloads/agent/AppPortal.Agent.exe out/agent -Force
+          ./deploy/windows/Test-Signatures.ps1 -Mode $env:SIGNING -Path out/client, out/agent
       - name: Build the MSI
         shell: pwsh
         run: |
           dotnet build src/AppPortal.Installer/AppPortal.Installer.wixproj -c Release -o out/installer
           if ($LASTEXITCODE -ne 0) { throw 'MSI build failed.' }
+      - name: Hand the MSI to SignPath
+        id: msi
+        if: env.SIGNING == 'test' || env.SIGNING == 'release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-msi
+          path: out/installer/AppPortal-${{ env.VERSION }}-x64.msi
+          retention-days: 1
+          if-no-files-found: error
+      - name: Sign the MSI
+        if: env.SIGNING == 'test' || env.SIGNING == 'release'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'app-portal' }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: msi
+          github-artifact-id: ${{ steps.msi.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/msi
+      - name: Put the signed MSI back and check it
+        if: env.SIGNING == 'test' || env.SIGNING == 'release'
+        shell: pwsh
+        run: |
+          # Nothing opens the MSI for writing after this; the bootstrapper embeds it unchanged.
+          Copy-Item "signed/msi/AppPortal-$env:VERSION-x64.msi" out/installer -Force
+          ./deploy/windows/Test-Signatures.ps1 -Mode $env:SIGNING -Path "out/installer/AppPortal-$env:VERSION-x64.msi"
       - name: Build the bootstrapper around the MSI
         shell: pwsh
         run: |
@@ -150,6 +261,94 @@ jobs:
             -p:PublishSingleFile=true -p:AppPortalMsiPath="$msi" -o out/setup
           if ($LASTEXITCODE -ne 0) { throw 'Bootstrapper publish failed.' }
           if (-not (Test-Path out/setup/AppPortalSetup.exe)) { throw 'No AppPortalSetup.exe was produced.' }
+      - name: Hand the bootstrapper to SignPath
+        id: setup
+        if: env.SIGNING == 'test' || env.SIGNING == 'release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-setup
+          path: out/setup/AppPortalSetup.exe
+          retention-days: 1
+          if-no-files-found: error
+      - name: Sign the bootstrapper
+        if: env.SIGNING == 'test' || env.SIGNING == 'release'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'app-portal' }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: setup
+          github-artifact-id: ${{ steps.setup.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/setup
+      - name: Put the signed bootstrapper back and check it
+        if: env.SIGNING == 'test' || env.SIGNING == 'release'
+        shell: pwsh
+        run: |
+          Copy-Item signed/setup/AppPortalSetup.exe out/setup -Force
+          ./deploy/windows/Test-Signatures.ps1 -Mode $env:SIGNING -Path out/setup/AppPortalSetup.exe
+      - name: Check every file the release carries
+        shell: pwsh
+        run: |
+          # With signing off this only reports. With it on, a file SignPath skipped fails here by name.
+          ./deploy/windows/Test-Signatures.ps1 -Mode $env:SIGNING `
+            -Path out/client, out/agent, "out/installer/AppPortal-$env:VERSION-x64.msi", out/setup/AppPortalSetup.exe
+      - name: The release feed still parses
+        shell: pwsh
+        env:
+          # A device asks anonymously. This runner shares its address with every other runner on it, so
+          # the anonymous allowance is long spent and GitHub answers 403 instead of the feed.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # Every installed agent reads this feed to find its next version. A change in GitHub's answer
+          # should fail a build here, not stop a fleet updating. It downloads nothing. The last line
+          # says which signature rule the agent applies to updates: a release-signed agent that did not
+          # know it was signed would take an update from anybody.
+          $output = ./out/agent/AppPortal.Agent.exe --check
+          $code = $LASTEXITCODE
+          $output
+          if ($code -ne 0) { throw 'The agent could not read the release feed.' }
+          if ($env:SIGNING -eq 'release' -and -not ($output -match 'signed by SignPath Foundation')) {
+            throw 'The release-signed agent does not read its own signature as SignPath Foundation.'
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AppPortal-msi
+          path: out/installer/*.msi
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: hashFiles('out/setup/AppPortalSetup.exe') != ''
+        with:
+          name: AppPortal-setup
+          path: out/setup/AppPortalSetup.exe
+          if-no-files-found: error
+
+  installer-verify:
+    name: Install and verify on Windows
+    needs: [gate, version, build-windows]
+    if: needs.gate.outputs.windows == 'true'
+    # windows-latest unless the WINDOWS_RUNNER repository variable names a self-hosted runner. It may
+    # run anywhere because it builds nothing that ships: it installs the files build-windows made.
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      SIGNING: ${{ needs.gate.outputs.signing || 'off' }}
+    steps:
+      # The checkout carries the scripts, and ci-installer-test.ps1 builds the server it installs against.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: AppPortal-msi
+          path: out/installer
+      - uses: actions/download-artifact@v8
+        with:
+          name: AppPortal-setup
+          path: out/setup
       - name: Leave nothing of an earlier run in place
         shell: pwsh
         run: |
@@ -171,39 +370,33 @@ jobs:
           New-Item -ItemType Directory -Force previous | Out-Null
           gh release download --repo "$env:GITHUB_REPOSITORY" --pattern '*-x64.msi' --dir previous
           if ($LASTEXITCODE -ne 0) { 'No previous release MSI; the upgrade check will be skipped.' }
+      - name: Signing never goes backwards
+        shell: pwsh
+        run: |
+          # A signed agent installs only updates signed by the same publisher. Once a release is signed,
+          # an unsigned one after it strands every PC that took the signed one.
+          $previous = Get-ChildItem previous/*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($previous) {
+              $signature = Get-AuthenticodeSignature $previous.FullName
+              $wasSigned = $signature.Status -eq 'Valid' -and
+                  $signature.SignerCertificate.GetNameInfo('SimpleName', $false) -eq 'SignPath Foundation'
+              if ($wasSigned -and $env:SIGNING -ne 'release') {
+                  $text = "$($previous.Name) is signed and this build is not. Every agent that release installed refuses an unsigned update. Restore the SignPath variable and secret."
+                  if ($env:GITHUB_REF -like 'refs/tags/v*') { throw $text } else { "::warning::$text" }
+              }
+          }
       - name: Install, enroll, use and remove
         shell: pwsh
         run: |
           $arguments = @{
             Msi     = "out/installer/AppPortal-$env:VERSION-x64.msi"
             Version = $env:VERSION
+            Signing = $env:SIGNING
           }
           if (Test-Path out/setup/AppPortalSetup.exe) { $arguments.Setup = 'out/setup/AppPortalSetup.exe' }
           $previous = Get-ChildItem previous/*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($previous) { $arguments.PreviousMsi = $previous.FullName }
           ./deploy/windows/ci-installer-test.ps1 @arguments
-      - name: The release feed still parses
-        shell: pwsh
-        env:
-          # A device asks anonymously. This runner shares its address with every other runner on it, so
-          # the anonymous allowance is long spent and GitHub answers 403 instead of the feed.
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          # Every installed agent reads this feed to find its next version. A change in GitHub's answer
-          # should fail a build here, not stop a fleet updating. It downloads nothing.
-          ./out/agent/AppPortal.Agent.exe --check
-          if ($LASTEXITCODE -ne 0) { throw 'The agent could not read the release feed.' }
-      - uses: actions/upload-artifact@v7
-        with:
-          name: AppPortal-msi
-          path: out/installer/*.msi
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v7
-        if: hashFiles('out/setup/AppPortalSetup.exe') != ''
-        with:
-          name: AppPortal-setup
-          path: out/setup/AppPortalSetup.exe
-          if-no-files-found: error
       - name: Keep the logs of a failed install
         uses: actions/upload-artifact@v7
         if: failure()
@@ -235,7 +428,7 @@ jobs:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: [version, test, installer-verify, server]
+    needs: [version, gate, test, build-windows, installer-verify, server]
     permissions:
       contents: write
       packages: write
@@ -275,6 +468,6 @@ jobs:
             out/AppPortal-*-x64.msi
             out/AppPortalSetup.exe
             out/SHA256SUMS
-          body: "Run AppPortalSetup.exe on one PC, or deploy the MSI with SERVERURL and ENROLLMENTKEY for a fleet. The client zip is retired: move a PC installed from one by deploying this MSI to it once."
+          body: "Run AppPortalSetup.exe on one PC, or deploy the MSI with SERVERURL and ENROLLMENTKEY for a fleet. The client zip is retired: move a PC installed from one by deploying this MSI to it once.${{ needs.gate.outputs.signing == 'release' && ' The MSI, AppPortalSetup.exe and the App Portal executables are signed by SignPath Foundation; the README says how to check.' || '' }}"
           fail_on_unmatched_files: true
           generate_release_notes: true

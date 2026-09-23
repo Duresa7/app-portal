@@ -220,6 +220,88 @@ public sealed class SelfUpdateTests : IDisposable
         Assert.True(status.CheckedAt > DateTimeOffset.MinValue);
     }
 
+    [Fact]
+    public async Task A_signed_agent_refuses_an_unsigned_release_and_runs_nothing()
+    {
+        var processes = new FakeProcesses();
+        var signatures = new FakeSignatures(Foundation, Unsigned);
+
+        var status = await Update(new FakeFeed(Release("0.4.1")), new FakeDownloader(_paths), processes, signatures: signatures)
+            .RunAsync(CancellationToken.None);
+
+        Assert.Equal(UpdateResult.Failed, status.Result);
+        Assert.Equal(
+            "AppPortal-0.4.1-x64.msi is not signed, and the App Portal on this PC is signed by SignPath Foundation. It was not installed.",
+            status.Message);
+        Assert.Equal("0.4.0", status.InstalledVersion);
+        Assert.Equal("0.4.1", status.LatestVersion);
+        Assert.Null(status.StagedVersion);
+        Assert.Empty(processes.Started);
+        Assert.Contains("AppPortal-0.4.1-x64.msi", signatures.Read);
+        // Left in place, so the next pass checks it again without downloading it again.
+        Assert.True(File.Exists(_paths.MsiPath("AppPortal-0.4.1-x64.msi")));
+    }
+
+    [Fact]
+    public async Task A_refused_release_is_never_staged_behind_restart_to_update()
+    {
+        var processes = new FakeProcesses();
+        var other = new FileSignature(SignatureState.Valid, "Contoso Ltd", "Contoso Ltd", null);
+
+        var status = await Update(new FakeFeed(Release("0.4.1")), new FakeDownloader(_paths), processes, clientIsRunning: true,
+            signatures: new FakeSignatures(Foundation, other)).RunAsync(CancellationToken.None);
+
+        Assert.Equal(UpdateResult.Failed, status.Result);
+        Assert.Contains("is signed by Contoso Ltd, not by SignPath Foundation", status.Message);
+        Assert.Null(status.StagedVersion);
+        Assert.Empty(processes.Started);
+
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
+        var written = JsonSerializer.Deserialize<UpdateStatus>(File.ReadAllText(_paths.StatusPath), options);
+        Assert.NotNull(written);
+        Assert.Equal(UpdateResult.Failed, written.Result);
+        Assert.Null(written.StagedVersion);
+        Assert.Equal(status.Message, written.Message);
+    }
+
+    [Fact]
+    public async Task A_signed_agent_installs_a_release_signed_by_the_same_publisher()
+    {
+        var processes = new FakeProcesses();
+
+        var status = await Update(new FakeFeed(Release("0.4.1")), new FakeDownloader(_paths), processes,
+            signatures: new FakeSignatures(Foundation, Foundation)).RunAsync(CancellationToken.None);
+
+        Assert.Equal(UpdateResult.Installed, status.Result);
+        var started = Assert.Single(processes.Started);
+        Assert.Contains("AppPortal-0.4.1-x64.msi", started.Arguments);
+    }
+
+    [Fact]
+    public async Task An_unsigned_agent_stages_an_unsigned_release_exactly_as_before()
+    {
+        var processes = new FakeProcesses();
+
+        var status = await Update(new FakeFeed(Release("0.4.1")), new FakeDownloader(_paths), processes, clientIsRunning: true,
+            signatures: new FakeSignatures(Unsigned, Unsigned)).RunAsync(CancellationToken.None);
+
+        Assert.Equal(UpdateResult.Available, status.Result);
+        Assert.Equal("0.4.1", status.StagedVersion);
+        Assert.Empty(processes.Started);
+    }
+
+    [Fact]
+    public async Task Nothing_is_read_for_signatures_when_there_is_nothing_to_install()
+    {
+        var signatures = new FakeSignatures(Foundation, Unsigned);
+
+        var status = await Update(new FakeFeed(Release("0.4.0")), new FakeDownloader(_paths), new FakeProcesses(), signatures: signatures)
+            .RunAsync(CancellationToken.None);
+
+        Assert.Equal(UpdateResult.UpToDate, status.Result);
+        Assert.Empty(signatures.Read);
+    }
+
     private static ReleaseInfo Release(string version) => new(
         Version.Parse(version + ".0"),
         "v" + version,
@@ -234,9 +316,29 @@ public sealed class SelfUpdateTests : IDisposable
         File.WriteAllText(_paths.MsiPath($"AppPortal-{version}-x64.msi"), "old");
     }
 
-    private SelfUpdate Update(IReleaseFeed feed, IUpdateDownloader downloads, IProcessRunner processes, bool clientIsRunning = false)
-        => new(feed, downloads, processes, new FakeClient(clientIsRunning), _paths, NullLogger<SelfUpdate>.Instance,
-            () => Version.Parse("0.4.0.0"));
+    private SelfUpdate Update(IReleaseFeed feed, IUpdateDownloader downloads, IProcessRunner processes, bool clientIsRunning = false,
+        FakeSignatures? signatures = null)
+        => new(feed, downloads, processes, new FakeClient(clientIsRunning), _paths,
+            new UpdateSignaturePolicy(signatures ?? new FakeSignatures(Unsigned, Unsigned), Path.Combine(_paths.InstallDir, AgentExe)),
+            NullLogger<SelfUpdate>.Instance, () => Version.Parse("0.4.0.0"));
+
+    private const string AgentExe = "AppPortal.Agent.exe";
+
+    private static readonly FileSignature Unsigned = new(SignatureState.Unsigned, null, null, null);
+
+    private static readonly FileSignature Foundation = new(SignatureState.Valid, "SignPath Foundation", "SignPath Foundation", null);
+
+    /// <summary>One answer for the running agent and one for every downloaded MSI.</summary>
+    private sealed class FakeSignatures(FileSignature agent, FileSignature msi) : IFileSignatureReader
+    {
+        public List<string> Read { get; } = [];
+
+        FileSignature IFileSignatureReader.Read(string path)
+        {
+            Read.Add(Path.GetFileName(path));
+            return string.Equals(Path.GetFileName(path), AgentExe, StringComparison.OrdinalIgnoreCase) ? agent : msi;
+        }
+    }
 
     private sealed class FakeFeed(ReleaseInfo? release, Exception? throws = null) : IReleaseFeed
     {

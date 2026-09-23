@@ -223,10 +223,17 @@ public sealed class UpdateWorkerTests : IDisposable
         ILogger<UpdateWorker>? logger = null)
     {
         var update = new SelfUpdate(feed, new UnusedDownloader(), processes, new ClosedClient(), _paths,
+            new UpdateSignaturePolicy(new UnusedSignatures(), Path.Combine(_paths.InstallDir, "AppPortal.Agent.exe")),
             NullLogger<SelfUpdate>.Instance, () => Version.Parse("0.4.0.0"));
         // windows: false keeps schtasks and icacls out of the loop; both have tests that call them directly.
         return new UpdateWorker(update, _paths, processes, registry ?? new FakeRegistry(),
             logger ?? NullLogger<UpdateWorker>.Instance, TimeSpan.FromMilliseconds(20), windows: false);
+    }
+
+    /// <summary>Nothing here downloads an MSI, so nothing should ask who signed one.</summary>
+    private sealed class UnusedSignatures : IFileSignatureReader
+    {
+        public FileSignature Read(string path) => throw new InvalidOperationException("No signature should be read.");
     }
 
     private sealed class CountingFeed : IReleaseFeed

@@ -17,6 +17,7 @@ public sealed class SelfUpdate(
     IProcessRunner processes,
     IClientPresence client,
     UpdatePaths paths,
+    UpdateSignaturePolicy signatures,
     ILogger<SelfUpdate> logger,
     Func<Version?>? installedVersion = null,
     TimeSpan? timeout = null)
@@ -110,6 +111,17 @@ public sealed class SelfUpdate(
         {
             logger.LogWarning("{Version} could not be downloaded ({Message})", latestText, ex.Message);
             return Failed(installed, latestText, ex.Message);
+        }
+
+        // Before anything is staged: a refused MSI behind "Restart to update" is a button that fails.
+        // The file stays where it is, so the next pass checks it again without downloading it again,
+        // and Prune takes it once a newer release arrives. Only SYSTEM and Administrators can write to
+        // the updates folder, so nobody else can swap it between this check and msiexec opening it.
+        var refusal = signatures.Refusal(msi);
+        if (refusal is not null)
+        {
+            logger.LogError("{Refusal}", refusal);
+            return Failed(installed, latestText, refusal);
         }
 
         Prune(latest.Version);

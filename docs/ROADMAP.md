@@ -77,7 +77,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M4-03](plans/M4-03-client-installs-and-requests.md) | Client admin: installs and requests | M4-02 | Done |
 | [M4-04](plans/M4-04-client-catalog.md) | Client admin: catalog | M4-02 | Done |
 | [M4-05](plans/M4-05-client-devices-keys-admins.md) | Client admin: devices, keys, admins | M4-02 | Done |
-| [M4-06](plans/M4-06-release-0.8.0.md) | Release 0.8.0 | M4-03, M4-04, M4-05 | In review |
+| [M4-06](plans/M4-06-release-0.8.0.md) | Release 0.8.0 | M4-03, M4-04, M4-05 | Done |
 | [M5-01](plans/M5-01-microsoft-store-apps.md) | Microsoft Store apps | M3-03 | Done |
 | [M5-02](plans/M5-02-package-managers.md) | Package managers as one kind | M3-02, M3-05 | Done |
 | [M5-03](plans/M5-03-managers-on-a-device.md) | Which package managers a device has | M5-02 | Done |
@@ -85,7 +85,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M5-05](plans/M5-05-one-way-to-add-an-app.md) | One way to add an app | M5-01, M5-02 | Done |
 | [M5-06](plans/M5-06-release-0.7.0.md) | Release 0.7.0 | M5-03, M5-04, M5-05 | Done |
 
-Milestone 4 is the 0.8.0 release: the Windows client gains an Admin area that does everything the web admin does, over the admin JSON API. Every one of the client's admin calls was run against a real server before the release, and the release gate now draws the installed client's admin dashboard as well as its Apps page. The client's pages themselves have been exercised in demo mode and against test doubles; a session revoked on the web signing the client out, and a key made in the client enrolling a PC, have been proven at the API but not yet clicked through on a PC.
+Milestone 4 shipped as [v0.8.0](https://github.com/Duresa7/app-portal/releases/tag/v0.8.0): the Windows client gains an Admin area that does everything the web admin does, over the admin JSON API. Every one of the client's admin calls was run against a real server before the release, and the release gate now draws the installed client's admin dashboard as well as its Apps page. The full gate, Windows jobs included, passed on the release commit and again on the tag, after four API fixes found in review (#71 to #74) had merged; the downloaded MSI and `AppPortalSetup.exe` match their `SHA256SUMS` lines and `ghcr.io/duresa7/app-portal-server:0.8.0` is readable without credentials. The client's pages themselves have been exercised in demo mode and against test doubles; a session revoked on the web signing the client out, and a key made in the client enrolling a PC, have been proven at the API but not yet clicked through on a PC.
 
 Milestone 5 shipped as [v0.7.0](https://github.com/Duresa7/app-portal/releases/tag/v0.7.0). The full gate, Windows jobs included, passed on the release commit and again on the tag; the downloaded MSI and `AppPortalSetup.exe` match their `SHA256SUMS` lines and `ghcr.io/duresa7/app-portal-server:0.7.0` is readable without credentials. From this release the release gate also has the agent install a real package on a real PC: `ci-installer-test.ps1` asks for a PowerShell module through Windows PowerShell, the agent installs it as SYSTEM, the server lists it under Installed as the catalog app, and the removal takes it off again. So the claim below that no installer has run outside a fake process runner no longer holds for machine-wide installs. **Still unproven on a real PC: a per-user install, which is the Win32 session code, and an install that finishes at a restart.** Prove both on one PC before trusting them to a fleet.
 
@@ -141,7 +141,7 @@ graph LR
   M5-05 --> M4-04
 ```
 
-What can start today: milestones 1, 2, 3 and 5 have shipped, and milestone 4 is complete apart from its release, M4-06. Milestone 6 is drafted under Next and has no packages yet.
+What can start today: milestones 1 to 5 have shipped. Milestone 6 is drafted under Next and has no packages yet.
 
 ## Shared interface
 

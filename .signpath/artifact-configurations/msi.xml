@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Source of truth for the SignPath artifact configuration "msi". Paste it into SignPath when it changes.
+     The MSI is signed after Protect-EnrollmentLogging.ps1 has run and before the bootstrapper embeds it. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <msi-file path="AppPortal-*-x64.msi" product-name="App Portal"><authenticode-sign /></msi-file>
+  </zip-file>
+</artifact-configuration>

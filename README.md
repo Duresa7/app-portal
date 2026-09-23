@@ -261,6 +261,38 @@ The client's **Requests** section accepts up to 500 characters describing the so
 
 ![Requests in the Windows client](docs/images/requests.png)
 
+## Checking a download
+
+Every release lists the SHA-256 of its MSI and of `AppPortalSetup.exe` in `SHA256SUMS`. Compare a download with it before deploying:
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\AppPortal-<version>-x64.msi
+```
+
+From the first signed release onwards, the MSI, `AppPortalSetup.exe` and the App Portal executables and libraries inside them carry an Authenticode signature too. Check it in PowerShell:
+
+```powershell
+Get-AuthenticodeSignature .\AppPortalSetup.exe | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+Get-AuthenticodeSignature .\AppPortal-<version>-x64.msi | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+```
+
+Expect `Valid`, a signer that begins `CN=SignPath Foundation`, and a timestamp. In Explorer the same is under the file's **Properties**, **Digital Signatures** tab.
+
+The publisher is SignPath Foundation, not the project's author, because the certificate is the foundation's: it signs open-source projects for free and holds the key. What its signature attests is that the file was built by this repository's workflow on a GitHub-hosted runner, from a `v*` tag, and that the owner approved the signing request by hand. See the code signing policy below. Releases before the first signed one carry no signature, and `SHA256SUMS` is the only check they have.
+
+A signature is not a SmartScreen pass. A newly published file can still get a SmartScreen prompt until it has built up reputation, but the prompt names SignPath Foundation instead of "Unknown publisher".
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: the repository's maintainers, [Duresa7](https://github.com/Duresa7). A change from anybody else arrives as a pull request and is reviewed by a maintainer before it is merged.
+- Approvers: [Duresa7](https://github.com/Duresa7), who approves every release signing request by hand.
+
+What is signed: `AppPortal.exe`, `AppPortal.dll`, `AppPortal.Shared.dll`, `AppPortal.Agent.exe`, the MSI and `AppPortalSetup.exe`, the project's own files and nothing a third party published. The release workflow builds them on a GitHub-hosted runner and submits them to SignPath in build order, payload, MSI, then bootstrapper, so each package carries files that are already signed.
+
+Privacy: App Portal sends data only to systems its administrator configures: the App Portal server named at install, GitHub's release feed for updates, and the package sources in the catalog. It sends nothing to the project's authors or to SignPath.
+
 ## Updates
 
 The agent keeps the whole installation current, itself included. It asks GitHub for the newest release when the service starts, once a day at a random second in the noon hour, and within ten seconds of a client asking. The random second keeps a site's worth of machines from arriving together. A release newer than what is installed is downloaded as `AppPortal-<version>-x64.msi`, checked against that release's `SHA256SUMS`, and kept under `%ProgramData%\AppPortal\updates`. Anything that does not match its published hash is discarded.
@@ -269,7 +301,11 @@ Applying it needs the client closed, because Windows Installer cannot replace fi
 
 `%ProgramData%\AppPortal\update.json` is what the client's banners read: the installed version, the newest published one, the one waiting to be applied, and a result of `UpToDate`, `Available`, `Installed`, `Offline` or `Failed`. The client never reaches the release feed itself. All it can do is leave `update.request` in the same folder, which the agent takes and deletes within ten seconds; the download and the install are the agent's, as SYSTEM. So that a signed-in user can leave that file, the agent grants the Users group the right to add a file to that one folder and nothing else, which leaves `client.json` and `enroll.json` as they were.
 
-An `"updateRepository": "owner/name"` in `client.json` points a test fleet at a fork. `AppPortal.Agent.exe --check` prints what that repository publishes and downloads nothing.
+Before it runs or stages an MSI, the agent also checks who signed it. The rule starts with the first signed agent: an agent that is itself validly signed installs only an MSI validly signed by the same publisher, and refuses anything else with `Failed` and the reason in `update.json`, leaving the file unrun. An agent that is not signed, which is every release before the first signed one, a build its owner compiled, and a test-signed rehearsal, checks updates by their SHA-256 alone, as before. The publisher is not written into the agent; it is whoever signed the running agent, so a self-hoster who signs with their own certificate gets the same protection. The decision is recorded in [ADR 0002](docs/adr/0002-a-signed-agent-takes-only-signed-updates.md).
+
+Going back to unsigned builds is deliberate work: deploy an unsigned MSI to the fleet once by hand, the same way the fleet was first deployed. After that the agents are unsigned and check updates by SHA-256 alone again. The same applies to a signed fleet pointed at a fork whose releases are unsigned or signed by somebody else.
+
+An `"updateRepository": "owner/name"` in `client.json` points a test fleet at a fork. `AppPortal.Agent.exe --check` prints what that repository publishes, and which signature rule this agent applies, and downloads nothing.
 
 A PC upgraded from a zip installation still carries three things Windows Installer knows nothing about: the **App Portal Updater** scheduled task, `AppPortal.Updater.exe` and `Uninstall-AppPortalClient.ps1` in `%ProgramFiles%\App Portal`, and an `AppPortalClient` entry in Apps & Features. The agent removes all three on its first start. The task and the updater would otherwise go on replacing files Windows Installer now owns. The entry is worse than that: it puts a second **App Portal** row beside the MSI's, and removing through it runs the retired script, which deletes both `%ProgramFiles%\App Portal` and `%ProgramData%\AppPortal` while Windows Installer still holds the product as installed. A machine upgraded before the agent knew to do this is put right the first time it starts an agent that does.
 
@@ -304,13 +340,17 @@ CI runs in two shapes, because Windows minutes bill at several times the Linux r
 - **Every push and pull request:** the format check, build and tests on Linux, and the server image built and exercised in fake mode.
 - **Before a release:** the same plus everything on Windows. A `v*` tag runs it automatically; at any other time start it from the Actions tab with the *Run the Windows jobs as well* box ticked. Treat a red result there as blocking the tag.
 
-The Windows half is what proves the thing a PC actually receives. `installer-verify` publishes the client and the agent, builds the MSI and the bootstrapper, and then runs [`deploy/windows/ci-installer-test.ps1`](deploy/windows/ci-installer-test.ps1) against a fake-mode server started in the job: the MSI must report the props version and the unchanging upgrade code, `AppPortalSetup.exe /quiet` must return 0, the service must come up as SYSTEM, the device must enroll and appear on `/admin/devices` with a heartbeat, the installed client must render, the uninstall must leave nothing behind, and an install of the previous release must upgrade in place without losing its device token. The script takes the same arguments by hand, so a failure that only reproduces on a virtual machine can be chased there:
+The Windows half is what proves the thing a PC actually receives. `build-windows` publishes the client and the agent and builds the MSI and the bootstrapper, always on a GitHub-hosted runner. `installer-verify` then downloads exactly those files, wherever the `WINDOWS_RUNNER` repository variable sends it, and runs [`deploy/windows/ci-installer-test.ps1`](deploy/windows/ci-installer-test.ps1) against a fake-mode server started in the job: the MSI must report the props version and the unchanging upgrade code, `AppPortalSetup.exe /quiet` must return 0, the service must come up as SYSTEM, the device must enroll and appear on `/admin/devices` with a heartbeat, the installed client must render, the uninstall must leave nothing behind, and an install of the previous release must upgrade in place without losing its device token. The script takes the same arguments by hand, so a failure that only reproduces on a virtual machine can be chased there:
 
 ```powershell
-./deploy/windows/ci-installer-test.ps1 -Msi out/installer/AppPortal-0.5.0-x64.msi -Version 0.5.0 -Setup out/setup/AppPortalSetup.exe
+./deploy/windows/ci-installer-test.ps1 -Msi out/installer/AppPortal-0.5.0-x64.msi -Version 0.5.0 -Setup out/setup/AppPortalSetup.exe -Signing Off
 ```
 
-It installs and uninstalls software and writes to `%ProgramData%`, so run it on a throwaway machine.
+It installs and uninstalls software and writes to `%ProgramData%`, so run it on a throwaway machine. `-Signing Test` or `-Signing Release` also fails the run on any App Portal file, packaged or installed, that lacks the signature that mode promises; `Off`, the default, only reports.
+
+Signing through SignPath Foundation is switched by repository settings, never by a file. With the `SIGNPATH_ORGANIZATION_ID` variable and the `SIGNPATH_API_TOKEN` secret both set, a `v*` tag is release-signed and a run of `main` started from the Actions tab with *sign* ticked is test-signed, as a rehearsal. Every other run, including every pull request, fork and branch, builds unsigned; without the variable, so does everything. The variable set without the secret fails the run in its first job rather than shipping unsigned. `SIGNPATH_PROJECT_SLUG` overrides the project name `app-portal` if SignPath's differs.
+
+On a tag with signing on, `build-windows` submits three signing requests in order, the payload, the MSI, then `AppPortalSetup.exe`, because each package carries the one before it. The owner approves each in SignPath as it arrives, within an hour of its submission. A run that timed out is re-run with *Re-run failed jobs*, which submits fresh requests. Once a signed release exists, a tag that would publish an unsigned one fails in `installer-verify`: every agent the signed release installed would refuse it.
 
 A release is cut by tagging:
 
@@ -395,7 +435,7 @@ A few behaviours are deliberate and were put in after a review found the failure
 - Admin sign-in uses local accounts. OpenID Connect and email notifications are not implemented.
 - Approving a request never installs anything. The requester's client points to the linked app, and the person installs it from its card.
 - Automatic enrollment requires the milestone 2 enrollment API. The agent currently enrolls and reports heartbeats; non-Action1 install engines arrive later.
-- Updates come only from GitHub releases over HTTPS, verified by SHA-256 but not signed. A machine without internet access keeps the build it has.
+- Updates come only from GitHub releases over HTTPS, verified by SHA-256. From the first signed agent onwards, an update must also be signed by the publisher that signed the installed agent. That publisher, SignPath Foundation, is shared with every other project the foundation signs, so the check tells a foundation-signed MSI from an unsigned or foreign one, not App Portal from another foundation-signed product. A machine without internet access keeps the build it has.
 - Action1's API is rate limited (HTTP 429). The server polls active installs every 30 seconds by default; keep the catalog small and the device count modest.
 
 ## License

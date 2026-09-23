@@ -35,6 +35,16 @@
 
 .PARAMETER LogDirectory
     Where msiexec logs, server logs and the screenshot are written.
+
+.PARAMETER Signing
+    What signature the build promises, checked by Test-Signatures.ps1 on the MSI and the bootstrapper
+    before anything is installed, and on the App Portal files in %ProgramFiles%\App Portal afterwards,
+    which proves the MSI carries the signed payload. Test expects a test certificate, Release a valid
+    SignPath Foundation signature with a timestamp. Off only reports, so the script still runs by hand
+    on any machine against an unsigned build.
+
+.EXAMPLE
+    ./deploy/windows/ci-installer-test.ps1 -Msi out/installer/AppPortal-0.9.0-x64.msi -Version 0.9.0 -Setup out/setup/AppPortalSetup.exe -Signing Off
 #>
 [CmdletBinding()]
 param(
@@ -44,7 +54,8 @@ param(
     [string] $PreviousMsi,
     [string] $ServerDll,
     [int] $Port = 5080,
-    [string] $LogDirectory
+    [string] $LogDirectory,
+    [ValidateSet('Off','Test','Release')] [string] $Signing = 'Off'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,6 +100,7 @@ function Invoke-Msi {
 }
 
 $resetScript = Join-Path $PSScriptRoot 'Reset-AppPortal.ps1'
+$signatureScript = Join-Path $PSScriptRoot 'Test-Signatures.ps1'
 
 # ---------------------------------------------------------------------------------------------
 # Static checks. A package that names the wrong version or the wrong upgrade code either refuses to
@@ -143,6 +155,16 @@ foreach ($required in 'AppPortal.exe', 'AppPortal.Agent.exe') {
     }
 }
 "ProductVersion $productVersion, UpgradeCode $upgradeCode, $($packaged.Count) files packaged."
+
+# ---------------------------------------------------------------------------------------------
+# Before anything is installed: a package that promises a signature and lacks one would be refused
+# by every signed agent that downloads it.
+# ---------------------------------------------------------------------------------------------
+Write-Step "The packages carry their signatures ($Signing)"
+
+$packages = @($msiPath)
+if ($Setup) { $packages += (Resolve-Path $Setup).Path }
+& $signatureScript -Mode $Signing -Path $packages
 
 # ---------------------------------------------------------------------------------------------
 # A runner that keeps its disk starts where the last run stopped. On windows-latest that could not
@@ -294,6 +316,11 @@ try {
         "$exe ProductVersion=$($info.ProductVersion) FileVersion=$($info.FileVersion)"
         if ($product -ne $Version) { throw "$exe reports $product, expected $Version." }
     }
+
+    Write-Step "The installed files carry their signatures ($Signing)"
+    # What the MSI put on disk, not what the build folder held: proof that WiX harvested the signed
+    # payload rather than a copy from before signing.
+    & $signatureScript -Mode $Signing -Path $installDir
 
     Write-Step 'The installed client starts, renders, and exits'
     # The Apps page, and the admin dashboard: section 10 signs the demo administrator in, so the admin

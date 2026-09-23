@@ -19,6 +19,18 @@ public static class UpdateCheck
         var repository = UpdateRepository.Resolve(PortalSettings.Load().UpdateRepository);
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         var feed = new GitHubReleaseFeed(http, repository, Environment.GetEnvironmentVariable("GITHUB_TOKEN"));
+        var exitCode = await ReadFeedAsync(feed, repository, ct);
+
+        // Which signature rule this agent applies to the update it finds. CI reads it to see that a
+        // signed build knows it is signed; it never changes the exit code.
+        var signatures = new UpdateSignaturePolicy(new WindowsFileSignatureReader(),
+            Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "AppPortal.Agent.exe"));
+        Console.WriteLine(signatures.Describe());
+        return exitCode;
+    }
+
+    private static async Task<int> ReadFeedAsync(GitHubReleaseFeed feed, string repository, CancellationToken ct)
+    {
         try
         {
             var latest = await feed.GetLatestAsync(ct);

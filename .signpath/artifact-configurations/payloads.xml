@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Source of truth for the SignPath artifact configuration "payloads" in project app-portal.
+     SignPath does not read this file: paste it into that configuration whenever it changes.
+     The artifact is the GitHub artifact "unsigned-payloads", a zip rooted at out/.
+     product-name is the file metadata restriction SignPath Foundation requires on every signed file;
+     every project in this repository inherits <Product>App Portal</Product> from Directory.Build.props. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="client/AppPortal.exe" product-name="App Portal"><authenticode-sign /></pe-file>
+    <pe-file path="client/AppPortal.dll" product-name="App Portal"><authenticode-sign /></pe-file>
+    <pe-file path="client/AppPortal.Shared.dll" product-name="App Portal"><authenticode-sign /></pe-file>
+    <pe-file path="agent/AppPortal.Agent.exe" product-name="App Portal"><authenticode-sign /></pe-file>
+  </zip-file>
+</artifact-configuration>

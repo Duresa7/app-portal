@@ -233,9 +233,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
             // Requests ride the same refresh as installs, so a decision an admin made shows up without
             // the user doing anything. A server from before M1-04 has no such route; that is not an error.
+            // The catalog is merged above, so a request an administrator answered with an app finds its card.
             try
             {
-                ReplaceAll(Requests, (await _api.GetRequestsAsync(ct)).Select(r => new RequestItemViewModel(r)));
+                ReplaceAll(Requests, (await _api.GetRequestsAsync(ct)).Select(r => new RequestItemViewModel(r, CardFor(r), ShowRequestedApp)));
             }
             catch (PortalApiException)
             {
@@ -686,6 +687,23 @@ public sealed partial class MainViewModel : ViewModelBase
                                && i.State == InstallState.Succeeded
                                && i.CompletedAt is not null)
             .Max(i => i.CompletedAt);
+
+    /// <summary>The catalog card for the app that answers a request, when this PC is offered it.</summary>
+    private AppItemViewModel? CardFor(AppRequest request)
+        => request.CatalogAppId is { } id
+            ? Apps.FirstOrDefault(a => string.Equals(a.App.Id, id, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+    /// <summary>
+    /// "Show in Apps": the Apps section, narrowed to the app a request was answered with. The person
+    /// installs from the card as usual, requirements included; this never installs anything itself.
+    /// </summary>
+    private void ShowRequestedApp(AppItemViewModel app)
+    {
+        SelectedCategory = "All";
+        SearchText = app.Name;
+        SelectedSection = 0;
+    }
 
     private void ApplyFilter()
     {

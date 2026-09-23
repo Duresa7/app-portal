@@ -40,8 +40,9 @@ public sealed class AdminApiClientTests
 
         yield return Row(api => api.GetRequestsAsync(AppRequestStatus.Pending, 0, 50, ct), "GET", "/api/v1/admin/requests?status=pending&limit=50&offset=0", EmptyPage);
         yield return Row(api => api.GetRequestsAsync(null, 0, 50, ct), "GET", "/api/v1/admin/requests?status=all&limit=50&offset=0", EmptyPage);
-        yield return Row(api => api.ApproveRequestAsync("r1", "ok", ct), "POST", "/api/v1/admin/requests/r1/approve");
+        yield return Row(api => api.ApproveRequestAsync("r1", "ok", null, ct), "POST", "/api/v1/admin/requests/r1/approve");
         yield return Row(api => api.DenyRequestAsync("r1", null, ct), "POST", "/api/v1/admin/requests/r1/deny");
+        yield return Row(api => api.LinkRequestAsync("r1", "slack", ct), "PUT", "/api/v1/admin/requests/r1/catalog-app");
 
         yield return Row(api => api.GetCatalogAsync("chrome", 0, 50, ct), "GET", "/api/v1/admin/catalog?Search=chrome&limit=50&offset=0", EmptyPage);
         yield return Row(api => api.GetCatalogAppAsync("vscode", ct), "GET", "/api/v1/admin/catalog/vscode");
@@ -131,6 +132,21 @@ public sealed class AdminApiClientTests
     }
 
     [Fact]
+    public async Task An_approval_and_a_link_carry_the_catalog_app_id()
+    {
+        var handler = new FakeHandler(_ => Reply(HttpStatusCode.OK, "{}"));
+        var api = new AdminApiClient(Server, handler) { Token = "apa_test" };
+
+        await api.ApproveRequestAsync("r1", "Added.", "slack", CancellationToken.None);
+        await api.LinkRequestAsync("r1", null, CancellationToken.None);
+
+        Assert.Contains("\"catalogAppId\":\"slack\"", handler.Requests[0].Body);
+        Assert.Contains("\"reason\":\"Added.\"", handler.Requests[0].Body);
+        // A null id removes the link, so it has to reach the server as null, not as a missing body.
+        Assert.Equal("""{"catalogAppId":null}""", handler.Requests[1].Body);
+    }
+
+    [Fact]
     public async Task Import_sends_the_catalog_file_as_it_is()
     {
         const string file = """{ "apps": [ { "id": "x", "name": "X" } ] }""";
@@ -149,7 +165,7 @@ public sealed class AdminApiClientTests
         var handler = new FakeHandler(_ => Reply(HttpStatusCode.Conflict, """{"message":"That request had already been decided."}"""));
         var api = new AdminApiClient(Server, handler) { Token = "apa_test" };
 
-        var ex = await Assert.ThrowsAsync<PortalApiException>(() => api.ApproveRequestAsync("r1", null, CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<PortalApiException>(() => api.ApproveRequestAsync("r1", null, null, CancellationToken.None));
 
         Assert.Equal("That request had already been decided.", ex.Message);
         Assert.Equal(HttpStatusCode.Conflict, ex.Status);

@@ -17,7 +17,7 @@ Settled on 2026-09-19. Change them here first, then in the plans that depend on 
 | Install shapes | A Windows install is not one shape. A catalog app says who runs it (`scope`: SYSTEM or the signed-in person), whether a restart finishes it (`requiresReboot`), and which catalog apps come first (`requires`). The agent honours all three. |
 | Requirements | An app may also state what it needs in plain words, such as Secure Boot or a vendor account. The portal shows that text and asks the person to confirm it. It does not read TPM or Secure Boot state and never refuses an install on those grounds: installing is not running, the vendor owns the rules, and the person at the PC is better placed to judge. |
 | Launcher content | The portal installs launchers and applications. Content a launcher downloads for one signed-in account is outside it: the portal has no account there and no licence to drive one. This is a boundary in the README, not a gap to close later. |
-| Requests | Free-text box in the client. Admins approve or deny with an optional reason. The requester sees status and reason in the client. No email. No link from a request to a catalog app. |
+| Requests | Free-text box in the client. Admins approve or deny with an optional reason. An approval may name the catalog app that answers it, either one already in the catalog or one the administrator creates from the request, and the requester's client then points them to it. The requester sees status and reason in the client. No email. Approving never installs anything. |
 | Admin surfaces | Razor Pages + htmx web UI on the server, and full admin parity inside the Windows client: install history, catalog, requests, devices, enrollment keys, admin accounts. |
 | Installer | A WiX MSI with `SERVERURL` and `ENROLLMENTKEY` properties for Group Policy, Intune and RMM silent installs, plus an Avalonia `Setup.exe` that collects the two values and runs the MSI. One build produces both. |
 | Releases | Every milestone ships through the release gate in `.github/workflows/ci.yml`. The full gate, Windows jobs included, is run on `main` and green before the tag; the tag is what reaches devices and cannot be recalled. |
@@ -86,7 +86,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M5-05](plans/M5-05-one-way-to-add-an-app.md) | One way to add an app | M5-01, M5-02 | Done |
 | [M5-06](plans/M5-06-release-0.7.0.md) | Release 0.7.0 | M5-03, M5-04, M5-05 | Done |
 | [M6-01](plans/M6-01-proof-on-a-real-pc.md) | Proof on a real PC | M2-06, M3-07, M3-09, M3-11 | Open |
-| [M6-02](plans/M6-02-request-to-app.md) | From a request to an app | None | Open |
+| [M6-02](plans/M6-02-request-to-app.md) | From a request to an app | None | In review |
 | [M6-03](plans/M6-03-signed-releases.md) | Signed releases | M2-04, M2-06 | Open |
 | [M6-04](plans/M6-04-release-0.9.0.md) | Release 0.9.0 | M6-01, M6-02, M6-03 | Open |
 

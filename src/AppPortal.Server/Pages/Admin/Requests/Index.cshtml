@@ -28,3 +28,12 @@
 <div class="card">
     <partial name="_RequestTable" model="Model.Slice" />
 </div>
+
+@* One list for every catalog app id field in the table. Outside the table, so a swap after a decision
+   leaves it where it is instead of sending the whole catalog again with every row. *@
+<datalist id="catalog-app-ids">
+    @foreach (var app in Model.CatalogApps)
+    {
+        <option value="@app.Id">@app.Name</option>
+    }
+</datalist>

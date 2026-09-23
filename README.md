@@ -170,7 +170,7 @@ Both sign in with a local administrator account (or a directory account, below).
 
 ![Catalog management in the admin UI](docs/images/admin-catalog.png)
 
-**Requests** shows pending and decided software requests. Approve or deny with an optional reason of up to 500 characters. Approval records a decision; it does not add an app or trigger an installation.
+**Requests** shows pending and decided software requests. Approve or deny with an optional reason of up to 500 characters. An approval can name the catalog app that answers it, or open the create form prefilled from the request; the requester's client then offers that app. Approval never starts an installation.
 
 ![Software requests in the admin UI](docs/images/admin-requests.png)
 
@@ -257,7 +257,7 @@ Upgrade silently with `msiexec /i AppPortal-<new-version>-x64.msi /qn`; no enrol
 
 The **Agent** column on `/admin/devices` is how to find the machines that need this. Only the agent's enrollment and heartbeat write that column, so a device showing `—` has never run one and is still a zip installation. Those PCs go on working at the version they have and keep their place in the portal; they simply never move again, and they say nothing about it, so look rather than wait to notice.
 
-The client's **Requests** section accepts up to 500 characters describing the software needed. Each device can have 20 pending requests. The newest request appears immediately after submission; status and administrator reasons refresh with the rest of the client.
+The client's **Requests** section accepts up to 500 characters describing the software needed. Each device can have 20 pending requests. The newest request appears immediately after submission; status and administrator reasons refresh with the rest of the client. When an administrator answers a request with a catalog app this PC is offered, the request shows **Show in Apps**, which opens Apps on that app so it installs from its card as usual.
 
 ![Requests in the Windows client](docs/images/requests.png)
 
@@ -360,6 +360,7 @@ Device routes below need `Authorization: Bearer <device token>`. `/healthz` is p
 | `GET /dashboard` | The five counts the dashboard shows |
 | `GET /installs`, `GET /installs/{id}`, `POST /installs/{id}/cancel` | Fleet install history with filters and paging, one install, stopping one the agent is running |
 | `GET /requests`, `POST /requests/{id}/approve`, `POST /requests/{id}/deny` | Software requests by status, and a decision with an optional reason |
+| `PUT /requests/{id}/catalog-app` | Naming, changing or removing the catalog app an approved request is answered by |
 | `GET /catalog`, `GET`/`PUT`/`DELETE /catalog/{id}`, `POST /catalog/{id}/hidden` | The catalog, one app, saving every field of it, removing or hiding it |
 | `POST /catalog/import`, `GET /catalog/export` | The whole catalog as a file |
 | `POST /catalog/action1/search`, `POST /catalog/action1/verify`, `POST /catalog/package/hash`, `POST /catalog/package/winget` | The catalog page's helpers |
@@ -392,7 +393,7 @@ A few behaviours are deliberate and were put in after a review found the failure
 - A restart is asked for, never forced. An install that needs one waits until somebody agrees.
 - Device tokens do not expire. Rotate them on the device detail page, or run `device add` again for the same name.
 - Admin sign-in uses local accounts. OpenID Connect and email notifications are not implemented.
-- Request approval is a recorded decision; an administrator must separately add any approved software to the catalog.
+- Approving a request never installs anything. The requester's client points to the linked app, and the person installs it from its card.
 - Automatic enrollment requires the milestone 2 enrollment API. The agent currently enrolls and reports heartbeats; non-Action1 install engines arrive later.
 - Updates come only from GitHub releases over HTTPS, verified by SHA-256 but not signed. A machine without internet access keeps the build it has.
 - Action1's API is rate limited (HTTP 429). The server polls active installs every 30 seconds by default; keep the catalog small and the device count modest.

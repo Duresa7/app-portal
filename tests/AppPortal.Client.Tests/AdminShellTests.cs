@@ -177,6 +177,42 @@ public sealed class AdminShellTests
         Assert.False(model.ShowAdmin);
     }
 
+    [Fact]
+    public async Task Approve_and_add_lands_on_the_catalog_with_the_editor_open()
+    {
+        var model = Model(out _);
+        await model.SignInAdminAsync("admin", "demo");
+        model.SelectedSection = AdminSections.Requests;
+        var requests = model.AdminArea!.Requests;
+        await WaitUntil(() => !requests.IsBusy && requests.Rows.Count > 0);
+        var row = requests.Rows.Single(r => r.Request.Id == "req-1");
+
+        requests.ApproveCommand.Execute(row);
+        await requests.ApproveAndAddCommand.ExecuteAsync(null);
+
+        Assert.Equal(AdminSections.Catalog, model.SelectedSection);
+        var catalog = Assert.IsType<CatalogViewModel>(model.CurrentAdminPage);
+        var editor = Assert.IsType<CatalogEditorViewModel>(catalog.Editor);
+        Assert.Equal("req-1", editor.FromRequest!.Id);
+        Assert.Equal("Slack", editor.Name);
+        Assert.Equal("slack", editor.Id);
+        Assert.False(editor.IsDirty);
+
+        // The list under the form is read even though the page was never opened before.
+        await WaitUntil(() => !catalog.IsBusy && catalog.Apps.Count > 0);
+        Assert.Same(editor, catalog.Editor);
+    }
+
+    private static async Task WaitUntil(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The condition did not come true in time.");
+            await Task.Delay(10);
+        }
+    }
+
     private static MainViewModel Model(out AdminSession session)
     {
         session = new AdminSession(new DemoAdminApiClient(), NoAdminSessionStore.Instance, "demo");

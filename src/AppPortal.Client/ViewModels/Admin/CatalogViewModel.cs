@@ -36,6 +36,7 @@ public interface ICatalogFiles
 public sealed partial class CatalogViewModel(IAdminApiClient api) : AdminPageViewModel(api)
 {
     private readonly List<AdminCatalogApp> _all = [];
+    private bool _loaded;
 
     public ObservableCollection<CatalogRowViewModel> Apps { get; } = [];
 
@@ -98,6 +99,22 @@ public sealed partial class CatalogViewModel(IAdminApiClient api) : AdminPageVie
         Notice = null;
         ErrorMessage = null;
         Editor = new CatalogEditorViewModel(Api, null, OnSaved, CloseEditor);
+    }
+
+    /// <summary>
+    /// The create form, prefilled from an approved request, which a save then links to the new app.
+    /// The Requests page calls this before switching here, and switching skips the load while the form
+    /// is open, so a list that was never read is read now.
+    /// </summary>
+    public void NewFromRequest(AdminRequest request)
+    {
+        Notice = null;
+        ErrorMessage = null;
+        Editor = new CatalogEditorViewModel(Api, null, OnSaved, CloseEditor, request);
+        if (!_loaded)
+        {
+            _ = LoadAsync();
+        }
     }
 
     /// <summary>Opens the app as the server has it now, not as the list last read it.</summary>
@@ -280,6 +297,7 @@ public sealed partial class CatalogViewModel(IAdminApiClient api) : AdminPageVie
 
         _all.Clear();
         _all.AddRange(all);
+        _loaded = true;
         ErrorMessage = null;
         ApplyFilter();
     }
@@ -303,9 +321,25 @@ public sealed partial class CatalogViewModel(IAdminApiClient api) : AdminPageVie
 
     private void OnSaved(AdminCatalogApp app)
     {
+        // Read before the editor goes: it is the one that knows whether a request was linked.
+        var request = Editor?.FromRequest;
+        var linkError = Editor?.LinkError;
         Replace(app);
         Editor = null;
-        Notice = $"Saved {app.Name}. Devices pick this up on their next refresh.";
+        if (request is null)
+        {
+            Notice = $"Saved {app.Name}. Devices pick this up on their next refresh.";
+        }
+        else if (linkError is null)
+        {
+            Notice = $"Saved {app.Name} and linked it to the request from {(string.IsNullOrWhiteSpace(request.RequestedBy) ? "an unknown user" : request.RequestedBy)}. "
+                     + "Devices pick this up on their next refresh.";
+        }
+        else
+        {
+            Notice = $"Saved {app.Name}.";
+            ErrorMessage = "The request could not be linked. " + linkError;
+        }
     }
 
     private void CloseEditor() => Editor = null;

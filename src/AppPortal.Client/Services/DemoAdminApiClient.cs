@@ -60,6 +60,7 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         AddApp("vscode", "Visual Studio Code", "Microsoft Corporation", "Developer tools", featured: true);
         AddApp("obs", "OBS Studio", "OBS Project", "Media");
         AddApp("legacy-vpn", "Legacy VPN client", "Contoso", "Networking", hidden: true);
+        AddApp("notepadpp", "Notepad++", "Don Ho", "Developer tools");
         AddCatalogSources();
 
         // Today, this week and running now, so every tile on the dashboard has something to count.
@@ -74,8 +75,10 @@ public sealed class DemoAdminApiClient : IAdminApiClient
             AppRequestStatus.Pending, null, null, now.AddHours(-5), null));
         _requests.Add(new AdminRequest("req-2", "Blender, for the product renders", "DESIGN-WS-02", @"CONTOSO\mjones",
             AppRequestStatus.Pending, null, null, now.AddDays(-1), null));
+        // Answered with an app, so the Requests page shows a link and the requester's client offers it.
         _requests.Add(new AdminRequest("req-3", "Notepad++, for editing config files", "FINANCE-LT-04", @"CONTOSO\pkaur",
-            AppRequestStatus.Approved, "Added to the catalog, it should appear within the hour.", DemoUsername, now.AddDays(-4), now.AddDays(-3)));
+            AppRequestStatus.Approved, "Added to the catalog, it should appear within the hour.", DemoUsername, now.AddDays(-4), now.AddDays(-3),
+            CatalogAppId: "notepadpp"));
         _requests.Add(new AdminRequest("req-4", "A licence for the full Acrobat", "FINANCE-LT-04", @"CONTOSO\pkaur",
             AppRequestStatus.Denied, "We have no spare licences this quarter.", "helpdesk", now.AddDays(-9), now.AddDays(-8)));
 
@@ -160,13 +163,26 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         });
 
     public Task<AdminPage<AdminRequest>> GetRequestsAsync(AppRequestStatus? status, int offset, int limit, CancellationToken ct)
-        => Guarded(() => Page(_requests.Where(r => status is null || r.Status == status).OrderByDescending(r => r.CreatedAt), offset, limit));
+        => Guarded(() => Page(_requests.Where(r => status is null || r.Status == status).OrderByDescending(r => r.CreatedAt).Select(WithApp), offset, limit));
 
-    public Task<AdminRequest> ApproveRequestAsync(string id, string? reason, CancellationToken ct)
-        => Guarded(() => Decide(id, AppRequestStatus.Approved, reason));
+    public Task<AdminRequest> ApproveRequestAsync(string id, string? reason, string? catalogAppId, CancellationToken ct)
+        => Guarded(() => Decide(id, AppRequestStatus.Approved, reason, catalogAppId));
 
     public Task<AdminRequest> DenyRequestAsync(string id, string? reason, CancellationToken ct)
-        => Guarded(() => Decide(id, AppRequestStatus.Denied, reason));
+        => Guarded(() => Decide(id, AppRequestStatus.Denied, reason, null));
+
+    public Task<AdminRequest> LinkRequestAsync(string id, string? catalogAppId, CancellationToken ct)
+        => Guarded(() =>
+        {
+            var request = Find(_requests, r => r.Id == id, "No such request.");
+            if (request.Status != AppRequestStatus.Approved)
+            {
+                throw new PortalApiException("Only an approved request can name a catalog app.", HttpStatusCode.Conflict);
+            }
+
+            var app = CatalogAppFor(catalogAppId);
+            return WithApp(Replace(_requests, request, request with { CatalogAppId = app?.Id }));
+        });
 
     public Task<AdminPage<AdminCatalogApp>> GetCatalogAsync(string? search, int offset, int limit, CancellationToken ct)
         => Guarded(() => Page(_catalog
@@ -489,21 +505,46 @@ public sealed class DemoAdminApiClient : IAdminApiClient
     private AdminCatalogApp FindApp(string id)
         => Find(_catalog, a => string.Equals(a.Id, id, StringComparison.OrdinalIgnoreCase), $"No app with id '{id}'.");
 
-    private AdminRequest Decide(string id, AppRequestStatus status, string? reason)
+    /// <summary>The same checks, in the same order, as the server: request, app, then the decision.</summary>
+    private AdminRequest Decide(string id, AppRequestStatus status, string? reason, string? catalogAppId)
     {
         var request = Find(_requests, r => r.Id == id, "No such request.");
+        var app = CatalogAppFor(catalogAppId);
         if (request.Status != AppRequestStatus.Pending)
         {
             throw new PortalApiException("That request had already been decided.", HttpStatusCode.Conflict);
         }
 
-        return Replace(_requests, request, request with
+        return WithApp(Replace(_requests, request, request with
         {
             Status = status,
             Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
             DecidedBy = DemoUsername,
             DecidedAt = DateTimeOffset.Now,
-        });
+            CatalogAppId = app?.Id,
+        }));
+    }
+
+    /// <summary>The catalog app an id names, null for a blank id, and a 422 for an id the catalog does not hold.</summary>
+    private AdminCatalogApp? CatalogAppFor(string? catalogAppId)
+    {
+        if (string.IsNullOrWhiteSpace(catalogAppId))
+        {
+            return null;
+        }
+
+        var id = catalogAppId.Trim();
+        return _catalog.FirstOrDefault(a => string.Equals(a.Id, id, StringComparison.OrdinalIgnoreCase))
+               ?? throw new PortalApiException($"No app with id '{id}' is in the catalog.", HttpStatusCode.UnprocessableEntity);
+    }
+
+    /// <summary>The linked app's current name and whether it is hidden, read afresh as the server's join does.</summary>
+    private AdminRequest WithApp(AdminRequest request)
+    {
+        var app = request.CatalogAppId is null
+            ? null
+            : _catalog.FirstOrDefault(a => a.Id == request.CatalogAppId);
+        return request with { CatalogAppName = app?.Name, CatalogAppHidden = app?.Hidden ?? false };
     }
 
     /// <summary>

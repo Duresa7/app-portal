@@ -206,7 +206,7 @@ This device's requests for software that is not in the catalog, newest first.
 
 ### POST /api/v1/requests
 
-Asks an administrator for software. Approval records a decision only.
+Asks an administrator for software. Approval records a decision, and can name the catalog app that answers it; it never installs anything.
 
 Body `CreateAppRequest`: `{ "text": "..." }`.
 
@@ -484,16 +484,33 @@ Paged, newest first. `AdminPage<AdminRequest>`.
 
 #### POST /api/v1/admin/requests/{id}/deny
 
-Records a decision on a pending request. The two routes behave the same apart from the decision they record. Approval does not add an app to the catalog or start an install.
+Records a decision on a pending request. The two routes behave the same apart from the decision they record. Approval can name an app already in the catalog. It never creates an app or starts an install.
 
-Body `AdminDecision`, which may be left out: `{ "reason": "..." }`. `reason` is optional and reaches the person who asked. A blank reason is stored as none.
+Body `AdminDecision`, which may be left out: `{ "reason": "...", "catalogAppId": "slack" }`. `reason` is optional and reaches the person who asked. A blank reason is stored as none. `catalogAppId` is optional; on an approval, a non-blank id records the approval and the link in one write, stored as the catalog spells the id.
 
 | Status | When |
 |---|---|
-| 200 | `AdminRequest`, decided. |
-| 400 | The reason is longer than 500 characters after trimming. |
+| 200 | `AdminRequest`, decided, with `catalogAppId` and `catalogAppName` when an app was named. |
+| 400 | The reason is longer than 500 characters after trimming. On `deny`, also a non-blank `catalogAppId`: "A denied request cannot name a catalog app." Nothing is decided. |
 | 404 | No such request. |
 | 409 | The request had already been decided. The earlier decision stands. |
+| 422 | `approve` only: `catalogAppId` names no app in the catalog. Nothing is decided. |
+
+Checks run in that order: reason, request, app, decision.
+
+#### PUT /api/v1/admin/requests/{id}/catalog-app
+
+Names, changes or removes the catalog app an approved request is answered by. Body `AdminRequestLink`, required: `{ "catalogAppId": "slack" }`. A null or blank `catalogAppId` removes the link.
+
+| Status | When |
+|---|---|
+| 200 | `AdminRequest` as it stands after the change. |
+| 400 | No body. |
+| 404 | No such request. |
+| 409 | The request is pending or denied. Only an approved request can name a catalog app. |
+| 422 | `catalogAppId` names no app in the catalog. |
+
+Deleting or hiding an app is never refused because a request names it. The link stays; the requester's device stops seeing it while the app is hidden or gone, and an administrator sees the app as hidden or no longer in the catalog.
 
 ### Catalog
 
@@ -841,12 +858,18 @@ The records below are in `AppPortal.Shared`: `Contracts.cs`, `AdminContracts.cs`
 | `reason` | string? | The administrator's reason |
 | `createdAt` | DateTimeOffset | |
 | `decidedAt` | DateTimeOffset? | |
+| `catalogAppId` | string? | The catalog app that answers the request. Only on an approved request, and only while the app is in the catalog and visible |
+| `catalogAppName` | string? | That app's name, under the same conditions |
 
 ### Admin types
 
 `AdminInstall`: `id`, `appId`, `appName` (strings), `deviceId` (string?), `deviceName`, `endpointId` (strings), `requestedBy` (string?), `engine`, `kind` (strings), `state` (`InstallState`), `percentComplete` (int), `detail`, `rebootState`, `stepName` (string?), `stepNumber`, `stepCount` (int), `requestedAt` (DateTimeOffset), `completedAt`, `lastCheckedAt` (DateTimeOffset?), `automationId` (string?, the Action1 automation or agent job behind the current step).
 
-`AdminRequest`: the fields of `AppRequest` plus `decidedBy` (string?), the administrator who decided.
+`AdminRequest`: the fields of `AppRequest` plus `decidedBy` (string?), the administrator who decided, and `catalogAppHidden` (bool). Here `catalogAppId` is the link as stored, even when the app has since been hidden or deleted; `catalogAppName` is null when no app has that id any more.
+
+`AdminDecision`: `reason` (string?), `catalogAppId` (string?, approval only).
+
+`AdminRequestLink`: `catalogAppId` (string?). Null or blank removes the link.
 
 `AdminCatalogApp`:
 

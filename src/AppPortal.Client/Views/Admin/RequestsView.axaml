@@ -61,7 +61,7 @@
                 </Button>
             </Grid>
             <TextBlock Grid.Row="1" Classes="secondary" Margin="0,4,0,16" TextWrapping="Wrap"
-                       Text="Software people have asked for. Approve or deny each one, with a reason they will see on their device." />
+                       Text="Software people have asked for. Approve or deny each one, with a reason they will see on their device. An approval can name the catalog app that answers it." />
 
             <StackPanel Grid.Row="2">
                 <Border Classes="infoBar critical" Margin="0,0,0,12"
@@ -130,10 +130,16 @@
                                             </StackPanel>
                                             <TextBlock Classes="caption" Text="{Binding ReasonText}" TextWrapping="Wrap" IsVisible="{Binding !IsPending}" />
                                             <TextBlock Classes="caption" Text="{Binding DecidedText}" TextWrapping="Wrap" IsVisible="{Binding !IsPending}" />
+                                            <TextBlock Classes="caption" Text="{Binding CatalogAppText}" TextWrapping="Wrap" IsVisible="{Binding HasCatalogApp}" />
                                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0" IsVisible="{Binding CanDecide}">
                                                 <Button Classes="accent" Content="Approve" Command="{Binding ApproveCommand}" />
                                                 <Button Classes="standard" Content="Deny" Command="{Binding DenyCommand}" />
                                             </StackPanel>
+                                            <WrapPanel Orientation="Horizontal" Margin="0,6,0,0" IsVisible="{Binding CanLink}">
+                                                <Button Classes="standard" Content="Add to the catalog" Margin="0,0,8,4"
+                                                        Command="{Binding AddToCatalogCommand}" IsVisible="{Binding CanAddToCatalog}" />
+                                                <Button Classes="standard" Content="Catalog app..." Margin="0,0,8,4" Command="{Binding LinkCommand}" />
+                                            </WrapPanel>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -184,15 +190,69 @@
                                 <TextBox Name="ReasonBox" Text="{Binding Reason}" AcceptsReturn="False" TextWrapping="Wrap" MinHeight="64"
                                          MaxLength="{Binding ReasonMaxLength}" PlaceholderText="Shown to whoever asked" />
                             </StackPanel>
+                            <!-- An approval can name the app that answers it, when the catalog already has one. -->
+                            <StackPanel Spacing="6" IsVisible="{Binding IsApproving}">
+                                <TextBlock Classes="caption" Text="Catalog app" />
+                                <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding CatalogChoices}"
+                                          SelectedItem="{Binding SelectedCatalogApp}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border Grid.Row="1" Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="24">
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,8,*">
+                                    <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" IsDefault="True"
+                                            Content="{Binding DecisionButtonText}" Command="{Binding ConfirmDecisionCommand}" />
+                                    <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="True"
+                                            Content="Cancel" Command="{Binding CancelDecisionCommand}" />
+                                </Grid>
+                                <Button Classes="standard" HorizontalAlignment="Stretch" IsVisible="{Binding IsApproving}"
+                                        Content="Approve and add to the catalog" Command="{Binding ApproveAndAddCommand}" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Panel>
+        </Popup>
+
+        <!-- Naming, changing or removing the app an approved request is answered by. The same layout as
+             the decision, so the two dialogs read as one family. -->
+        <Popup Name="LinkPopup" IsOpen="{Binding IsLinkOpen}" ShouldUseOverlayLayer="True" IsLightDismissEnabled="False"
+               PlacementTarget="{Binding $parent[Window]}" Placement="Center">
+            <Panel Width="{Binding $parent[Window].Bounds.Width, FallbackValue=0}" Height="{Binding $parent[Window].Bounds.Height, FallbackValue=0}">
+                <Border Background="#4D000000" />
+                <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                        CornerRadius="{DynamicResource OverlayCornerRadius}" BoxShadow="0 8 32 0 #40000000" ClipToBounds="True">
+                    <Grid RowDefinitions="*,Auto">
+                        <StackPanel Grid.Row="0" Spacing="12" Margin="24,24,24,20">
+                            <TextBlock Classes="subtitle" Text="Catalog app for this request" />
+                            <Border Classes="card" Padding="12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="{Binding Linking.Text, FallbackValue=''}" TextWrapping="Wrap" />
+                                    <TextBlock Classes="caption" TextWrapping="Wrap">
+                                        <Run Text="{Binding Linking.RequesterText, FallbackValue=''}" />
+                                        <Run Text=" on " />
+                                        <Run Text="{Binding Linking.DeviceName, FallbackValue=''}" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="caption" Text="Catalog app" />
+                                <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding CatalogChoices}"
+                                          SelectedItem="{Binding SelectedCatalogApp}" />
+                            </StackPanel>
                         </StackPanel>
 
                         <Border Grid.Row="1" Background="{DynamicResource LayerFillColorDefaultBrush}"
                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="24">
                             <Grid ColumnDefinitions="*,8,*">
                                 <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch" IsDefault="True"
-                                        Content="{Binding DecisionButtonText}" Command="{Binding ConfirmDecisionCommand}" />
+                                        Content="Save" Command="{Binding ConfirmLinkCommand}" />
                                 <Button Grid.Column="2" Classes="standard" HorizontalAlignment="Stretch" IsCancel="True"
-                                        Content="Cancel" Command="{Binding CancelDecisionCommand}" />
+                                        Content="Cancel" Command="{Binding CancelLinkCommand}" />
                             </Grid>
                         </Border>
                     </Grid>

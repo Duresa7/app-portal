@@ -4,6 +4,9 @@
 @{
     var request = Model.Request;
     var pending = request.Status == AppRequestStatus.Pending;
+    var approved = request.Status == AppRequestStatus.Approved;
+    var linked = request.CatalogAppId is not null;
+    var fromRequest = "/admin/catalog/new?fromRequest=" + Uri.EscapeDataString(request.Id);
 }
 <tr id="request-@request.Id">
     <td class="muted">@request.CreatedAt.ToLocalTime().ToString("u")</td>
@@ -22,6 +25,23 @@
             <div class="muted">
                 by @request.DecidedBy@(request.DecidedAt is { } at ? " on " + at.ToLocalTime().ToString("u") : "")
             </div>
+            @if (approved && linked)
+            {
+                @* The link is kept even when the app is hidden or deleted, so the administrator can see
+                   what the request was answered with; the device is shown it only while it is offered. *@
+                if (request.CatalogAppName is null)
+                {
+                    <div>Catalog app: '@request.CatalogAppId', no longer in the catalog</div>
+                }
+                else if (request.CatalogAppHidden)
+                {
+                    <div>Catalog app: @request.CatalogAppName (hidden, so devices are not offered it)</div>
+                }
+                else
+                {
+                    <div>Catalog app: <a href="/admin/catalog/@Uri.EscapeDataString(request.CatalogAppId!)">@request.CatalogAppName</a></div>
+                }
+            }
         }
     </td>
     <td class="right">
@@ -40,6 +60,8 @@
                     <label for="reason-@request.Id">Reason (optional)</label>
                     <input id="reason-@request.Id" name="reason" type="text"
                            maxlength="@AppRequestLimits.MaxTextLength" placeholder="Shown to whoever asked" />
+                    <label for="app-@request.Id">Already in the catalog? Its id (optional, for Approve)</label>
+                    <input id="app-@request.Id" name="catalogAppId" type="text" list="catalog-app-ids" autocomplete="off" />
                     <div class="actions">
                         @* The same two buttons serve both paths: htmx takes the click when it is loaded,
                            and formaction carries the plain submit when it is not. *@
@@ -55,6 +77,44 @@
                                 hx-include="closest form"
                                 hx-target="#request-table"
                                 hx-swap="outerHTML">Deny</button>
+                        @* No hx-post: this one leaves the page for the create form, so it must navigate. *@
+                        <button class="secondary" type="submit"
+                                formaction="/admin/requests?handler=ApproveAndAdd">Approve and add to the catalog</button>
+                    </div>
+                </details>
+            </form>
+        }
+        else if (approved)
+        {
+            @if (!linked)
+            {
+                <a class="button secondary" href="@fromRequest">Add to the catalog</a>
+            }
+            <form method="post">
+                <input type="hidden" name="id" value="@request.Id" />
+                <input type="hidden" name="tab" value="@Model.Tab" />
+                <input type="hidden" name="p" value="@Model.PageNumber" />
+                <details>
+                    <summary>Catalog app</summary>
+                    <label for="link-@request.Id">Catalog app id</label>
+                    <input id="link-@request.Id" name="catalogAppId" type="text" list="catalog-app-ids" autocomplete="off"
+                           value="@request.CatalogAppId" />
+                    <div class="actions">
+                        <button type="submit"
+                                formaction="/admin/requests?handler=Link"
+                                hx-post="/admin/requests?handler=Link"
+                                hx-include="closest form"
+                                hx-target="#request-table"
+                                hx-swap="outerHTML">Link</button>
+                        @if (linked)
+                        {
+                            <button class="secondary" type="submit"
+                                    formaction="/admin/requests?handler=Unlink"
+                                    hx-post="/admin/requests?handler=Unlink"
+                                    hx-include="closest form"
+                                    hx-target="#request-table"
+                                    hx-swap="outerHTML">Remove link</button>
+                        }
                     </div>
                 </details>
             </form>

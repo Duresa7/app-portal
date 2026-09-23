@@ -19,8 +19,31 @@ public sealed class AppRequestRecord
     public DateTimeOffset? DecidedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
+    /// <summary>The catalog app that answers this request, as stored, even when the app is gone.</summary>
+    public string? CatalogAppId { get; set; }
+
+    /// <summary>The linked app's current name; null when no app has that id any more.</summary>
+    public string? CatalogAppName { get; set; }
+
+    public bool CatalogAppHidden { get; set; }
+
+    /// <summary>The device sees the link only while the app is there to be installed.</summary>
     public AppRequest ToPublic()
-        => new(Id, Text, DeviceName, RequestedBy, Status, Reason, CreatedAt, DecidedAt);
+    {
+        var offered = Status == AppRequestStatus.Approved && CatalogAppName is not null && !CatalogAppHidden;
+        return new(Id, Text, DeviceName, RequestedBy, Status, Reason, CreatedAt, DecidedAt,
+            offered ? CatalogAppId : null,
+            offered ? CatalogAppName : null);
+    }
+}
+
+/// <summary>What became of naming a catalog app on a request.</summary>
+public enum RequestLinkResult
+{
+    Linked,
+    NoSuchRequest,
+    NotApproved,
+    NoSuchApp,
 }
 
 /// <summary>Raised when a request cannot be stored as asked.</summary>
@@ -193,27 +216,92 @@ public sealed class AppRequestStore(Database database)
         return Read(command).FirstOrDefault();
     }
 
-    /// <summary>Records an administrator's answer. Used by M1-05; false when the request is already decided.</summary>
-    public bool Decide(string id, AppRequestStatus status, string? reason, string decidedBy)
+    /// <summary>
+    /// Records an administrator's answer, false when the request is already decided. An approval may
+    /// name the catalog app that answers it in the same write; <paramref name="catalogAppId"/> must
+    /// already be the catalog's own id, which callers get from CatalogStore.Find.
+    /// </summary>
+    public bool Decide(string id, AppRequestStatus status, string? reason, string decidedBy, string? catalogAppId = null)
     {
         if (status == AppRequestStatus.Pending)
         {
             throw new ArgumentException("A decision is approved or denied, not pending.", nameof(status));
         }
 
+        var app = string.IsNullOrWhiteSpace(catalogAppId) ? null : catalogAppId;
+        if (app is not null && status == AppRequestStatus.Denied)
+        {
+            throw new ArgumentException("A denied request cannot name a catalog app.", nameof(catalogAppId));
+        }
+
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE app_requests
-            SET status = @status, reason = @reason, decided_by = @by, decided_at = @at
+            SET status = @status, reason = @reason, decided_by = @by, decided_at = @at, catalog_app_id = @app
             WHERE id = @id AND status = 'pending';
             """;
         command.Parameters.AddWithValue("@status", Name(status));
         command.Parameters.AddWithValue("@reason", (object?)reason ?? DBNull.Value);
         command.Parameters.AddWithValue("@by", decidedBy);
         command.Parameters.AddWithValue("@at", SqlTime.Now());
+        command.Parameters.AddWithValue("@app", (object?)app ?? DBNull.Value);
         command.Parameters.AddWithValue("@id", id);
         return command.ExecuteNonQuery() == 1;
+    }
+
+    /// <summary>
+    /// Sets, replaces or (null or blank) clears the catalog app an approved request is answered by. An
+    /// approved request never moves out of approved, so nothing can change its status under this write.
+    /// </summary>
+    public RequestLinkResult Link(string id, string? catalogAppId)
+    {
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+
+        using (var find = connection.CreateCommand())
+        {
+            find.Transaction = transaction;
+            find.CommandText = "SELECT status FROM app_requests WHERE id = @id;";
+            find.Parameters.AddWithValue("@id", id);
+            if (find.ExecuteScalar() is not string status)
+            {
+                return RequestLinkResult.NoSuchRequest;
+            }
+
+            if (ParseStatus(status) != AppRequestStatus.Approved)
+            {
+                return RequestLinkResult.NotApproved;
+            }
+        }
+
+        string? app = null;
+        if (!string.IsNullOrWhiteSpace(catalogAppId))
+        {
+            using var lookup = connection.CreateCommand();
+            lookup.Transaction = transaction;
+            // The catalog's own spelling is stored, whatever case the caller used, so reads join on plain equality.
+            lookup.CommandText = "SELECT id FROM catalog_apps WHERE id = @app COLLATE NOCASE;";
+            lookup.Parameters.AddWithValue("@app", catalogAppId.Trim());
+            if (lookup.ExecuteScalar() is not string canonical)
+            {
+                return RequestLinkResult.NoSuchApp;
+            }
+
+            app = canonical;
+        }
+
+        using (var write = connection.CreateCommand())
+        {
+            write.Transaction = transaction;
+            write.CommandText = "UPDATE app_requests SET catalog_app_id = @app WHERE id = @id;";
+            write.Parameters.AddWithValue("@app", (object?)app ?? DBNull.Value);
+            write.Parameters.AddWithValue("@id", id);
+            write.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        return RequestLinkResult.Linked;
     }
 
     public int PendingCount()
@@ -250,9 +338,11 @@ public sealed class AppRequestStore(Database database)
     }
 
     private const string Select = """
-        SELECT r.id, COALESCE(d.name, r.device_name), r.requested_by, r.text, r.status, r.reason, r.decided_by, r.decided_at, r.created_at
+        SELECT r.id, COALESCE(d.name, r.device_name), r.requested_by, r.text, r.status, r.reason,
+               r.decided_by, r.decided_at, r.created_at, r.catalog_app_id, c.name, c.hidden
         FROM app_requests r
         LEFT JOIN devices d ON d.id = r.device_id
+        LEFT JOIN catalog_apps c ON c.id = r.catalog_app_id
         """;
 
     private static List<AppRequestRecord> Read(SqliteCommand command)
@@ -272,6 +362,9 @@ public sealed class AppRequestStore(Database database)
                 DecidedBy = reader.IsDBNull(6) ? null : reader.GetString(6),
                 DecidedAt = SqlTime.ParseOptional(reader.IsDBNull(7) ? null : reader.GetString(7)),
                 CreatedAt = SqlTime.Parse(reader.GetString(8)),
+                CatalogAppId = reader.IsDBNull(9) ? null : reader.GetString(9),
+                CatalogAppName = reader.IsDBNull(10) ? null : reader.GetString(10),
+                CatalogAppHidden = !reader.IsDBNull(11) && reader.GetInt64(11) != 0,
             });
         }
 

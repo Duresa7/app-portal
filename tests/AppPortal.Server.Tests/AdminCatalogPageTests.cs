@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Installs;
+using AppPortal.Server.Requests;
 using AppPortal.Shared;
 
 using Microsoft.AspNetCore.Hosting;
@@ -400,6 +401,147 @@ public sealed class AdminCatalogPageTests : IDisposable
         Assert.Contains("lookup is unavailable", html);
         Assert.Contains("Valve.Steam", html);
         Assert.Empty(new CatalogStore(_test.Database, "").Entries);
+    }
+
+    // ---- from a request -----------------------------------------------------------------------
+
+    private AppRequestRecord ApprovedRequest(string text)
+    {
+        var requests = new AppRequestStore(_test.Database);
+        var created = requests.Create("TESTPC", @"CONTOSO\alee", text);
+        Assert.True(requests.Decide(created.Id, AppRequestStatus.Approved, null, "admin"));
+        return created;
+    }
+
+    private Dictionary<string, string> SlackForm(string fromRequest, string token) => new()
+    {
+        ["Id"] = "slack",
+        ["Name"] = "Slack",
+        ["PackageId"] = "Slack_1",
+        ["Version"] = "latest",
+        ["FromRequest"] = fromRequest,
+        ["__RequestVerificationToken"] = token,
+    };
+
+    [Fact]
+    public async Task A_request_prefills_the_name_and_id_and_is_quoted_above_the_form()
+    {
+        var request = ApprovedRequest("Slack, for the <b>support</b> rota");
+        var admin = await SignedIn();
+
+        var raw = await admin.GetStringAsync($"/admin/catalog/new?fromRequest={request.Id}");
+        var html = WebUtility.HtmlDecode(raw);
+
+        Assert.Contains("name=\"Name\" type=\"text\" value=\"Slack\"", html);
+        Assert.Contains("name=\"Id\" type=\"text\" value=\"slack\"", html);
+        Assert.Contains(@"For the request from CONTOSO\alee on TESTPC: Slack, for the <b>support</b> rota.", html);
+        Assert.Contains("The name and id are suggested from it, so check both.", html);
+        Assert.Contains($"<input type=\"hidden\" name=\"FromRequest\" value=\"{request.Id}\" />", html);
+
+        // The request text reaches the page encoded, never as markup.
+        Assert.DoesNotContain("<b>support</b>", raw);
+    }
+
+    [Fact]
+    public async Task Saving_an_app_from_a_request_links_the_request()
+    {
+        var request = ApprovedRequest("Slack, please");
+        var admin = await SignedIn();
+        var token = await TokenOn(admin, $"/admin/catalog/new?fromRequest={request.Id}");
+
+        var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(SlackForm(request.Id, token)));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var location = response.Headers.Location?.OriginalString ?? "";
+        Assert.Contains("linked=yes", location);
+        Assert.Contains("Saved and linked to the request.", await admin.GetStringAsync(location));
+
+        var mine = await Device().GetFromJsonAsync<IReadOnlyList<AppRequest>>(
+            ApiRoutes.Requests, new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } });
+        var linked = Assert.Single(mine!);
+        Assert.Equal("slack", linked.CatalogAppId);
+        Assert.Equal("Slack", linked.CatalogAppName);
+    }
+
+    [Fact]
+    public async Task A_pending_request_is_refused_and_saving_does_not_link_it()
+    {
+        var requests = new AppRequestStore(_test.Database);
+        var pending = requests.Create("TESTPC", null, "Slack");
+        var admin = await SignedIn();
+
+        var html = WebUtility.HtmlDecode(await admin.GetStringAsync($"/admin/catalog/new?fromRequest={pending.Id}"));
+
+        Assert.Contains("That request is not approved, so this app will not be linked to it. Approve it on the Requests page first.", html);
+        Assert.DoesNotContain("name=\"FromRequest\"", html);
+        Assert.DoesNotContain("For the request from", html);
+
+        // Even a form that still names it saves the app without linking the request.
+        var token = await TokenOn(admin, "/admin/catalog/new");
+        var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(SlackForm(pending.Id, token)));
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Contains("linked=no", response.Headers.Location?.OriginalString ?? "");
+        Assert.Contains("Saved, but the request was not linked.", await admin.GetStringAsync(response.Headers.Location!.OriginalString));
+        Assert.Null(requests.Find(pending.Id)!.CatalogAppId);
+        Assert.NotNull(new CatalogStore(_test.Database, "").Find("slack"));
+    }
+
+    [Fact]
+    public async Task Fetch_and_hash_keeps_the_request_banner_and_hidden_field()
+    {
+        var request = ApprovedRequest("Vendor app");
+        var admin = await SignedIn();
+        var form = AgentForm("direct");
+        form["FromRequest"] = request.Id;
+        form["__RequestVerificationToken"] = await TokenOn(admin, "/admin/catalog/new");
+
+        var response = await admin.PostAsync("/admin/catalog/new?handler=FetchAndHash", new FormUrlEncodedContent(form));
+
+        var html = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
+        Assert.Contains("Hash and size filled", html);
+        Assert.Contains("For the request from", html);
+        Assert.Contains($"<input type=\"hidden\" name=\"FromRequest\" value=\"{request.Id}\" />", html);
+    }
+
+    [Fact]
+    public async Task A_taken_suggested_id_is_refused_and_the_request_stays_unlinked()
+    {
+        new CatalogStore(_test.Database, "").Upsert(new CatalogEntry
+        {
+            Id = "slack",
+            Name = "Slack",
+            Action1 = new Action1PackageRef { PackageId = "Slack_original" },
+        });
+        var request = ApprovedRequest("Slack");
+        var admin = await SignedIn();
+        var token = await TokenOn(admin, $"/admin/catalog/new?fromRequest={request.Id}");
+
+        var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(SlackForm(request.Id, token)));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
+        Assert.Contains("An app with id 'slack' already exists.", html);
+        Assert.Contains("For the request from", html);
+        Assert.Null(new AppRequestStore(_test.Database).Find(request.Id)!.CatalogAppId);
+    }
+
+    [Fact]
+    public async Task Editing_an_existing_app_ignores_a_request()
+    {
+        new CatalogStore(_test.Database, "").Upsert(new CatalogEntry
+        {
+            Id = "slack",
+            Name = "Slack",
+            Action1 = new Action1PackageRef { PackageId = "Slack_1" },
+        });
+        var request = ApprovedRequest("Something else");
+        var admin = await SignedIn();
+
+        var html = WebUtility.HtmlDecode(await admin.GetStringAsync($"/admin/catalog/slack?fromRequest={request.Id}"));
+
+        Assert.DoesNotContain("For the request from", html);
+        Assert.DoesNotContain("name=\"FromRequest\"", html);
+        Assert.Contains("name=\"Name\" type=\"text\" value=\"Slack\"", html);
     }
 
     private sealed class PackageHandler : HttpMessageHandler

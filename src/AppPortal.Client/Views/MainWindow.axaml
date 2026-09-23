@@ -440,6 +440,9 @@
                                                     <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding Text}" Classes="bodyStrong" TextWrapping="Wrap" />
                                                         <TextBlock Text="{Binding Reason}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasReason}" />
+                                                        <TextBlock Text="{Binding CatalogAppText}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasCatalogAppText}" />
+                                                        <Button Classes="standard" Content="Show in Apps" Command="{Binding ShowAppCommand}"
+                                                                IsVisible="{Binding CanShowApp}" HorizontalAlignment="Left" Margin="0,4,0,0" />
                                                     </StackPanel>
                                                     <TextBlock Grid.Column="2" Text="{Binding StatusText}" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="3" Text="{Binding CreatedAt, Converter={x:Static svc:LocalTimeConverter.Instance}}" Classes="secondary" VerticalAlignment="Center" />

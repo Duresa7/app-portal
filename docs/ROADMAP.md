@@ -166,10 +166,17 @@ Names every package must use so that parallel work fits together. Details live i
 
 ## Next
 
-Milestone 6 is planned: see its packages in the table above. The next milestone is drafted when 0.9.0 ships.
+Milestone 7 is drafted, not yet planned into packages. The owner confirms the scope before plans are written. It takes what milestone 6 left open:
+
+- **The first signed release, proven.** After SignPath Foundation approves the project, the first release-signed tag, then on a throwaway VM: a signed agent refuses an unsigned higher release and runs no `msiexec`, and a hand-deployed unsigned build accepts it again (the verification M6-03 lists).
+- **Tell App Portal apart from other Foundation-signed MSIs.** The publisher "SignPath Foundation" is shared by every project the foundation signs, so the agent also checks the MSI's `UpgradeCode` before it runs an update.
+- **The client's admin flows, clicked through on a PC.** A session revoked on the web signs the client out, and a key made in the client enrolls a PC. Both are proven at the API only.
+- **A fresh per-user list after a restart.** The per-user installed list is only as fresh as that person's last install; sweep it when they next sign in.
 
 ## Deferred
 
-Reviewed for 0.8.0: nothing here became urgent, and two items, code signing and turning a request into an app, became milestone 6.
+Reviewed for 0.9.0: nothing here became urgent. Three items M6-03 left out join the list: signing `SHA256SUMS`, signing the server image, and submitting winget manifests.
 
-Not planned in any milestone: installing the content a launcher manages, installing for every account on a device at once, repairing an install in place, version constraints on a prerequisite, OpenID Connect admin sign-in, group-to-role mapping for directory accounts, email notifications, per-group catalogs, other RMM engines such as Intune, updater rollback on Action1-only devices.
+Reviewed for 0.8.0: code signing and turning a request into an app became milestone 6.
+
+Not planned in any milestone: installing the content a launcher manages, installing for every account on a device at once, repairing an install in place, version constraints on a prerequisite, OpenID Connect admin sign-in, group-to-role mapping for directory accounts, email notifications, per-group catalogs, other RMM engines such as Intune, updater rollback on Action1-only devices, signing `SHA256SUMS`, signing the server image, submitting winget manifests.

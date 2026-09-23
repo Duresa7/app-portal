@@ -85,9 +85,9 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M5-04](plans/M5-04-managed-packages-in-the-installed-list.md) | Managed packages in the installed list | M5-02 | Done |
 | [M5-05](plans/M5-05-one-way-to-add-an-app.md) | One way to add an app | M5-01, M5-02 | Done |
 | [M5-06](plans/M5-06-release-0.7.0.md) | Release 0.7.0 | M5-03, M5-04, M5-05 | Done |
-| [M6-01](plans/M6-01-proof-on-a-real-pc.md) | Proof on a real PC | M2-06, M3-07, M3-09, M3-11 | In review |
-| [M6-02](plans/M6-02-request-to-app.md) | From a request to an app | None | In review |
-| [M6-03](plans/M6-03-signed-releases.md) | Signed releases | M2-04, M2-06 | In review |
+| [M6-01](plans/M6-01-proof-on-a-real-pc.md) | Proof on a real PC | M2-06, M3-07, M3-09, M3-11 | Done |
+| [M6-02](plans/M6-02-request-to-app.md) | From a request to an app | None | Done |
+| [M6-03](plans/M6-03-signed-releases.md) | Signed releases | M2-04, M2-06 | Done |
 | [M6-04](plans/M6-04-release-0.9.0.md) | Release 0.9.0 | M6-01, M6-02, M6-03 | Open |
 
 Milestone 4 shipped as [v0.8.0](https://github.com/Duresa7/app-portal/releases/tag/v0.8.0): the Windows client gains an Admin area that does everything the web admin does, over the admin JSON API. Every one of the client's admin calls was run against a real server before the release, and the release gate now draws the installed client's admin dashboard as well as its Apps page. The full gate, Windows jobs included, passed on the release commit and again on the tag, after four API fixes found in review (#71 to #74) had merged; the downloaded MSI and `AppPortalSetup.exe` match their `SHA256SUMS` lines and `ghcr.io/duresa7/app-portal-server:0.8.0` is readable without credentials. The client's pages themselves have been exercised in demo mode and against test doubles; a session revoked on the web signing the client out, and a key made in the client enrolling a PC, have been proven at the API but not yet clicked through on a PC.

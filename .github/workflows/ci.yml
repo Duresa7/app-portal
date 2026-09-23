@@ -171,6 +171,24 @@ jobs:
     # and checks them. A release request waits for a person to approve it, hence the hour.
     steps:
       - uses: actions/checkout@v7
+      - name: The real-PC proof still parses and its installer still compiles
+        shell: pwsh
+        run: |
+          # Test-RealPc.ps1 only runs by hand, on a disposable PC before a release, so nothing else would
+          # notice it rot. This runs neither: it parses the script and builds the installer it compiles.
+          foreach ($file in 'deploy/windows/Test-RealPc.ps1', 'deploy/windows/InstallerTestHelpers.psm1') {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path, [ref] $null, [ref] $errors) | Out-Null
+            if ($errors) {
+              $errors | ForEach-Object { "${file}:$($_.Extent.StartLineNumber): $($_.Message)" }
+              throw "$file does not parse."
+            }
+          }
+          # Full paths: csc reads a forward slash as the start of an option.
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          $output = Join-Path $env:RUNNER_TEMP 'proof-installer.exe'
+          & $csc /nologo /target:exe /platform:anycpu /warnaserror "/out:$output" (Resolve-Path deploy/windows/ProofInstaller.cs).Path
+          if ($LASTEXITCODE -ne 0) { throw 'ProofInstaller.cs does not compile with the csc.exe that ships with Windows.' }
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}

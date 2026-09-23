@@ -78,26 +78,9 @@ if (-not $LogDirectory) {
 }
 New-Item -ItemType Directory -Force $LogDirectory | Out-Null
 
-function Write-Step([string] $Text) {
-    Write-Host ''
-    Write-Host "== $Text" -ForegroundColor Cyan
-}
-
-function Invoke-Msi {
-    param(
-        [Parameter(Mandatory)] [string] $Operation,
-        [Parameter(Mandatory)] [string] $Name,
-        [Parameter(Mandatory)] [string] $Package,
-        [string[]] $Properties = @()
-    )
-    $log = Join-Path $LogDirectory "$Name.log"
-    $arguments = @($Operation, "`"$Package`"", '/qn', '/norestart', '/l*v', "`"$log`"") + $Properties
-    $process = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
-    if ($process.ExitCode -notin 0, 3010) {
-        throw "msiexec $Name exited $($process.ExitCode); see $log"
-    }
-    return $process.ExitCode
-}
+# Write-Step, Wait-For and Invoke-Msi, shared with Test-RealPc.ps1.
+Import-Module (Join-Path $PSScriptRoot 'InstallerTestHelpers.psm1') -Force
+$PSDefaultParameterValues['Invoke-Msi:LogDirectory'] = $LogDirectory
 
 $resetScript = Join-Path $PSScriptRoot 'Reset-AppPortal.ps1'
 $signatureScript = Join-Path $PSScriptRoot 'Test-Signatures.ps1'
@@ -231,19 +214,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Importing the CI catalog failed.' }
 $server = Start-Process dotnet -ArgumentList "`"$ServerDll`"" -PassThru `
     -RedirectStandardOutput (Join-Path $LogDirectory 'server.log') `
     -RedirectStandardError (Join-Path $LogDirectory 'server-error.log')
-
-function Wait-For {
-    param(
-        [Parameter(Mandatory)] [scriptblock] $Condition,
-        [Parameter(Mandatory)] [string] $Description,
-        [int] $Seconds = 60
-    )
-    for ($i = 0; $i -lt $Seconds; $i++) {
-        try { if (& $Condition) { return } } catch { }
-        Start-Sleep -Seconds 1
-    }
-    throw "Timed out after $Seconds seconds waiting for: $Description"
-}
 
 try {
     Wait-For -Description 'the server to answer /healthz' -Condition {

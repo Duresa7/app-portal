@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Requests;
 using AppPortal.Shared;
@@ -170,6 +171,154 @@ public sealed class RequestsApiTests : IDisposable
         Assert.Equal("admin", decided.DecidedBy);
         Assert.NotNull(decided.DecidedAt);
     }
+
+    private CatalogStore Catalog()
+    {
+        var catalog = new CatalogStore(_test.Database, "");
+        catalog.Upsert(new CatalogEntry { Id = "Slack-App", Name = "Slack", Action1 = new Action1PackageRef { PackageId = "Slack_1" } });
+        return catalog;
+    }
+
+    [Fact]
+    public void An_approval_can_name_the_app_in_the_same_write()
+    {
+        Catalog();
+        var store = new AppRequestStore(_test.Database);
+        var created = store.Create("TESTPC", null, "Slack");
+
+        Assert.True(store.Decide(created.Id, AppRequestStatus.Approved, "Fine.", "admin", "Slack-App"));
+
+        var decided = store.Find(created.Id)!;
+        Assert.Equal(AppRequestStatus.Approved, decided.Status);
+        Assert.Equal("Slack-App", decided.CatalogAppId);
+        Assert.Equal("Slack", decided.CatalogAppName);
+        Assert.False(decided.CatalogAppHidden);
+    }
+
+    [Fact]
+    public void A_denial_cannot_name_an_app()
+    {
+        var store = new AppRequestStore(_test.Database);
+        var created = store.Create("TESTPC", null, "Slack");
+
+        Assert.Throws<ArgumentException>(() => store.Decide(created.Id, AppRequestStatus.Denied, null, "admin", "Slack-App"));
+        Assert.Equal(AppRequestStatus.Pending, store.Find(created.Id)!.Status);
+    }
+
+    [Fact]
+    public void Link_says_why_it_could_not_link()
+    {
+        Catalog();
+        var store = new AppRequestStore(_test.Database);
+        var pending = store.Create("TESTPC", null, "pending");
+        var denied = store.Create("TESTPC", null, "denied");
+        var approved = store.Create("TESTPC", null, "approved");
+        store.Decide(denied.Id, AppRequestStatus.Denied, null, "admin");
+        store.Decide(approved.Id, AppRequestStatus.Approved, null, "admin");
+
+        Assert.Equal(RequestLinkResult.NoSuchRequest, store.Link("missing", "Slack-App"));
+        Assert.Equal(RequestLinkResult.NotApproved, store.Link(pending.Id, "Slack-App"));
+        Assert.Equal(RequestLinkResult.NotApproved, store.Link(denied.Id, "Slack-App"));
+        Assert.Equal(RequestLinkResult.NoSuchApp, store.Link(approved.Id, "teams"));
+
+        // A request that does not exist is reported before an app that does not exist either.
+        Assert.Equal(RequestLinkResult.NoSuchRequest, store.Link("missing", "teams"));
+        Assert.Null(store.Find(pending.Id)!.CatalogAppId);
+        Assert.Null(store.Find(denied.Id)!.CatalogAppId);
+        Assert.Null(store.Find(approved.Id)!.CatalogAppId);
+    }
+
+    [Fact]
+    public void Link_stores_the_catalog_spelling_and_can_be_changed_and_cleared()
+    {
+        var catalog = Catalog();
+        catalog.Upsert(new CatalogEntry { Id = "teams", Name = "Teams", Action1 = new Action1PackageRef { PackageId = "Teams_1" } });
+        var store = new AppRequestStore(_test.Database);
+        var approved = store.Create("TESTPC", null, "chat");
+        store.Decide(approved.Id, AppRequestStatus.Approved, null, "admin");
+
+        Assert.Equal(RequestLinkResult.Linked, store.Link(approved.Id, " slack-app "));
+        Assert.Equal("Slack-App", store.Find(approved.Id)!.CatalogAppId);
+        Assert.Equal("Slack", store.Find(approved.Id)!.CatalogAppName);
+
+        Assert.Equal(RequestLinkResult.Linked, store.Link(approved.Id, "TEAMS"));
+        Assert.Equal("teams", store.Find(approved.Id)!.CatalogAppId);
+
+        Assert.Equal(RequestLinkResult.Linked, store.Link(approved.Id, "  "));
+        var cleared = store.Find(approved.Id)!;
+        Assert.Null(cleared.CatalogAppId);
+        Assert.Null(cleared.CatalogAppName);
+        Assert.Equal(AppRequestStatus.Approved, cleared.Status);
+    }
+
+    [Fact]
+    public async Task The_device_sees_the_link_only_while_the_app_is_offered()
+    {
+        var catalog = Catalog();
+        var store = new AppRequestStore(_test.Database);
+        var created = store.Create("TESTPC", null, "Slack, please");
+        store.Decide(created.Id, AppRequestStatus.Approved, "Fine.", "admin", "Slack-App");
+
+        async Task<AppRequest> Mine()
+            => Assert.Single((await Client().GetFromJsonAsync<IReadOnlyList<AppRequest>>(ApiRoutes.Requests, Json))!);
+
+        var linked = await Mine();
+        Assert.Equal("Slack-App", linked.CatalogAppId);
+        Assert.Equal("Slack", linked.CatalogAppName);
+
+        Assert.True(catalog.SetHidden("Slack-App", true));
+        var hidden = await Mine();
+        Assert.Null(hidden.CatalogAppId);
+        Assert.Null(hidden.CatalogAppName);
+        Assert.Equal(AppRequestStatus.Approved, hidden.Status);
+        Assert.Equal("Fine.", hidden.Reason);
+        Assert.True(store.Find(created.Id)!.CatalogAppHidden);
+
+        Assert.True(catalog.SetHidden("Slack-App", false));
+        Assert.Equal("Slack-App", (await Mine()).CatalogAppId);
+
+        // Deleting the app is never refused because a request names it; the request stays approved
+        // and the device sees a plain approval again.
+        Assert.True(catalog.Delete("Slack-App"));
+        var gone = await Mine();
+        Assert.Null(gone.CatalogAppId);
+        Assert.Null(gone.CatalogAppName);
+        Assert.Equal(AppRequestStatus.Approved, gone.Status);
+        Assert.Equal("Fine.", gone.Reason);
+
+        var record = store.Find(created.Id)!;
+        Assert.Equal("Slack-App", record.CatalogAppId);
+        Assert.Null(record.CatalogAppName);
+    }
+
+    [Fact]
+    public void Json_without_the_link_fields_reads_as_no_link_and_older_shapes_ignore_them()
+    {
+        var old = """
+            {"id":"r1","text":"Slack","deviceName":"PC","requestedBy":null,"status":"Approved","reason":null,
+             "createdAt":"2026-01-01T00:00:00+00:00","decidedAt":"2026-01-02T00:00:00+00:00"}
+            """;
+        var parsed = JsonSerializer.Deserialize<AppRequest>(old, Json)!;
+        Assert.Null(parsed.CatalogAppId);
+        Assert.Null(parsed.CatalogAppName);
+
+        var admin = JsonSerializer.Deserialize<AdminRequest>(old, Json)!;
+        Assert.Null(admin.CatalogAppId);
+        Assert.Null(admin.CatalogAppName);
+        Assert.False(admin.CatalogAppHidden);
+
+        var linked = JsonSerializer.Serialize(new AdminRequest(
+            "r1", "Slack", "PC", null, AppRequestStatus.Approved, null, "admin",
+            DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, "slack", "Slack", true), Json);
+        var older = JsonSerializer.Deserialize<OlderAdminRequest>(linked, Json)!;
+        Assert.Equal("r1", older.Id);
+        Assert.Equal(AppRequestStatus.Approved, older.Status);
+    }
+
+    /// <summary>AdminRequest as it was before M6-02, which an older client still deserializes into.</summary>
+    private sealed record OlderAdminRequest(
+        string Id, string Text, string DeviceName, string? RequestedBy, AppRequestStatus Status,
+        string? Reason, string? DecidedBy, DateTimeOffset CreatedAt, DateTimeOffset? DecidedAt);
 
     public void Dispose()
     {

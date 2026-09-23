@@ -272,6 +272,242 @@ public sealed class AdminRequestsTests
         Assert.Equal(AdminApiClient.SessionEndedMessage, model.AdminNotice);
     }
 
+    [Fact]
+    public async Task Approving_sends_the_catalog_app_chosen_in_the_dialog()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        var page = new RequestsViewModel(api);
+        await page.ActivateAsync();
+        var row = page.Rows.Single(r => r.Request.Id == "req-1");
+
+        page.ApproveCommand.Execute(row);
+        await WaitUntil(() => page.CatalogChoices.Count > 1);
+        Assert.Same(RequestsViewModel.NotInCatalog, page.CatalogChoices[0]);
+        Assert.Equal("Not in the catalog yet", page.CatalogChoices[0].Label);
+        Assert.Same(RequestsViewModel.NotInCatalog, page.SelectedCatalogApp);
+        Assert.Contains(page.CatalogChoices, c => c is { Id: "legacy-vpn", Label: "Legacy VPN client (hidden)" });
+
+        page.SelectedCatalogApp = page.CatalogChoices.Single(c => c.Id == "vscode");
+        await page.ConfirmDecisionCommand.ExecuteAsync(null);
+
+        var args = script.Last(nameof(IAdminApiClient.ApproveRequestAsync));
+        Assert.Equal("req-1", args[0]);
+        Assert.Equal("vscode", args[2]);
+        var recorded = (await script.Demo.GetRequestsAsync(AppRequestStatus.Approved, 0, 50, CancellationToken.None)).Items.Single(r => r.Id == "req-1");
+        Assert.Equal("vscode", recorded.CatalogAppId);
+        Assert.Equal("Visual Studio Code", recorded.CatalogAppName);
+    }
+
+    [Fact]
+    public async Task Approving_with_no_app_chosen_sends_none()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        var page = new RequestsViewModel(api);
+        await page.ActivateAsync();
+
+        page.ApproveCommand.Execute(page.Rows[0]);
+        await WaitUntil(() => page.CatalogChoices.Count > 1);
+        await page.ConfirmDecisionCommand.ExecuteAsync(null);
+
+        Assert.Null(script.Last(nameof(IAdminApiClient.ApproveRequestAsync))[2]);
+    }
+
+    [Fact]
+    public async Task A_catalog_that_cannot_be_read_leaves_only_the_first_choice()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        script.On(nameof(IAdminApiClient.GetCatalogAsync), _ => Task.FromException<AdminPage<AdminCatalogApp>>(
+            new PortalApiException("The App Portal server did not answer in time.")));
+        var page = new RequestsViewModel(api);
+        await page.ActivateAsync();
+
+        page.ApproveCommand.Execute(page.Rows[0]);
+        await WaitUntil(() => page.ErrorMessage is not null);
+
+        Assert.Equal([RequestsViewModel.NotInCatalog], page.CatalogChoices);
+        Assert.Equal("The App Portal server did not answer in time.", page.ErrorMessage);
+        Assert.True(page.IsDecisionOpen);
+    }
+
+    [Fact]
+    public async Task Approve_and_add_calls_back_only_after_the_server_accepts()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        var answer = new TaskCompletionSource<AdminRequest>();
+        script.On(nameof(IAdminApiClient.ApproveRequestAsync), _ => answer.Task);
+        var added = new List<AdminRequest>();
+        var page = new RequestsViewModel(api, added.Add);
+        await page.ActivateAsync();
+        var row = page.Rows.Single(r => r.Request.Id == "req-1");
+
+        page.ApproveCommand.Execute(row);
+        page.Reason = "Adding it now.";
+        var approving = page.ApproveAndAddCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(row, page.Rows);
+        Assert.Empty(added);
+
+        answer.SetResult(await script.Demo.ApproveRequestAsync("req-1", "Adding it now.", null, CancellationToken.None));
+        await approving;
+
+        var request = Assert.Single(added);
+        Assert.Equal("req-1", request.Id);
+        Assert.Equal(AppRequestStatus.Approved, request.Status);
+        var args = script.Last(nameof(IAdminApiClient.ApproveRequestAsync));
+        Assert.Equal("Adding it now.", args[1]);
+        Assert.Null(args[2]);
+    }
+
+    [Fact]
+    public async Task Approve_and_add_does_not_call_back_when_the_server_refuses()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        var added = new List<AdminRequest>();
+        var page = new RequestsViewModel(api, added.Add);
+        await page.ActivateAsync();
+        var row = page.Rows.Single(r => r.Request.Id == "req-2");
+        await script.Demo.DenyRequestAsync("req-2", "No licence.", CancellationToken.None);
+
+        page.ApproveCommand.Execute(row);
+        await page.ApproveAndAddCommand.ExecuteAsync(null);
+
+        Assert.Empty(added);
+        Assert.StartsWith("That request had already been decided.", page.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task Approved_rows_show_the_link_and_the_buttons_that_fit_it()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        await script.Demo.ApproveRequestAsync("req-1", null, "legacy-vpn", CancellationToken.None);
+        await script.Demo.ApproveRequestAsync("req-2", null, "ripgrep", CancellationToken.None);
+        await script.Demo.DeleteCatalogAppAsync("ripgrep", CancellationToken.None);
+        var page = new RequestsViewModel(api);
+        page.SelectedTab = RequestsViewModel.Tabs.Single(t => t.Label == "Approved");
+        await WaitUntil(() => !page.IsBusy && page.Rows.Count == 4);
+
+        var linked = page.Rows.Single(r => r.Request.Id == "req-3");
+        Assert.Equal("Catalog app: Notepad++", linked.CatalogAppText);
+        Assert.True(linked.HasCatalogApp);
+        Assert.False(linked.CanAddToCatalog);
+        Assert.True(linked.CanLink);
+
+        var unlinked = page.Rows.Single(r => r.Request.Id == "req-6");
+        Assert.Equal("", unlinked.CatalogAppText);
+        Assert.False(unlinked.HasCatalogApp);
+        Assert.True(unlinked.CanAddToCatalog);
+        Assert.True(unlinked.CanLink);
+
+        Assert.Equal("Catalog app: Legacy VPN client (hidden)", page.Rows.Single(r => r.Request.Id == "req-1").CatalogAppText);
+        Assert.Equal("Catalog app: 'ripgrep', no longer in the catalog", page.Rows.Single(r => r.Request.Id == "req-2").CatalogAppText);
+
+        page.SelectedTab = RequestsViewModel.Tabs.Single(t => t.Label == "Denied");
+        await WaitUntil(() => !page.IsBusy && page.Rows.All(r => r.IsDenied));
+        Assert.All(page.Rows, r => Assert.False(r.CanLink || r.CanAddToCatalog));
+    }
+
+    [Fact]
+    public async Task Add_to_the_catalog_on_a_row_calls_back_with_its_request()
+    {
+        var (api, _) = AdminScriptedApi.Create();
+        var added = new List<AdminRequest>();
+        var page = new RequestsViewModel(api, added.Add);
+        page.SelectedTab = RequestsViewModel.Tabs.Single(t => t.Label == "Approved");
+        await WaitUntil(() => !page.IsBusy && page.Rows.Count == 2);
+
+        page.Rows.Single(r => r.Request.Id == "req-6").AddToCatalogCommand.Execute(null);
+
+        Assert.Equal("req-6", Assert.Single(added).Id);
+    }
+
+    [Fact]
+    public async Task The_link_dialog_sends_the_chosen_app_or_null_to_remove_it()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        var page = new RequestsViewModel(api);
+        page.SelectedTab = RequestsViewModel.Tabs.Single(t => t.Label == "Approved");
+        await WaitUntil(() => !page.IsBusy && page.Rows.Count == 2);
+        var row = page.Rows.Single(r => r.Request.Id == "req-6");
+
+        row.LinkCommand.Execute(null);
+        Assert.True(page.IsLinkOpen);
+        Assert.Same(row, page.Linking);
+        await WaitUntil(() => page.CatalogChoices.Count > 1);
+        Assert.Same(RequestsViewModel.NotInCatalog, page.SelectedCatalogApp);
+        page.SelectedCatalogApp = page.CatalogChoices.Single(c => c.Id == "vscode");
+        await page.ConfirmLinkCommand.ExecuteAsync(null);
+
+        Assert.False(page.IsLinkOpen);
+        var args = script.Last(nameof(IAdminApiClient.LinkRequestAsync));
+        Assert.Equal(("req-6", "vscode"), ((string)args[0]!, (string?)args[1]));
+        Assert.Equal("Catalog app: Visual Studio Code", row.CatalogAppText);
+        Assert.Equal("Linked to Visual Studio Code.", page.Notice);
+
+        // Opened again, the dialog starts on the app the request names now.
+        row.LinkCommand.Execute(null);
+        await WaitUntil(() => page.CatalogChoices.Count > 1);
+        Assert.Equal("vscode", page.SelectedCatalogApp?.Id);
+        page.SelectedCatalogApp = RequestsViewModel.NotInCatalog;
+        await page.ConfirmLinkCommand.ExecuteAsync(null);
+
+        Assert.Null(script.Last(nameof(IAdminApiClient.LinkRequestAsync))[1]);
+        Assert.Equal("", row.CatalogAppText);
+        Assert.True(row.CanAddToCatalog);
+        Assert.Equal("The request no longer names a catalog app.", page.Notice);
+    }
+
+    [Fact]
+    public async Task A_refused_link_leaves_the_row_and_says_why()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        script.On(nameof(IAdminApiClient.LinkRequestAsync), _ => Task.FromException<AdminRequest>(
+            new PortalApiException("No app with id 'vscode' is in the catalog.", HttpStatusCode.UnprocessableEntity)));
+        var page = new RequestsViewModel(api);
+        page.SelectedTab = RequestsViewModel.Tabs.Single(t => t.Label == "Approved");
+        await WaitUntil(() => !page.IsBusy && page.Rows.Count == 2);
+        var row = page.Rows.Single(r => r.Request.Id == "req-3");
+
+        row.LinkCommand.Execute(null);
+        await WaitUntil(() => page.CatalogChoices.Count > 1);
+        Assert.Equal("notepadpp", page.SelectedCatalogApp?.Id);
+        page.SelectedCatalogApp = page.CatalogChoices.Single(c => c.Id == "vscode");
+        await page.ConfirmLinkCommand.ExecuteAsync(null);
+
+        Assert.Equal("No app with id 'vscode' is in the catalog.", page.ErrorMessage);
+        Assert.Equal("Catalog app: Notepad++", row.CatalogAppText);
+        Assert.False(row.IsSaving);
+    }
+
+    [Fact]
+    public async Task A_pending_request_has_no_link_dialog()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        var page = new RequestsViewModel(api);
+        await page.ActivateAsync();
+        var row = page.Rows[0];
+
+        Assert.False(row.CanLink);
+        Assert.False(row.CanAddToCatalog);
+        row.LinkCommand.Execute(null);
+
+        Assert.False(page.IsLinkOpen);
+        Assert.Equal(0, script.Count(nameof(IAdminApiClient.LinkRequestAsync)));
+    }
+
+    [Fact]
+    public async Task The_demo_refuses_an_unknown_app_and_a_link_on_a_request_that_is_not_approved()
+    {
+        var (_, script) = AdminScriptedApi.Create();
+
+        var unknown = await Assert.ThrowsAsync<PortalApiException>(() => script.Demo.ApproveRequestAsync("req-1", null, "nothing", CancellationToken.None));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, unknown.Status);
+        var pending = await Assert.ThrowsAsync<PortalApiException>(() => script.Demo.LinkRequestAsync("req-1", "vscode", CancellationToken.None));
+        Assert.Equal(HttpStatusCode.Conflict, pending.Status);
+
+        var linked = await script.Demo.LinkRequestAsync("req-3", "VSCODE", CancellationToken.None);
+        Assert.Equal(("vscode", "Visual Studio Code"), (linked.CatalogAppId, linked.CatalogAppName));
+    }
+
     /// <summary>The last read of the list itself, as opposed to the one-row read that counts the badge.</summary>
     private static object?[] LastList(AdminScriptedApi script)
         => script.All(nameof(IAdminApiClient.GetRequestsAsync)).Last(a => (int)a[2]! == RequestsViewModel.PageSize);

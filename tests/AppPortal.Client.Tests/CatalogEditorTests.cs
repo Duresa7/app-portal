@@ -509,6 +509,125 @@ public sealed class CatalogEditorTests
         Assert.Null(page.Notice);
     }
 
+    // ---- from a request -----------------------------------------------------------------------
+
+    /// <summary>The demo's Slack request, approved, as the Requests page hands it over.</summary>
+    private static async Task<AdminRequest> ApprovedSlack(AdminScriptedApi script)
+        => await script.Demo.ApproveRequestAsync("req-1", null, null, CancellationToken.None);
+
+    [Fact]
+    public async Task A_request_prefills_the_name_and_id_without_making_the_form_dirty()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        var closed = false;
+        var editor = new CatalogEditorViewModel(api, null, _ => { }, () => closed = true, await ApprovedSlack(script));
+
+        Assert.Equal("Slack", editor.Name);
+        Assert.Equal("slack", editor.Id);
+        Assert.True(editor.HasRequest);
+        Assert.Equal(
+            @"For the request from CONTOSO\alee on RECEPTION-01: Slack, for the new support rota. "
+            + "The name and id are suggested from it, so check both. Saving links the request to this app.",
+            editor.RequestBanner);
+        Assert.False(editor.IsDirty);
+
+        editor.CancelCommand.Execute(null);
+        Assert.True(closed);
+        Assert.False(editor.IsConfirmingDiscard);
+    }
+
+    [Fact]
+    public async Task Saving_links_the_request_to_the_stored_app()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        AdminCatalogApp? stored = null;
+        var editor = new CatalogEditorViewModel(api, null, saved => stored = saved, () => { }, await ApprovedSlack(script))
+        {
+            PackageId = "Slack_Slack_builtin",
+        };
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(editor.ErrorMessage);
+        Assert.Equal("slack", stored!.Id);
+        var args = script.Last(nameof(IAdminApiClient.LinkRequestAsync));
+        Assert.Equal(("req-1", "slack"), ((string)args[0]!, (string?)args[1]));
+        Assert.Null(editor.LinkError);
+        var request = (await script.Demo.GetRequestsAsync(AppRequestStatus.Approved, 0, 50, CancellationToken.None)).Items.Single(r => r.Id == "req-1");
+        Assert.Equal(("slack", "Slack"), (request.CatalogAppId, request.CatalogAppName));
+    }
+
+    [Fact]
+    public async Task A_link_the_server_refuses_leaves_the_app_saved_with_the_reason()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        script.On(nameof(IAdminApiClient.LinkRequestAsync), _ => Task.FromException<AdminRequest>(
+            new PortalApiException("Only an approved request can name a catalog app.", HttpStatusCode.Conflict)));
+        AdminCatalogApp? stored = null;
+        var editor = new CatalogEditorViewModel(api, null, saved => stored = saved, () => { }, await ApprovedSlack(script))
+        {
+            PackageId = "Slack_Slack_builtin",
+        };
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.NotNull(stored);
+        Assert.Equal("Only an approved request can name a catalog app.", editor.LinkError);
+        Assert.Null(editor.ErrorMessage);
+        Assert.NotNull(await api.GetCatalogAppAsync("slack", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Editing_an_existing_app_ignores_the_request()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        var existing = await api.GetCatalogAppAsync("vscode", CancellationToken.None);
+        var editor = new CatalogEditorViewModel(api, existing, _ => { }, () => { }, await ApprovedSlack(script));
+
+        Assert.False(editor.HasRequest);
+        Assert.Null(editor.FromRequest);
+        Assert.Equal("Visual Studio Code", editor.Name);
+
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(0, script.Count(nameof(IAdminApiClient.LinkRequestAsync)));
+    }
+
+    [Fact]
+    public async Task The_catalog_page_says_whether_the_request_was_linked()
+    {
+        var (api, script) = AdminScriptedApi.Create();
+        var page = new CatalogViewModel(api);
+        page.NewFromRequest(await ApprovedSlack(script));
+        await WaitUntil(() => !page.IsBusy && page.Apps.Count > 0);
+        page.Editor!.PackageId = "Slack_Slack_builtin";
+
+        await page.Editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(page.Editor);
+        Assert.Equal(@"Saved Slack and linked it to the request from CONTOSO\alee. Devices pick this up on their next refresh.", page.Notice);
+        Assert.Null(page.ErrorMessage);
+
+        script.On(nameof(IAdminApiClient.LinkRequestAsync), _ => Task.FromException<AdminRequest>(
+            new PortalApiException("Only an approved request can name a catalog app.", HttpStatusCode.Conflict)));
+        var blender = await script.Demo.ApproveRequestAsync("req-2", null, null, CancellationToken.None);
+        page.NewFromRequest(blender);
+        page.Editor!.PackageId = "Blender_builtin";
+        await page.Editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("Saved Blender.", page.Notice);
+        Assert.Equal("The request could not be linked. Only an approved request can name a catalog app.", page.ErrorMessage);
+    }
+
+    private static async Task WaitUntil(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The condition did not come true in time.");
+            await Task.Delay(10);
+        }
+    }
+
     private static CatalogEditorViewModel Editor(AdminCatalogApp? app)
         => new(new DemoAdminApiClient(), app, _ => { }, () => { });
 

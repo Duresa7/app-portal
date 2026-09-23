@@ -20,6 +20,12 @@ public sealed record RequestTab(string Label, AppRequestStatus? Status)
     public override string ToString() => Label;
 }
 
+/// <summary>One entry in the catalog app choice. A null id is "Not in the catalog yet".</summary>
+public sealed record CatalogAppChoice(string? Id, string Label)
+{
+    public override string ToString() => Label;
+}
+
 /// <summary>
 /// Software people have asked for, in the web page's four tabs, with the same two decisions. A decision
 /// shows in the table the moment it is confirmed and is put back if the server refuses it, so deciding a
@@ -39,15 +45,35 @@ public sealed partial class RequestsViewModel : AdminPageViewModel
         new("All", null),
     ];
 
+    /// <summary>The first choice, always there, even when the catalog could not be read.</summary>
+    public static readonly CatalogAppChoice NotInCatalog = new(null, "Not in the catalog yet");
+
+    private readonly Action<AdminRequest>? _addToCatalog;
     private int _offset;
     private int _loadVersion;
+    private int _choicesVersion;
 
-    public RequestsViewModel(IAdminApiClient api) : base(api)
+    /// <param name="addToCatalog">Opens the catalog editor for an approved request. The admin area switches pages for it.</param>
+    public RequestsViewModel(IAdminApiClient api, Action<AdminRequest>? addToCatalog = null) : base(api)
     {
         _selectedTab = Tabs[0];
+        _addToCatalog = addToCatalog;
+        CatalogChoices.Add(NotInCatalog);
     }
 
     public ObservableCollection<RequestRowViewModel> Rows { get; } = [];
+
+    /// <summary>What an approval or a link can name, read afresh each time one of the two dialogs opens.</summary>
+    public ObservableCollection<CatalogAppChoice> CatalogChoices { get; } = [];
+
+    [ObservableProperty] private CatalogAppChoice? _selectedCatalogApp;
+
+    /// <summary>The approved request the link dialog is open for, or null when it is closed.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLinkOpen))]
+    private RequestRowViewModel? _linking;
+
+    public bool IsLinkOpen => Linking is not null;
 
     /// <summary>The same list as <see cref="Tabs"/>, for the view to bind to.</summary>
     public IReadOnlyList<RequestTab> TabItems => Tabs;
@@ -164,11 +190,71 @@ public sealed partial class RequestsViewModel : AdminPageViewModel
     /// decided first, the list is read again so it shows the decision that was actually recorded.
     /// </summary>
     [RelayCommand]
-    private async Task ConfirmDecisionAsync()
+    private Task ConfirmDecisionAsync()
+        => DecideAsync(IsApproving ? SelectedCatalogApp?.Id : null);
+
+    /// <summary>
+    /// The same approval as Approve, without an app, and then the catalog editor for the app that
+    /// answers it. The editor opens only once the server has recorded the approval, because the
+    /// link it makes on save is refused for a request that is not approved.
+    /// </summary>
+    [RelayCommand]
+    private async Task ApproveAndAddAsync()
+    {
+        if (!IsApproving)
+        {
+            return;
+        }
+
+        if (await DecideAsync(null) is { } approved)
+        {
+            _addToCatalog?.Invoke(approved);
+        }
+    }
+
+    [RelayCommand]
+    private void CancelLink() => Linking = null;
+
+    /// <summary>
+    /// Names the chosen app on the request, or removes the link for "Not in the catalog yet". Not
+    /// optimistic: the row shows the server's answer, which carries the app's current name.
+    /// </summary>
+    [RelayCommand]
+    private async Task ConfirmLinkAsync()
+    {
+        if (Linking is not { } row)
+        {
+            return;
+        }
+
+        var id = SelectedCatalogApp?.Id;
+        Linking = null;
+        Notice = null;
+        ErrorMessage = null;
+        row.IsSaving = true;
+        try
+        {
+            row.Request = await Api.LinkRequestAsync(row.Request.Id, id, CancellationToken.None);
+            Notice = row.Request.CatalogAppId is null
+                ? "The request no longer names a catalog app."
+                : $"Linked to {row.Request.CatalogAppName ?? row.Request.CatalogAppId}.";
+        }
+        catch (PortalApiException ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            row.IsSaving = false;
+        }
+    }
+
+    /// <summary>The decision the dialog was open for. The approved request as the server has it, or null when nothing was recorded.</summary>
+    private async Task<AdminRequest?> DecideAsync(string? catalogAppId)
     {
         if (Deciding is not { } row)
         {
-            return;
+            return null;
         }
 
         var status = Decision;
@@ -193,12 +279,14 @@ public sealed partial class RequestsViewModel : AdminPageViewModel
         ErrorMessage = null;
         try
         {
-            row.Request = status == AppRequestStatus.Approved
-                ? await Api.ApproveRequestAsync(before.Id, reason, CancellationToken.None)
+            var decided = status == AppRequestStatus.Approved
+                ? await Api.ApproveRequestAsync(before.Id, reason, catalogAppId, CancellationToken.None)
                 : await Api.DenyRequestAsync(before.Id, reason, CancellationToken.None);
+            row.Request = decided;
             Notice = status == AppRequestStatus.Approved ? "Request approved." : "Request denied.";
             // Counted again rather than trusted: another administrator may be working the same queue.
             await RefreshPendingCountAsync();
+            return decided;
         }
         catch (PortalApiException ex)
         {
@@ -219,6 +307,8 @@ public sealed partial class RequestsViewModel : AdminPageViewModel
             {
                 ErrorMessage = ex.Message;
             }
+
+            return null;
         }
         finally
         {
@@ -236,6 +326,73 @@ public sealed partial class RequestsViewModel : AdminPageViewModel
         Decision = decision;
         Reason = "";
         Deciding = row;
+        if (decision == AppRequestStatus.Approved)
+        {
+            _ = LoadChoicesAsync(null);
+        }
+    }
+
+    private void OpenLink(RequestRowViewModel? row)
+    {
+        if (row is null || !row.CanLink)
+        {
+            return;
+        }
+
+        Linking = row;
+        _ = LoadChoicesAsync(row.Request.CatalogAppId);
+    }
+
+    private void AddToCatalog(AdminRequest request) => _addToCatalog?.Invoke(request);
+
+    /// <summary>
+    /// Every page of the catalog, the way the catalog page reads it, so an app on the second page can
+    /// still be chosen. Starts from "Not in the catalog yet" alone, which is also what a failure leaves.
+    /// </summary>
+    private async Task LoadChoicesAsync(string? current)
+    {
+        var version = ++_choicesVersion;
+        CatalogChoices.Clear();
+        CatalogChoices.Add(NotInCatalog);
+        SelectedCatalogApp = NotInCatalog;
+        try
+        {
+            var apps = new List<AdminCatalogApp>();
+            var offset = 0;
+            while (true)
+            {
+                var page = await Api.GetCatalogAsync(null, offset, AdminApiLimits.MaxLimit, CancellationToken.None);
+                apps.AddRange(page.Items);
+                if (!page.HasMore || page.Items.Count == 0)
+                {
+                    break;
+                }
+
+                offset += page.Items.Count;
+            }
+
+            if (version != _choicesVersion)
+            {
+                return;
+            }
+
+            foreach (var app in apps)
+            {
+                var choice = new CatalogAppChoice(app.Id, app.Hidden ? $"{app.Name} (hidden)" : app.Name);
+                CatalogChoices.Add(choice);
+                if (current is not null && string.Equals(app.Id, current, StringComparison.OrdinalIgnoreCase))
+                {
+                    SelectedCatalogApp = choice;
+                }
+            }
+        }
+        catch (PortalApiException ex)
+        {
+            if (version == _choicesVersion)
+            {
+                ErrorMessage = ex.Message;
+            }
+        }
     }
 
     private async Task LoadAsync()
@@ -255,7 +412,7 @@ public sealed partial class RequestsViewModel : AdminPageViewModel
             Rows.Clear();
             foreach (var request in page.Items)
             {
-                Rows.Add(new RequestRowViewModel(request, Approve, Deny));
+                Rows.Add(new RequestRowViewModel(request, Approve, Deny, AddToCatalog, OpenLink));
             }
 
             HasPrevious = offset > 0;
@@ -288,26 +445,55 @@ public sealed partial class RequestsViewModel : AdminPageViewModel
 /// <summary>One request in the table, worded as the web page words it.</summary>
 public sealed partial class RequestRowViewModel : ObservableObject
 {
-    public RequestRowViewModel(AdminRequest request, Action<RequestRowViewModel?> approve, Action<RequestRowViewModel?> deny)
+    /// <param name="addToCatalog">Opens the catalog editor prefilled from this request.</param>
+    /// <param name="link">Opens the dialog that names, changes or removes this request's catalog app.</param>
+    public RequestRowViewModel(
+        AdminRequest request,
+        Action<RequestRowViewModel?> approve,
+        Action<RequestRowViewModel?> deny,
+        Action<AdminRequest>? addToCatalog = null,
+        Action<RequestRowViewModel?>? link = null)
     {
         _request = request;
         ApproveCommand = new RelayCommand(() => approve(this));
         DenyCommand = new RelayCommand(() => deny(this));
+        AddToCatalogCommand = new RelayCommand(() => addToCatalog?.Invoke(Request));
+        LinkCommand = new RelayCommand(() => link?.Invoke(this));
     }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SubmittedText), nameof(DeviceName), nameof(RequesterText), nameof(Text), nameof(IsPending),
-        nameof(IsApproved), nameof(IsDenied), nameof(StatusText), nameof(ReasonText), nameof(DecidedText), nameof(CanDecide))]
+        nameof(IsApproved), nameof(IsDenied), nameof(StatusText), nameof(ReasonText), nameof(DecidedText), nameof(CanDecide),
+        nameof(CatalogAppText), nameof(HasCatalogApp), nameof(CanAddToCatalog), nameof(CanLink))]
     private AdminRequest _request;
 
     /// <summary>True between a decision on screen and the server's answer to it.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(DecidedText), nameof(CanDecide))]
+    [NotifyPropertyChangedFor(nameof(DecidedText), nameof(CanDecide), nameof(CanAddToCatalog), nameof(CanLink))]
     private bool _isSaving;
 
     public IRelayCommand ApproveCommand { get; }
 
     public IRelayCommand DenyCommand { get; }
+
+    public IRelayCommand AddToCatalogCommand { get; }
+
+    public IRelayCommand LinkCommand { get; }
+
+    /// <summary>The app that answers this request, worded as the web row words it; empty when there is none.</summary>
+    public string CatalogAppText => Request switch
+    {
+        { CatalogAppId: null } => "",
+        { CatalogAppName: null } => $"Catalog app: '{Request.CatalogAppId}', no longer in the catalog",
+        { CatalogAppHidden: true } => $"Catalog app: {Request.CatalogAppName} (hidden)",
+        _ => $"Catalog app: {Request.CatalogAppName}",
+    };
+
+    public bool HasCatalogApp => Request.CatalogAppId is not null;
+
+    public bool CanAddToCatalog => IsApproved && !HasCatalogApp && !IsSaving;
+
+    public bool CanLink => IsApproved && !IsSaving;
 
     public string SubmittedText => When(Request.CreatedAt);
     public string DeviceName => Request.DeviceName;

@@ -2,6 +2,7 @@ using AppPortal.Server.Action1;
 using AppPortal.Server.Admin;
 using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
+using AppPortal.Server.Requests;
 using AppPortal.Shared;
 
 using Microsoft.AspNetCore.Authorization;
@@ -16,7 +17,7 @@ namespace AppPortal.Server.Pages.Admin.Catalog;
 /// </summary>
 [Authorize(Policy = AdminAuth.Policy)]
 public sealed class EditModel(CatalogStore catalog, IAction1Client action1, IConfiguration configuration,
-    DeviceManagerStore managers, PackageHelpers? helpers = null) : PageModel
+    DeviceManagerStore managers, AppRequestStore requests, PackageHelpers? helpers = null) : PageModel
 {
     public const string NewId = "new";
 
@@ -33,6 +34,21 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     /// <summary>Set by the redirect after a save, so a reload does not repost the form.</summary>
     [BindProperty(SupportsGet = true)]
     public bool Saved { get; set; }
+
+    /// <summary>
+    /// The approved request this new app answers, from <c>?fromRequest=</c> and then a hidden field,
+    /// because the helper buttons post to <c>?handler=</c> and drop the page's own query string. Not
+    /// called Request, which would hide <see cref="PageModel.Request"/>.
+    /// </summary>
+    [BindProperty(SupportsGet = true)]
+    public string? FromRequest { get; set; }
+
+    /// <summary>"yes" or "no" after a save from a request: whether the request now names this app.</summary>
+    [BindProperty(SupportsGet = true)]
+    public string? Linked { get; set; }
+
+    /// <summary>The request <see cref="FromRequest"/> names, once it is known to be approved; only for a new app.</summary>
+    public AppRequestRecord? SourceRequest { get; private set; }
 
     [BindProperty]
     public string Id { get; set; } = "";
@@ -144,8 +160,19 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         {
             Category = "Other";
             Sentence = new CatalogEntry().Describe();
+            if (LoadSourceRequest() is { } source)
+            {
+                // Only the name and id are guessed. The rest of a free-text request is for a person
+                // to read, which is why the whole text is shown above the form.
+                Name = RequestSuggestion.Name(source.Text);
+                Id = RequestSuggestion.Id(Name);
+                Sentence = TryDescribe(Id);
+            }
+
             return Page();
         }
+
+        FromRequest = null;
 
         var entry = catalog.Find(id);
         if (entry is null)
@@ -166,12 +193,14 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         if (IsNew && catalog.Find(target) is not null)
         {
             Error = $"An app with id '{target.Trim()}' already exists.";
+            LoadSourceRequest();
             return Page();
         }
 
         if (ModelState[nameof(DirectSizeBytes)]?.Errors.Count > 0 && Source == SourceDirect)
         {
             Error = "Enter sizeBytes as a positive whole number of bytes.";
+            LoadSourceRequest();
             return Page();
         }
 
@@ -188,10 +217,46 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         {
             Error = ex.Message;
             Sentence = TryDescribe(target);
+            LoadSourceRequest();
             return Page();
         }
 
+        if (IsNew && !string.IsNullOrWhiteSpace(FromRequest))
+        {
+            // The app is saved whatever happens here. A request that cannot be linked is said so on
+            // the next page, and the Requests page can link it later.
+            var linked = requests.Link(FromRequest.Trim(), entry.Id) == RequestLinkResult.Linked;
+            return RedirectToPage("Edit", new { id = entry.Id, saved = true, linked = linked ? "yes" : "no" });
+        }
+
         return RedirectToPage("Edit", new { id = entry.Id, saved = true });
+    }
+
+    /// <summary>
+    /// Loads <see cref="SourceRequest"/> for a new app whose <see cref="FromRequest"/> names an
+    /// approved request. Anything else clears <see cref="FromRequest"/>, so saving links nothing; a
+    /// request that is missing or undecided is also said so.
+    /// </summary>
+    private AppRequestRecord? LoadSourceRequest()
+    {
+        if (!IsNew || string.IsNullOrWhiteSpace(FromRequest))
+        {
+            FromRequest = null;
+            return null;
+        }
+
+        var record = requests.Find(FromRequest.Trim());
+        if (record?.Status != AppRequestStatus.Approved)
+        {
+            FromRequest = null;
+            const string NotApproved = "That request is not approved, so this app will not be linked to it. Approve it on the Requests page first.";
+            Error = Error is null ? NotApproved : Error + " " + NotApproved;
+            return null;
+        }
+
+        FromRequest = record.Id;
+        SourceRequest = record;
+        return record;
     }
 
     /// <summary>
@@ -263,6 +328,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             Error = "Could not fetch the installer. " + ex.Message;
         }
 
+        LoadSourceRequest();
         return Page();
     }
 
@@ -285,6 +351,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             Error = ex.Message;
         }
 
+        LoadSourceRequest();
         return Page();
     }
 

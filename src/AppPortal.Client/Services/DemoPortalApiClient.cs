@@ -56,7 +56,8 @@ public sealed class DemoPortalApiClient : IPortalApiClient
 
         _requests.Add(new AppRequest(Guid.NewGuid().ToString("N"), "Notepad++, for editing config files on this box",
             DemoIdentity.MachineName, DemoIdentity.Account, AppRequestStatus.Approved,
-            "Added to the catalog, it should appear within the hour.", DateTimeOffset.Now.AddDays(-4), DateTimeOffset.Now.AddDays(-3)));
+            "Added to the catalog, it should appear within the hour.", DateTimeOffset.Now.AddDays(-4), DateTimeOffset.Now.AddDays(-3),
+            CatalogAppId: "notepadpp", CatalogAppName: "Notepad++"));
         _requests.Add(new AppRequest(Guid.NewGuid().ToString("N"), "A licence for the full Acrobat, not just the reader",
             DemoIdentity.MachineName, DemoIdentity.Account, AppRequestStatus.Denied,
             "We have no spare licences this quarter. Ask again in April.", DateTimeOffset.Now.AddDays(-9), DateTimeOffset.Now.AddDays(-8)));

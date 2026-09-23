@@ -43,10 +43,19 @@ public sealed record AdminRequest(
     string? Reason,
     string? DecidedBy,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? DecidedAt);
+    DateTimeOffset? DecidedAt,
+    string? CatalogAppId = null,      // as linked, even if the app has since been deleted
+    string? CatalogAppName = null,    // null when the linked app is no longer in the catalog
+    bool CatalogAppHidden = false);
 
-/// <summary>Approving or denying a request. The reason is optional and reaches the person who asked.</summary>
-public sealed record AdminDecision(string? Reason = null);
+/// <summary>
+/// Approving or denying a request. The reason is optional and reaches the person who asked. An
+/// approval may also name the catalog app that answers it; a denial may not.
+/// </summary>
+public sealed record AdminDecision(string? Reason = null, string? CatalogAppId = null);
+
+/// <summary>Naming, changing or (null or blank) removing the catalog app an approved request is answered by.</summary>
+public sealed record AdminRequestLink(string? CatalogAppId);
 
 /// <summary>What an app matches in a device's installed-software list.</summary>
 public sealed record AdminMatchRule(string? NameContains, string? NameEquals);

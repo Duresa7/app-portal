@@ -34,7 +34,12 @@ public sealed class AdminAreaViewModel : ViewModelBase
         Dashboard = new DashboardViewModel(api, navigate);
         Installs = new InstallsViewModel(api);
         Catalog = new CatalogViewModel(api);
-        Requests = new RequestsViewModel(api);
+        // "Approve and add to the catalog" ends on the Catalog page with the editor open and prefilled.
+        Requests = new RequestsViewModel(api, r =>
+        {
+            Catalog.NewFromRequest(r);
+            navigate(AdminSections.Catalog);
+        });
         Devices = new DevicesViewModel(api);
         Keys = new KeysViewModel(api);
         Admins = new AdminsViewModel(api, username);

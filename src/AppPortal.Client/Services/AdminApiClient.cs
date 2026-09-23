@@ -59,8 +59,12 @@ public interface IAdminApiClient
 
     /// <summary>Requests with one status, or every request when <paramref name="status"/> is null.</summary>
     Task<AdminPage<AdminRequest>> GetRequestsAsync(AppRequestStatus? status, int offset, int limit, CancellationToken ct);
-    Task<AdminRequest> ApproveRequestAsync(string id, string? reason, CancellationToken ct);
+    /// <summary>Approves a request, naming the catalog app that answers it when <paramref name="catalogAppId"/> is set.</summary>
+    Task<AdminRequest> ApproveRequestAsync(string id, string? reason, string? catalogAppId, CancellationToken ct);
     Task<AdminRequest> DenyRequestAsync(string id, string? reason, CancellationToken ct);
+
+    /// <summary>Names, changes or (null) removes the catalog app an approved request is answered by.</summary>
+    Task<AdminRequest> LinkRequestAsync(string id, string? catalogAppId, CancellationToken ct);
 
     Task<AdminPage<AdminCatalogApp>> GetCatalogAsync(string? search, int offset, int limit, CancellationToken ct);
     Task<AdminCatalogApp> GetCatalogAppAsync(string id, CancellationToken ct);
@@ -168,11 +172,14 @@ public sealed class AdminApiClient : IAdminApiClient
         return SendAsync<AdminPage<AdminRequest>>(HttpMethod.Get, Paged(AdminApiRoutes.Requests, offset, limit, [new("status", name)]), null, ct);
     }
 
-    public Task<AdminRequest> ApproveRequestAsync(string id, string? reason, CancellationToken ct)
-        => SendAsync<AdminRequest>(HttpMethod.Post, Item(AdminApiRoutes.Requests, id, "approve"), new AdminDecision(reason), ct);
+    public Task<AdminRequest> ApproveRequestAsync(string id, string? reason, string? catalogAppId, CancellationToken ct)
+        => SendAsync<AdminRequest>(HttpMethod.Post, Item(AdminApiRoutes.Requests, id, "approve"), new AdminDecision(reason, catalogAppId), ct);
 
     public Task<AdminRequest> DenyRequestAsync(string id, string? reason, CancellationToken ct)
         => SendAsync<AdminRequest>(HttpMethod.Post, Item(AdminApiRoutes.Requests, id, "deny"), new AdminDecision(reason), ct);
+
+    public Task<AdminRequest> LinkRequestAsync(string id, string? catalogAppId, CancellationToken ct)
+        => SendAsync<AdminRequest>(HttpMethod.Put, Item(AdminApiRoutes.Requests, id, "catalog-app"), new AdminRequestLink(catalogAppId), ct);
 
     public Task<AdminPage<AdminCatalogApp>> GetCatalogAsync(string? search, int offset, int limit, CancellationToken ct)
         => SendAsync<AdminPage<AdminCatalogApp>>(HttpMethod.Get, Paged(AdminApiRoutes.Catalog, offset, limit, [new("Search", search)]), null, ct);

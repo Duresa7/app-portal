@@ -63,4 +63,88 @@ public sealed class RequestHistoryMigrationTests
         Assert.Equal(SqlTime.Parse("2026-01-02T00:00:00.0000000+00:00"), request.DecidedAt);
         Assert.Equal(SqlTime.Parse("2026-01-01T00:00:00.0000000+00:00"), request.CreatedAt);
     }
+
+    [Fact]
+    public void Requests_at_021_upgrade_unchanged_and_unlinked()
+    {
+        using var test = new TestDatabase();
+        var database = new Database(Path.Combine(test.Root, "before-022.db"));
+        using (var connection = database.Open())
+        using (var command = connection.CreateCommand())
+        {
+            ApplyBelow(command, 22);
+            command.CommandText = """
+                INSERT INTO devices (id, name, token_hash, created_at)
+                VALUES ('device-1', 'PC-1', 'hash', '2026-01-01T00:00:00.0000000+00:00');
+                INSERT INTO catalog_apps (id, name, created_at, updated_at)
+                VALUES ('slack', 'Slack', '2026-01-01T00:00:00.0000000+00:00', '2026-01-01T00:00:00.0000000+00:00');
+                INSERT INTO app_requests (id, device_id, device_name, requested_by, text, status, reason, decided_by, decided_at, created_at)
+                VALUES
+                    ('approved', 'device-1', 'PC-1', 'alice', 'Slack', 'approved', 'For support', 'admin',
+                     '2026-01-02T00:00:00.0000000+00:00', '2026-01-01T00:00:00.0000000+00:00'),
+                    ('denied', 'device-1', 'PC-1', 'bob', 'A game', 'denied', 'Not for work', 'admin',
+                     '2026-01-03T00:00:00.0000000+00:00', '2026-01-01T01:00:00.0000000+00:00'),
+                    ('pending', 'device-1', 'PC-1', NULL, 'Blender', 'pending', NULL, NULL, NULL,
+                     '2026-01-01T02:00:00.0000000+00:00');
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        database.Migrate();
+
+        var requests = new AppRequestStore(database).List(RequestFilter.Everything, ListQuery.All).Rows
+            .ToDictionary(r => r.Id);
+        Assert.Equal(3, requests.Count);
+
+        var approved = requests["approved"];
+        Assert.Equal(("PC-1", "alice", "Slack", AppRequestStatus.Approved, "For support", "admin"),
+            (approved.DeviceName, approved.RequestedBy, approved.Text, approved.Status, approved.Reason, approved.DecidedBy));
+        Assert.Equal(SqlTime.Parse("2026-01-02T00:00:00.0000000+00:00"), approved.DecidedAt);
+
+        var denied = requests["denied"];
+        Assert.Equal(("bob", "A game", AppRequestStatus.Denied, "Not for work"), (denied.RequestedBy, denied.Text, denied.Status, denied.Reason));
+
+        var pending = requests["pending"];
+        Assert.Equal(("Blender", AppRequestStatus.Pending), (pending.Text, pending.Status));
+        Assert.Null(pending.DecidedAt);
+
+        // The catalog holds an app whose name matches a request, and still nothing is linked: 022
+        // guesses no links.
+        Assert.All(requests.Values, r =>
+        {
+            Assert.Null(r.CatalogAppId);
+            Assert.Null(r.CatalogAppName);
+            Assert.False(r.CatalogAppHidden);
+            Assert.Null(r.ToPublic().CatalogAppId);
+        });
+    }
+
+    /// <summary>Builds the schema as it stood before <paramref name="version"/>, the way the server used to.</summary>
+    private static void ApplyBelow(Microsoft.Data.Sqlite.SqliteCommand command, int version)
+    {
+        var assembly = typeof(Database).Assembly;
+        command.CommandText = "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);";
+        command.ExecuteNonQuery();
+        foreach (var resource in assembly.GetManifestResourceNames()
+                     .Where(name => name.Contains(".Migrations.", StringComparison.Ordinal))
+                     .OrderBy(name => name, StringComparer.Ordinal))
+        {
+            var name = resource.Split(".Migrations.")[1];
+            var number = int.Parse(name.Split('-')[0], System.Globalization.CultureInfo.InvariantCulture);
+            if (number >= version)
+            {
+                continue;
+            }
+
+            using var reader = new StreamReader(assembly.GetManifestResourceStream(resource)!);
+            command.CommandText = reader.ReadToEnd();
+            command.ExecuteNonQuery();
+            command.CommandText = "INSERT INTO schema_version VALUES (@version, @at);";
+            command.Parameters.Clear();
+            command.Parameters.AddWithValue("@version", number);
+            command.Parameters.AddWithValue("@at", SqlTime.Now());
+            command.ExecuteNonQuery();
+            command.Parameters.Clear();
+        }
+    }
 }

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
+using AppPortal.Server.Catalog;
 using AppPortal.Server.Devices;
 using AppPortal.Server.Requests;
 using AppPortal.Shared;
@@ -57,7 +58,7 @@ public sealed class AdminRequestsPageTests : IDisposable
         => WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
 
     private async Task<HttpResponseMessage> Decide(
-        HttpClient client, string handler, string id, string? reason, bool htmx)
+        HttpClient client, string handler, string id, string? reason, bool htmx, string? catalogAppId = null)
     {
         var token = await TokenFrom(client, "/admin/requests");
         var fields = new Dictionary<string, string>
@@ -70,6 +71,11 @@ public sealed class AdminRequestsPageTests : IDisposable
         if (reason is not null)
         {
             fields["reason"] = reason;
+        }
+
+        if (catalogAppId is not null)
+        {
+            fields["catalogAppId"] = catalogAppId;
         }
 
         var message = new HttpRequestMessage(HttpMethod.Post, $"/admin/requests?handler={handler}")
@@ -309,6 +315,173 @@ public sealed class AdminRequestsPageTests : IDisposable
         Assert.Equal(AppRequestStatus.Approved, answered.Status);
         Assert.Equal("Added to the catalog.", answered.Reason);
         Assert.NotNull(answered.DecidedAt);
+    }
+
+    private CatalogStore SeedCatalog()
+    {
+        var catalog = new CatalogStore(_test.Database, "");
+        catalog.Upsert(new CatalogEntry { Id = "Slack", Name = "Slack", Action1 = new Action1PackageRef { PackageId = "Slack_1" } });
+        catalog.Upsert(new CatalogEntry { Id = "teams", Name = "Teams", Action1 = new Action1PackageRef { PackageId = "Teams_1" } });
+        return catalog;
+    }
+
+    [Fact]
+    public async Task Approving_with_an_app_id_links_the_request_in_the_same_write()
+    {
+        SeedCatalog();
+        var request = _requests.Create("TESTPC", null, "Slack, please");
+        var client = await SignedIn();
+
+        var response = await Decide(client, "Approve", request.Id, "Added.", htmx: true, catalogAppId: " slack ");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = _requests.Find(request.Id)!;
+        Assert.Equal(AppRequestStatus.Approved, stored.Status);
+        Assert.Equal("Slack", stored.CatalogAppId);
+    }
+
+    [Fact]
+    public async Task Approving_with_an_unknown_app_id_decides_nothing()
+    {
+        var request = _requests.Create("TESTPC", null, "Slack");
+        var client = await SignedIn();
+
+        var response = await Decide(client, "Approve", request.Id, null, htmx: true, catalogAppId: "slack");
+
+        Assert.Contains("No app with id 'slack' is in the catalog. Nothing was decided.", await Body(response), StringComparison.Ordinal);
+        Assert.Equal(AppRequestStatus.Pending, _requests.Find(request.Id)!.Status);
+    }
+
+    [Fact]
+    public async Task Approving_with_a_blank_app_id_approves_as_before()
+    {
+        var request = _requests.Create("TESTPC", null, "Slack");
+        var client = await SignedIn();
+
+        await Decide(client, "Approve", request.Id, null, htmx: true, catalogAppId: "  ");
+
+        var stored = _requests.Find(request.Id)!;
+        Assert.Equal(AppRequestStatus.Approved, stored.Status);
+        Assert.Null(stored.CatalogAppId);
+    }
+
+    [Fact]
+    public async Task Approve_and_add_records_the_approval_and_opens_the_create_form()
+    {
+        var request = _requests.Create("TESTPC", null, "Slack, for support");
+        var client = await SignedIn();
+
+        // The button has no hx-post, so it arrives as a plain form post even with htmx on the page.
+        var response = await Decide(client, "ApproveAndAdd", request.Id, "Adding it now.", htmx: false);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal($"/admin/catalog/new?fromRequest={request.Id}", response.Headers.Location?.OriginalString);
+        var stored = _requests.Find(request.Id)!;
+        Assert.Equal(AppRequestStatus.Approved, stored.Status);
+        Assert.Equal("Adding it now.", stored.Reason);
+        Assert.Null(stored.CatalogAppId);
+    }
+
+    [Fact]
+    public async Task Approve_and_add_on_a_decided_request_shows_the_error_and_stays()
+    {
+        var request = _requests.Create("TESTPC", null, "Slack");
+        _requests.Decide(request.Id, AppRequestStatus.Denied, "No.", "someone else");
+        var client = await SignedIn();
+
+        var response = await Decide(client, "ApproveAndAdd", request.Id, null, htmx: false);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("That request had already been decided.", await Body(response), StringComparison.Ordinal);
+        Assert.Equal(AppRequestStatus.Denied, _requests.Find(request.Id)!.Status);
+    }
+
+    [Fact]
+    public async Task An_approved_request_is_linked_relinked_and_unlinked_from_the_page()
+    {
+        SeedCatalog();
+        var request = _requests.Create("TESTPC", null, "Chat");
+        _requests.Decide(request.Id, AppRequestStatus.Approved, null, "admin");
+        var client = await SignedIn();
+
+        var linked = await Decide(client, "Link", request.Id, null, htmx: true, catalogAppId: "slack");
+        Assert.Contains("Linked to Slack.", await Body(linked), StringComparison.Ordinal);
+        Assert.Equal("Slack", _requests.Find(request.Id)!.CatalogAppId);
+
+        var relinked = await Decide(client, "Link", request.Id, null, htmx: true, catalogAppId: "teams");
+        Assert.Contains("Linked to Teams.", await Body(relinked), StringComparison.Ordinal);
+        Assert.Equal("teams", _requests.Find(request.Id)!.CatalogAppId);
+
+        var unknown = await Decide(client, "Link", request.Id, null, htmx: true, catalogAppId: "zoom");
+        Assert.Contains("No app with id 'zoom' is in the catalog.", await Body(unknown), StringComparison.Ordinal);
+        Assert.Equal("teams", _requests.Find(request.Id)!.CatalogAppId);
+
+        var unlinked = await Decide(client, "Unlink", request.Id, null, htmx: true);
+        Assert.Contains("The request no longer names a catalog app.", await Body(unlinked), StringComparison.Ordinal);
+        Assert.Null(_requests.Find(request.Id)!.CatalogAppId);
+    }
+
+    [Fact]
+    public async Task A_pending_or_missing_request_cannot_be_linked_from_the_page()
+    {
+        SeedCatalog();
+        var request = _requests.Create("TESTPC", null, "Chat");
+        var client = await SignedIn();
+
+        var pending = await Decide(client, "Link", request.Id, null, htmx: true, catalogAppId: "Slack");
+        Assert.Contains("Only an approved request can name a catalog app.", await Body(pending), StringComparison.Ordinal);
+
+        var missing = await Decide(client, "Link", "nothing", null, htmx: true, catalogAppId: "Slack");
+        Assert.Contains("No such request.", await Body(missing), StringComparison.Ordinal);
+        Assert.Null(_requests.Find(request.Id)!.CatalogAppId);
+    }
+
+    [Fact]
+    public async Task Rows_show_the_pending_choices_and_the_approved_link_in_each_state()
+    {
+        var catalog = SeedCatalog();
+        var pending = _requests.Create("TESTPC", null, "Waiting");
+        var unlinked = _requests.Create("TESTPC", null, "Unlinked");
+        var visible = _requests.Create("TESTPC", null, "Visible");
+        var hidden = _requests.Create("TESTPC", null, "Hidden");
+        var deleted = _requests.Create("TESTPC", null, "Deleted");
+        _requests.Decide(unlinked.Id, AppRequestStatus.Approved, null, "admin");
+        _requests.Decide(visible.Id, AppRequestStatus.Approved, null, "admin", "Slack");
+        _requests.Decide(hidden.Id, AppRequestStatus.Approved, null, "admin", "teams");
+        catalog.Upsert(new CatalogEntry { Id = "zoom", Name = "Zoom", Action1 = new Action1PackageRef { PackageId = "Zoom_1" } });
+        _requests.Decide(deleted.Id, AppRequestStatus.Approved, null, "admin", "zoom");
+        Assert.True(catalog.SetHidden("teams", true));
+        Assert.True(catalog.Delete("zoom"));
+        var client = await SignedIn();
+
+        var pendingHtml = await Html(client, "/admin/requests");
+        Assert.Contains("Already in the catalog? Its id (optional, for Approve)", pendingHtml, StringComparison.Ordinal);
+        Assert.Contains("Approve and add to the catalog", pendingHtml, StringComparison.Ordinal);
+        Assert.Contains("formaction=\"/admin/requests?handler=ApproveAndAdd\">", pendingHtml, StringComparison.Ordinal);
+        Assert.Contains("<datalist id=\"catalog-app-ids\">", pendingHtml, StringComparison.Ordinal);
+        Assert.Contains("<option value=\"Slack\">Slack</option>", pendingHtml, StringComparison.Ordinal);
+
+        var html = await Html(client, "/admin/requests?tab=approved");
+        Assert.Contains("Catalog app: <a href=\"/admin/catalog/Slack\">Slack</a>", html, StringComparison.Ordinal);
+        Assert.Contains("Catalog app: Teams (hidden, so devices are not offered it)", html, StringComparison.Ordinal);
+        Assert.Contains("Catalog app: 'zoom', no longer in the catalog", html, StringComparison.Ordinal);
+
+        // Only the unlinked row offers Add to the catalog; every approved row offers a way to change the link.
+        Assert.Single(Regex.Matches(html, ">Add to the catalog</a>"));
+        Assert.Contains($"href=\"/admin/catalog/new?fromRequest={unlinked.Id}\"", html, StringComparison.Ordinal);
+        Assert.Equal(4, Regex.Matches(html, "<summary>Catalog app</summary>").Count);
+        Assert.Equal(3, Regex.Matches(html, ">Remove link</button>").Count);
+    }
+
+    [Fact]
+    public async Task Request_text_is_encoded_in_the_row()
+    {
+        _requests.Create("TESTPC", null, "<script>alert(1)</script>");
+        var client = await SignedIn();
+
+        var raw = await client.GetStringAsync("/admin/requests");
+
+        Assert.DoesNotContain("<script>alert(1)</script>", raw, StringComparison.Ordinal);
     }
 
     public void Dispose()

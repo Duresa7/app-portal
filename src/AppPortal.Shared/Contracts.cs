@@ -94,7 +94,9 @@ public sealed record AppRequest(
     AppRequestStatus Status,
     string? Reason,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? DecidedAt);
+    DateTimeOffset? DecidedAt,
+    string? CatalogAppId = null,      // the app that answers this request, when it is in the catalog and visible
+    string? CatalogAppName = null);
 
 public sealed record CreateAppRequest(string Text);
 

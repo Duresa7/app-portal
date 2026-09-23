@@ -102,22 +102,34 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     private readonly Action<AdminCatalogApp> _saved;
     private readonly Action _closed;
     private readonly string _baseline;
-    /// <summary>True only while the constructor fills the form from a saved app.</summary>
+    /// <summary>True only while the constructor fills the form from a saved app or a request.</summary>
     private readonly bool _loading;
 
     /// <param name="app">The app to edit, or null for the create form.</param>
     /// <param name="saved">Called with what the server stored, after a save it accepted.</param>
     /// <param name="closed">Called when the form is left without saving.</param>
-    public CatalogEditorViewModel(IAdminApiClient api, AdminCatalogApp? app, Action<AdminCatalogApp> saved, Action closed)
+    /// <param name="fromRequest">
+    /// The approved request a new app answers. The name and id are suggested from it, and a save links
+    /// the request to the app. Ignored when <paramref name="app"/> is set.
+    /// </param>
+    public CatalogEditorViewModel(IAdminApiClient api, AdminCatalogApp? app, Action<AdminCatalogApp> saved, Action closed,
+        AdminRequest? fromRequest = null)
     {
         _api = api;
         _saved = saved;
         _closed = closed;
         IsNew = app is null;
+        FromRequest = IsNew ? fromRequest : null;
         _loading = true;
         if (app is not null)
         {
             Fill(app);
+        }
+        else if (FromRequest is { } request)
+        {
+            // Before the baseline, so a prefilled form nobody has touched closes without asking.
+            Name = RequestSuggestion.Name(request.Text);
+            Id = RequestSuggestion.Id(Name);
         }
 
         _loading = false;
@@ -125,6 +137,20 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     }
 
     public bool IsNew { get; }
+
+    /// <summary>The approved request this new app answers, or null.</summary>
+    public AdminRequest? FromRequest { get; }
+
+    public bool HasRequest => FromRequest is not null;
+
+    /// <summary>The web form's banner, quoting the request the name and id were suggested from.</summary>
+    public string RequestBanner => FromRequest is { } request
+        ? $"For the request from {(string.IsNullOrWhiteSpace(request.RequestedBy) ? "an unknown user" : request.RequestedBy)} on {request.DeviceName}: "
+          + $"{request.Text}. The name and id are suggested from it, so check both. Saving links the request to this app."
+        : "";
+
+    /// <summary>Why the request could not be linked after the app was saved, or null when it was, or when there was nothing to link.</summary>
+    public string? LinkError { get; private set; }
 
     public string Title => IsNew ? "New app" : string.IsNullOrWhiteSpace(Name) ? Id : Name;
 
@@ -456,6 +482,21 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
             }
 
             var stored = await _api.SaveCatalogAppAsync(app, CancellationToken.None);
+            if (FromRequest is { } request)
+            {
+                // The app is saved either way. A link the server refuses is reported beside the save,
+                // and can be made later from the Requests page.
+                try
+                {
+                    LinkError = null;
+                    await _api.LinkRequestAsync(request.Id, stored.Id, CancellationToken.None);
+                }
+                catch (PortalApiException ex)
+                {
+                    LinkError = ex.Message;
+                }
+            }
+
             _saved(stored);
         }
         catch (PortalApiException ex)

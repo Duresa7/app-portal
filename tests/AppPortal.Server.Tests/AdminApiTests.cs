@@ -100,6 +100,7 @@ public sealed class AdminApiTests : IDisposable
         ("GET", "/api/v1/admin/requests"),
         ("POST", "/api/v1/admin/requests/any-id/approve"),
         ("POST", "/api/v1/admin/requests/any-id/deny"),
+        ("PUT", "/api/v1/admin/requests/any-id/catalog-app"),
         ("GET", "/api/v1/admin/catalog"),
         ("GET", "/api/v1/admin/catalog/export"),
         ("GET", "/api/v1/admin/catalog/any-id"),
@@ -503,6 +504,144 @@ public sealed class AdminApiTests : IDisposable
 
         var upper = await client.GetFromJsonAsync<AdminPage<AdminRequest>>("/api/v1/admin/requests?status=PENDING", Json);
         Assert.Equal(pending, Assert.Single(upper!.Items).Id);
+    }
+
+    private void SeedSlack(bool hidden = false)
+        => _catalog.Upsert(new CatalogEntry
+        {
+            Id = "Slack",
+            Name = "Slack",
+            Hidden = hidden,
+            Action1 = new Action1PackageRef { PackageId = "Slack_1" },
+        });
+
+    [Fact]
+    public async Task An_approval_can_name_an_app_already_in_the_catalog()
+    {
+        SeedSlack();
+        var id = SeedRequest("Slack, for the support rota");
+
+        var approved = await (await Admin()).PostAsJsonAsync(
+            $"/api/v1/admin/requests/{id}/approve", new AdminDecision("Added.", "slack"), Json);
+
+        Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        var body = (await approved.Content.ReadFromJsonAsync<AdminRequest>(Json))!;
+        Assert.Equal(AppRequestStatus.Approved, body.Status);
+        Assert.Equal("Added.", body.Reason);
+        Assert.Equal("Slack", body.CatalogAppId);
+        Assert.Equal("Slack", body.CatalogAppName);
+        Assert.False(body.CatalogAppHidden);
+        Assert.Equal("Slack", _requests.Find(id)!.CatalogAppId);
+    }
+
+    [Fact]
+    public async Task An_approval_naming_an_unknown_app_is_a_422_and_decides_nothing()
+    {
+        var id = SeedRequest("Slack");
+
+        var response = await (await Admin()).PostAsJsonAsync(
+            $"/api/v1/admin/requests/{id}/approve", new AdminDecision(null, "slack"), Json);
+
+        Assert.Equal((HttpStatusCode)422, response.StatusCode);
+        Assert.Equal("No app with id 'slack' is in the catalog.", (await response.Content.ReadFromJsonAsync<ErrorMessage>(Json))!.Message);
+        Assert.Equal(AppRequestStatus.Pending, _requests.Find(id)!.Status);
+    }
+
+    [Fact]
+    public async Task An_approval_checks_the_request_before_the_app()
+    {
+        var response = await (await Admin()).PostAsJsonAsync(
+            "/api/v1/admin/requests/nothing/approve", new AdminDecision(null, "slack"), Json);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_denial_naming_an_app_is_a_400_and_decides_nothing()
+    {
+        SeedSlack();
+        var id = SeedRequest("Slack");
+
+        var response = await (await Admin()).PostAsJsonAsync(
+            $"/api/v1/admin/requests/{id}/deny", new AdminDecision("No.", "Slack"), Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("A denied request cannot name a catalog app.", (await response.Content.ReadFromJsonAsync<ErrorMessage>(Json))!.Message);
+        Assert.Equal(AppRequestStatus.Pending, _requests.Find(id)!.Status);
+
+        // A blank id is no id, so the denial goes through.
+        var blank = await (await Admin()).PostAsJsonAsync($"/api/v1/admin/requests/{id}/deny", new AdminDecision("No.", "  "), Json);
+        Assert.Equal(HttpStatusCode.OK, blank.StatusCode);
+    }
+
+    [Fact]
+    public async Task An_approved_request_is_linked_relinked_and_unlinked()
+    {
+        SeedSlack();
+        _catalog.Upsert(new CatalogEntry { Id = "teams", Name = "Teams", Hidden = true, Action1 = new Action1PackageRef { PackageId = "Teams_1" } });
+        var id = SeedRequest("Chat");
+        _requests.Decide(id, AppRequestStatus.Approved, "Fine.", "someone");
+        var client = await Admin();
+
+        var linked = await client.PutAsJsonAsync($"/api/v1/admin/requests/{id}/catalog-app", new AdminRequestLink("SLACK"), Json);
+        Assert.Equal(HttpStatusCode.OK, linked.StatusCode);
+        var body = (await linked.Content.ReadFromJsonAsync<AdminRequest>(Json))!;
+        Assert.Equal(("Slack", "Slack", false), (body.CatalogAppId, body.CatalogAppName, body.CatalogAppHidden));
+
+        var relinked = (await (await client.PutAsJsonAsync($"/api/v1/admin/requests/{id}/catalog-app", new AdminRequestLink("teams"), Json))
+            .Content.ReadFromJsonAsync<AdminRequest>(Json))!;
+        Assert.Equal(("teams", "Teams", true), (relinked.CatalogAppId, relinked.CatalogAppName, relinked.CatalogAppHidden));
+
+        var cleared = await client.PutAsJsonAsync($"/api/v1/admin/requests/{id}/catalog-app", new AdminRequestLink(null), Json);
+        Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+        var clearedBody = (await cleared.Content.ReadFromJsonAsync<AdminRequest>(Json))!;
+        Assert.Null(clearedBody.CatalogAppId);
+        Assert.Null(clearedBody.CatalogAppName);
+        Assert.Equal(AppRequestStatus.Approved, clearedBody.Status);
+        Assert.Equal("Fine.", clearedBody.Reason);
+    }
+
+    [Fact]
+    public async Task Linking_says_why_it_could_not()
+    {
+        SeedSlack();
+        var pending = SeedRequest("Waiting");
+        var denied = SeedRequest("No");
+        var approved = SeedRequest("Yes");
+        _requests.Decide(denied, AppRequestStatus.Denied, null, "someone");
+        _requests.Decide(approved, AppRequestStatus.Approved, null, "someone");
+        var client = await Admin();
+
+        Task<HttpResponseMessage> Put(string id, string? app)
+            => client.PutAsJsonAsync($"/api/v1/admin/requests/{id}/catalog-app", new AdminRequestLink(app), Json);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await Put("nothing", "Slack")).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Put(pending, "Slack")).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Put(denied, "Slack")).StatusCode);
+        Assert.Equal((HttpStatusCode)422, (await Put(approved, "teams")).StatusCode);
+
+        var noBody = await client.PutAsync($"/api/v1/admin/requests/{approved}/catalog-app", null);
+        Assert.Equal(HttpStatusCode.BadRequest, noBody.StatusCode);
+
+        Assert.Null(_requests.Find(pending)!.CatalogAppId);
+        Assert.Null(_requests.Find(denied)!.CatalogAppId);
+        Assert.Null(_requests.Find(approved)!.CatalogAppId);
+    }
+
+    [Fact]
+    public async Task A_deleted_linked_app_still_shows_its_id_to_an_administrator()
+    {
+        SeedSlack();
+        var id = SeedRequest("Slack");
+        _requests.Decide(id, AppRequestStatus.Approved, "Fine.", "someone", "Slack");
+        var client = await Admin();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/v1/admin/catalog/Slack")).StatusCode);
+
+        var row = Assert.Single((await client.GetFromJsonAsync<AdminPage<AdminRequest>>("/api/v1/admin/requests", Json))!.Items);
+        Assert.Equal("Slack", row.CatalogAppId);
+        Assert.Null(row.CatalogAppName);
+        Assert.Equal(AppRequestStatus.Approved, row.Status);
     }
 
     /// <summary>

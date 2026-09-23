@@ -15,12 +15,30 @@
 {
     <div class="message">@Model.HelperMessage</div>
 }
-@if (Model.Saved)
+@if (Model.Saved && Model.Linked == "yes")
+{
+    <div class="message ok">Saved and linked to the request. The person who asked is offered it on their next refresh.</div>
+}
+else if (Model.Saved && Model.Linked == "no")
+{
+    <div class="message error">Saved, but the request was not linked. Link it from the Requests page.</div>
+}
+else if (Model.Saved)
 {
     <div class="message ok">Saved. Devices pick this up on their next refresh.</div>
 }
 
 <form method="post" id="catalog-form">
+    @if (Model.SourceRequest is { } source)
+    {
+        @* Every part of the request came from whoever typed it on their PC, so Razor's encoding is all
+           that stands between it and the page. Nothing here may be written raw. *@
+        <input type="hidden" name="FromRequest" value="@Model.FromRequest" />
+        var requester = string.IsNullOrWhiteSpace(source.RequestedBy) ? "an unknown user" : source.RequestedBy;
+        <div class="card">
+            <p>For the request from @requester on @source.DeviceName: @source.Text. The name and id are suggested from it, so check both. Saving links the request to this app.</p>
+        </div>
+    }
     <div class="card">
         <h2>App</h2>
         @if (Model.IsNew)

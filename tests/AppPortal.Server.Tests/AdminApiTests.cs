@@ -337,8 +337,10 @@ public sealed class AdminApiTests : IDisposable
     public async Task The_dashboard_counts_what_the_page_counts()
     {
         _devices.Add("PC-A", "endpoint-a");
-        SeedInstall("PC-A", "chrome", InstallState.Failed, DateTimeOffset.Now.AddHours(-1));
-        SeedInstall("PC-A", "vlc", InstallState.Running, DateTimeOffset.Now.AddMinutes(-5));
+        // Both inside today whatever the clock says: an hour ago is yesterday for the first hour after midnight.
+        var now = DateTimeOffset.Now;
+        SeedInstall("PC-A", "chrome", InstallState.Failed, new DateTimeOffset(now.Date, now.Offset));
+        SeedInstall("PC-A", "vlc", InstallState.Running, now);
         _requests.CreateForDeviceId(_devices.FindByName("PC-A")!.Id, @"SMOKE\operator", "A PDF editor, please.");
 
         var counts = await (await Admin()).GetFromJsonAsync<DashboardCounts>("/api/v1/admin/dashboard", Json);

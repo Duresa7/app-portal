@@ -18,6 +18,14 @@ public interface IUserSessionLauncher
     /// </summary>
     Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, Action<string>? onLine,
         TimeSpan timeout, CancellationToken ct);
+
+    /// <summary>
+    /// The same, with <paramref name="pathFirst"/> ahead of PATH in that account's environment for this
+    /// one process. The default ignores them, which is all a test double needs.
+    /// </summary>
+    Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, IReadOnlyList<string> pathFirst,
+        Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
+        => RunAsAsync(account, file, arguments, onLine, timeout, ct);
 }
 
 /// <summary>

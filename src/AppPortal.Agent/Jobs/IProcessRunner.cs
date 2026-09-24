@@ -14,11 +14,25 @@ public sealed record ProcessResult(int ExitCode, string Output);
 public interface IProcessRunner
 {
     Task<ProcessResult> RunAsync(string file, string arguments, Action<string>? onLine, TimeSpan timeout, CancellationToken ct);
+
+    /// <summary>
+    /// The same, with <paramref name="pathFirst"/> ahead of PATH for this one process, which is how a
+    /// program started from outside its package finds the framework DLLs the package would have given
+    /// it. The default ignores them, which is all a test double needs; the runner that starts real
+    /// processes does not.
+    /// </summary>
+    Task<ProcessResult> RunAsync(string file, string arguments, IReadOnlyList<string> pathFirst, Action<string>? onLine,
+        TimeSpan timeout, CancellationToken ct)
+        => RunAsync(file, arguments, onLine, timeout, ct);
 }
 
 public sealed class ProcessRunner : IProcessRunner
 {
-    public async Task<ProcessResult> RunAsync(string file, string arguments, Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
+    public Task<ProcessResult> RunAsync(string file, string arguments, Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
+        => RunAsync(file, arguments, [], onLine, timeout, ct);
+
+    public async Task<ProcessResult> RunAsync(string file, string arguments, IReadOnlyList<string> pathFirst, Action<string>? onLine,
+        TimeSpan timeout, CancellationToken ct)
     {
         using var process = new Process
         {
@@ -32,6 +46,13 @@ public sealed class ProcessRunner : IProcessRunner
                 StandardErrorEncoding = Encoding.UTF8,
             },
         };
+
+        if (pathFirst.Count > 0)
+        {
+            // The key is matched without case on Windows, so this finds Path however it is spelled.
+            process.StartInfo.Environment.TryGetValue("PATH", out var path);
+            process.StartInfo.Environment["PATH"] = SearchPath.Prepend(pathFirst, path);
+        }
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(timeout);

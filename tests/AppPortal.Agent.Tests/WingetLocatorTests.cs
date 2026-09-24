@@ -54,6 +54,76 @@ public sealed class WingetLocatorTests : IDisposable
         Assert.Equal(Version.Parse(expected), WingetLocator.VersionOf(Path.Combine(_root, name)));
     }
 
+    [Fact]
+    public void The_dependencies_are_the_newest_folder_of_each_package_the_manifest_names()
+    {
+        // The App Installer 1.29 manifest from a fresh Windows 11 25H2 machine, cut to the parts read.
+        var winget = Package("Microsoft.DesktopAppInstaller_1.29.379.0_x64__8wekyb3d8bbwe");
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(winget)!, "AppxManifest.xml"), """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10">
+              <Identity Name="Microsoft.DesktopAppInstaller" Publisher="CN=Microsoft Corporation" Version="1.29.379.0" ProcessorArchitecture="x64" />
+              <Dependencies>
+                <PackageDependency Name="Microsoft.WindowsAppRuntime.1.8" MinVersion="8000.616.304.0" Publisher="CN=Microsoft Corporation" />
+                <PackageDependency Name="Microsoft.VCLibs.140.00" MinVersion="14.0.33519.0" Publisher="CN=Microsoft Corporation" />
+                <PackageDependency Name="Microsoft.VCLibs.140.00.UWPDesktop" MinVersion="14.0.33728.0" Publisher="CN=Microsoft Corporation" />
+              </Dependencies>
+            </Package>
+            """);
+        Folder("Microsoft.WindowsAppRuntime.1.8_8000.616.304.0_x64__8wekyb3d8bbwe");
+        var runtime = Folder("Microsoft.WindowsAppRuntime.1.8_8000.946.1701.0_x64__8wekyb3d8bbwe");
+        Folder("Microsoft.WindowsAppRuntime.1.8_8000.946.1701.0_x86__8wekyb3d8bbwe");
+        Folder("Microsoft.WindowsAppRuntime.1.7_7000.785.2325.0_x64__8wekyb3d8bbwe");
+        var vclibs = Folder("Microsoft.VCLibs.140.00_14.0.33519.0_x64__8wekyb3d8bbwe");
+        Folder("Microsoft.VCLibs.140.00_14.0.33519.0_x86__8wekyb3d8bbwe");
+        var desktop = Folder("Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64__8wekyb3d8bbwe");
+
+        var dependencies = new WingetLocator(_root).Dependencies(winget);
+
+        Assert.Equal<string>([runtime, vclibs, desktop], dependencies);
+    }
+
+    [Fact]
+    public void A_dependency_that_is_not_installed_leaves_the_others()
+    {
+        var winget = Package("Microsoft.DesktopAppInstaller_1.29.379.0_x64__8wekyb3d8bbwe");
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(winget)!, "AppxManifest.xml"), """
+            <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10">
+              <Identity Name="Microsoft.DesktopAppInstaller" ProcessorArchitecture="x64" />
+              <Dependencies>
+                <PackageDependency Name="Microsoft.UI.Xaml.2.8" />
+                <PackageDependency Name="Microsoft.VCLibs.140.00.UWPDesktop" />
+              </Dependencies>
+            </Package>
+            """);
+        var desktop = Folder("Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64__8wekyb3d8bbwe");
+
+        Assert.Equal<string>([desktop], new WingetLocator(_root).Dependencies(winget));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not xml")]
+    public void Without_a_readable_manifest_there_is_nothing_to_add(string? manifest)
+    {
+        var winget = Package("Microsoft.DesktopAppInstaller_1.29.379.0_x64__8wekyb3d8bbwe");
+        if (manifest is not null)
+        {
+            File.WriteAllText(Path.Combine(Path.GetDirectoryName(winget)!, "AppxManifest.xml"), manifest);
+        }
+
+        Folder("Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64__8wekyb3d8bbwe");
+
+        Assert.Empty(new WingetLocator(_root).Dependencies(winget));
+    }
+
+    private string Folder(string name)
+    {
+        var directory = Path.Combine(_root, name);
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
     private string Package(string name)
     {
         var directory = Path.Combine(_root, name);

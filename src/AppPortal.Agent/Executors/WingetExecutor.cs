@@ -54,8 +54,9 @@ public sealed class WingetExecutor(
             return new ExecutionResult(false, "winget is not installed on this PC. Install the App Installer from the Microsoft Store.");
         }
 
+        var dependencies = _locator.Dependencies(executable);
         var log = new JobLog(stateDirectory, job.JobId);
-        await UpdateSourcesAsync(executable, log, ct);
+        await UpdateSourcesAsync(executable, dependencies, log, ct);
 
         var arguments = Arguments(winget);
         log.Write($"winget {arguments}");
@@ -65,7 +66,7 @@ public sealed class WingetExecutor(
             if (winget.Scope == "user")
             {
                 progress.Report((0, $"Installing for {job.Requester}"));
-                result = await sessions.RunAsAsync(job.Requester!, executable, arguments, log.Write, _timeout, ct);
+                result = await sessions.RunAsAsync(job.Requester!, executable, arguments, dependencies, log.Write, _timeout, ct);
                 if (result is null)
                 {
                     // Not a failure. The person who asked is simply not at the PC yet, and the server
@@ -77,7 +78,7 @@ public sealed class WingetExecutor(
             else
             {
                 progress.Report((0, "Installing"));
-                result = await processes.RunAsync(executable, arguments, line => Report(line, log, progress), _timeout, ct);
+                result = await processes.RunAsync(executable, arguments, dependencies, line => Report(line, log, progress), _timeout, ct);
             }
         }
         catch (TimeoutException ex)
@@ -104,6 +105,7 @@ public sealed class WingetExecutor(
             return new ExecutionResult(false, "winget is not installed on this PC.");
         }
 
+        var dependencies = _locator.Dependencies(executable);
         var log = new JobLog(stateDirectory, job.JobId);
         var arguments = $"uninstall --id {Quote(winget.Id)} --exact --source {winget.Source} "
                         + $"--scope {winget.Scope} --silent --accept-source-agreements --disable-interactivity";
@@ -118,7 +120,7 @@ public sealed class WingetExecutor(
                 return new ExecutionResult(false, "This package belongs to one person, and the removal does not say who.");
             }
 
-            result = await sessions.RunAsAsync(job.Requester, executable, arguments, log.Write, _timeout, ct);
+            result = await sessions.RunAsAsync(job.Requester, executable, arguments, dependencies, log.Write, _timeout, ct);
             if (result is null)
             {
                 return new ExecutionResult(false, $"Waiting for {job.Requester} to sign in.", null, WaitingForUser: true);
@@ -126,7 +128,7 @@ public sealed class WingetExecutor(
         }
         else
         {
-            result = await processes.RunAsync(executable, arguments, line => Report(line, log, progress), _timeout, ct);
+            result = await processes.RunAsync(executable, arguments, dependencies, line => Report(line, log, progress), _timeout, ct);
         }
 
         log.Write($"exit {result.ExitCode}");
@@ -207,7 +209,7 @@ public sealed class WingetExecutor(
     /// manifest that no longer resolves, and refreshing it before every install adds a slow network
     /// call to work that is already slow.
     /// </summary>
-    private async Task UpdateSourcesAsync(string executable, JobLog log, CancellationToken ct)
+    private async Task UpdateSourcesAsync(string executable, IReadOnlyList<string> dependencies, JobLog log, CancellationToken ct)
     {
         var marker = Path.Combine(stateDirectory, "winget-source-updated");
         try
@@ -217,7 +219,8 @@ public sealed class WingetExecutor(
                 return;
             }
 
-            var result = await processes.RunAsync(executable, "source update --disable-interactivity", null, TimeSpan.FromMinutes(5), ct);
+            var result = await processes.RunAsync(executable, "source update --disable-interactivity", dependencies, null,
+                TimeSpan.FromMinutes(5), ct);
             log.Write($"source update exit {result.ExitCode}");
             File.WriteAllText(marker, DateTimeOffset.UtcNow.ToString("O"));
         }

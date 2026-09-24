@@ -216,6 +216,33 @@ public sealed class WingetExecutorTests : IDisposable
         Assert.Contains(reports, r => r.detail == "Installing");
     }
 
+    [Fact]
+    public async Task Winget_starts_with_its_framework_packages_ahead_of_path_for_both_scopes()
+    {
+        // Started by its path as SYSTEM, or as an account the App Installer is not yet registered to,
+        // winget.exe finds none of its framework DLLs and exits with STATUS_DLL_NOT_FOUND. Every launch
+        // has to carry them, the source update included.
+        var processes = new PathRecordingProcesses();
+        var sessions = new PathRecordingSessions("PC\\alice");
+        var executor = Executor(processes, sessions);
+        var apps = Path.Combine(_root, "WindowsApps");
+        File.WriteAllText(Path.Combine(apps, "Microsoft.DesktopAppInstaller_1.22.0.0_x64__8wekyb3d8bbwe", "AppxManifest.xml"), """
+            <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10">
+              <Identity Name="Microsoft.DesktopAppInstaller" ProcessorArchitecture="x64" />
+              <Dependencies><PackageDependency Name="Microsoft.VCLibs.140.00.UWPDesktop" /></Dependencies>
+            </Package>
+            """);
+        var vclibs = Path.Combine(apps, "Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64__8wekyb3d8bbwe");
+        Directory.CreateDirectory(vclibs);
+
+        await executor.RunAsync(new JobContext("job-1", null), Package, new Progress(), CancellationToken.None);
+        await executor.RunAsync(new JobContext("job-2", "PC\\alice"), Package with { Scope = "user" }, new Progress(), CancellationToken.None);
+
+        Assert.Equal(2, processes.PathFirst.Count);
+        Assert.All(processes.PathFirst, first => Assert.Equal<string>([vclibs], first));
+        Assert.Equal<string>([vclibs], Assert.Single(sessions.PathFirst));
+    }
+
     private WingetExecutor Executor(IProcessRunner processes, IUserSessionLauncher? sessions = null)
     {
         // A directory shaped like the real WindowsApps, so the locator has something to find.
@@ -231,6 +258,39 @@ public sealed class WingetExecutorTests : IDisposable
     private sealed class Progress(Action<(int percent, string detail)>? report = null) : IProgress<(int percent, string detail)>
     {
         public void Report((int percent, string detail) value) => report?.Invoke(value);
+    }
+
+    private sealed class PathRecordingProcesses : IProcessRunner
+    {
+        public List<IReadOnlyList<string>> PathFirst { get; } = [];
+
+        public Task<ProcessResult> RunAsync(string file, string arguments, Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
+            => throw new InvalidOperationException("winget was started without its framework packages.");
+
+        public Task<ProcessResult> RunAsync(string file, string arguments, IReadOnlyList<string> pathFirst, Action<string>? onLine,
+            TimeSpan timeout, CancellationToken ct)
+        {
+            PathFirst.Add(pathFirst);
+            return Task.FromResult(new ProcessResult(0, ""));
+        }
+    }
+
+    private sealed class PathRecordingSessions(params string[] signedIn) : IUserSessionLauncher
+    {
+        public List<IReadOnlyList<string>> PathFirst { get; } = [];
+
+        public IReadOnlyList<string> SignedInAccounts() => signedIn;
+
+        public Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, Action<string>? onLine,
+            TimeSpan timeout, CancellationToken ct)
+            => throw new InvalidOperationException("winget was started without its framework packages.");
+
+        public Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, IReadOnlyList<string> pathFirst,
+            Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
+        {
+            PathFirst.Add(pathFirst);
+            return Task.FromResult<ProcessResult?>(new ProcessResult(0, ""));
+        }
     }
 
     private sealed class FakeProcesses(Func<string, string, ProcessResult> run, params string[] lines) : IProcessRunner

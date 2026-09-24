@@ -33,8 +33,12 @@ public sealed class WindowsUserSessions(ILogger<WindowsUserSessions> logger) : I
         return accounts;
     }
 
-    public async Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, Action<string>? onLine,
+    public Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, Action<string>? onLine,
         TimeSpan timeout, CancellationToken ct)
+        => RunAsAsync(account, file, arguments, [], onLine, timeout, ct);
+
+    public async Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, IReadOnlyList<string> pathFirst,
+        Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
     {
         var session = Sessions().FirstOrDefault(s => string.Equals(s.Account, account, StringComparison.OrdinalIgnoreCase));
         if (session.Account is null)
@@ -60,13 +64,13 @@ public sealed class WindowsUserSessions(ILogger<WindowsUserSessions> logger) : I
 
             using (primary)
             {
-                return await StartAsync(primary, file, arguments, onLine, timeout, ct);
+                return await StartAsync(primary, file, arguments, pathFirst, onLine, timeout, ct);
             }
         }
     }
 
     private async Task<ProcessResult?> StartAsync(SafeTokenHandle token, string file, string arguments,
-        Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
+        IReadOnlyList<string> pathFirst, Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
     {
         // Without the person's own environment block the process inherits SYSTEM's, and every installer
         // that writes to %LOCALAPPDATA% would put its files back in the wrong profile.
@@ -74,6 +78,16 @@ public sealed class WindowsUserSessions(ILogger<WindowsUserSessions> logger) : I
         {
             logger.LogWarning("Could not build the environment for the session ({Error})", Marshal.GetLastWin32Error());
             environment = IntPtr.Zero;
+        }
+
+        // A block this side built rather than userenv, which is freed the way it was allocated.
+        var rewritten = false;
+        if (environment != IntPtr.Zero && pathFirst.Count > 0)
+        {
+            var block = WriteBlock(SearchPath.WithPathFirst(ReadBlock(environment), pathFirst));
+            DestroyEnvironmentBlock(environment);
+            environment = block;
+            rewritten = true;
         }
 
         // The process runs on the person's desktop, but what it prints still has to reach the job log:
@@ -164,7 +178,11 @@ public sealed class WindowsUserSessions(ILogger<WindowsUserSessions> logger) : I
         }
         finally
         {
-            if (environment != IntPtr.Zero)
+            if (rewritten)
+            {
+                Marshal.FreeHGlobal(environment);
+            }
+            else if (environment != IntPtr.Zero)
             {
                 DestroyEnvironmentBlock(environment);
             }
@@ -223,6 +241,27 @@ public sealed class WindowsUserSessions(ILogger<WindowsUserSessions> logger) : I
             CancelIoEx(readEnd, IntPtr.Zero);
         }
     }
+
+    /// <summary>The variables of a Unicode environment block: NAME=value strings, ended by an empty one.</summary>
+    private static List<string> ReadBlock(IntPtr block)
+    {
+        var variables = new List<string>();
+        var next = block;
+        while (Marshal.PtrToStringUni(next) is { Length: > 0 } variable)
+        {
+            variables.Add(variable);
+            next += (variable.Length + 1) * sizeof(char);
+        }
+
+        return variables;
+    }
+
+    /// <summary>
+    /// The same shape back, for CreateProcessAsUser. The allocation adds one terminator after the last
+    /// variable's own, which is the empty string that ends the block. Freed with FreeHGlobal.
+    /// </summary>
+    private static IntPtr WriteBlock(IReadOnlyList<string> variables)
+        => Marshal.StringToHGlobalUni(string.Concat(variables.Select(variable => variable + '\0')));
 
     /// <summary>Waits on the process handle itself, which is the one thing sure to outlive the process.</summary>
     private static async Task WaitForExitAsync(SafeProcessHandle process, CancellationToken ct)

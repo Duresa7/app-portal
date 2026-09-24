@@ -15,7 +15,17 @@ public sealed class FakeSessions(params string[] signedIn) : IUserSessionLaunche
 
     public ProcessResult Result { get; set; } = new(0, "");
 
+    /// <summary>The directories each call asked to have ahead of PATH, in order.</summary>
+    public List<IReadOnlyList<string>> PathFirst { get; } = [];
+
     public IReadOnlyList<string> SignedInAccounts() => signedIn;
+
+    public Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, IReadOnlyList<string> pathFirst,
+        Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
+    {
+        PathFirst.Add(pathFirst);
+        return RunAsAsync(account, file, arguments, onLine, timeout, ct);
+    }
 
     public Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, Action<string>? onLine,
         TimeSpan timeout, CancellationToken ct)

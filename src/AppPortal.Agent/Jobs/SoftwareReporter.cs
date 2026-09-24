@@ -53,7 +53,9 @@ public sealed class SoftwareReporter(
             }
             else
             {
-                result = await sessions.RunAsAsync(account, executable, ListArguments, dependencies, null, ListTimeout, ct);
+                // Their own alias where they have one: the package path is refused inside a session.
+                result = await sessions.RunAsAsync(account, _locator.ForAccount(account) ?? executable, ListArguments,
+                    dependencies, null, ListTimeout, ct);
                 if (result is null)
                 {
                     // They signed out between the install and the sweep. Their list keeps what it had.

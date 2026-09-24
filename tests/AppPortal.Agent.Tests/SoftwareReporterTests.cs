@@ -58,6 +58,27 @@ public sealed class SoftwareReporterTests : IDisposable
         Assert.Equal("App Portal Proof proof-user", Assert.Single(software).Name);
     }
 
+    [Fact]
+    public async Task A_profile_sweep_starts_the_accounts_own_alias()
+    {
+        // The package path is refused inside a session with STATUS_ACCESS_DENIED; the alias is not.
+        var winget = Path.Combine(_root, "Microsoft.DesktopAppInstaller_1.29.379.0_x64__8wekyb3d8bbwe");
+        Directory.CreateDirectory(winget);
+        File.WriteAllText(Path.Combine(winget, "winget.exe"), "");
+        var profile = Path.Combine(_root, "Users", "apptester");
+        var alias = Path.Combine(profile, "AppData", "Local", "Microsoft", "WindowsApps", "winget.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(alias)!);
+        File.WriteAllText(alias, "");
+        var sessions = new FakeSessions(@"PROOF-PCpptester") { Result = new ProcessResult(0, Transcript) };
+
+        await new SoftwareReporter(new Server().Client(), new NoProcesses(), NullLogger<SoftwareReporter>.Instance, sessions,
+                new WingetLocator(_root, _ => profile))
+            .ReportAsync(Enrolled, CancellationToken.None, @"PROOF-PCpptester");
+
+        Assert.Equal(alias, Assert.Single(sessions.Started).File);
+        Assert.Empty(Assert.Single(sessions.PathFirst));
+    }
+
     [Theory]
     [InlineData("", "")]
     [InlineData("\r\n\r\n  Failed in attempting to update the source: winget  \r\nmore", "Failed in attempting to update the source: winget")]

@@ -117,6 +117,32 @@ public sealed class WingetLocatorTests : IDisposable
         Assert.Empty(new WingetLocator(_root).Dependencies(winget));
     }
 
+    [Fact]
+    public void An_account_with_an_alias_gets_it()
+    {
+        var profile = Path.Combine(_root, "Users", "apptester");
+        var alias = Path.Combine(profile, "AppData", "Local", "Microsoft", "WindowsApps", "winget.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(alias)!);
+        File.WriteAllText(alias, "");
+
+        Assert.Equal(alias, new WingetLocator(_root, account => account == @"PCpptester" ? profile : null).ForAccount(@"PCpptester"));
+    }
+
+    [Fact]
+    public void An_account_without_an_alias_or_a_profile_gets_nothing()
+    {
+        // Not registered yet, which is how a new account starts, or no profile on this PC at all.
+        var profile = Path.Combine(_root, "Users", "newcomer");
+        Directory.CreateDirectory(profile);
+        var locator = new WingetLocator(_root, account => account == @"PC
+ewcomer" ? profile : null);
+
+        Assert.Null(locator.ForAccount(@"PC
+ewcomer"));
+        Assert.Null(locator.ForAccount(@"PC
+obody"));
+    }
+
     private string Folder(string name)
     {
         var directory = Path.Combine(_root, name);

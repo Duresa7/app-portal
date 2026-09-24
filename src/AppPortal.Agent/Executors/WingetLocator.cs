@@ -141,6 +141,14 @@ public sealed class WingetLocator(string? windowsAppsRoot = null, Func<string, s
                    || string.Equals(parts[2], "neutral", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// What to start in this account's session, and what to put ahead of PATH for it: their alias with
+    /// nothing added, since the alias starts winget inside its package and the package brings its own
+    /// frameworks; or, while they have no alias yet, the package path with the framework folders.
+    /// </summary>
+    public (string Executable, IReadOnlyList<string> PathFirst) ForSession(string account, string executable)
+        => ForAccount(account) is { } alias ? (alias, []) : (executable, Dependencies(executable));
+
     /// <summary>The profile folder Windows keeps for this account, or null when it has none here.</summary>
     private static string? ProfilePath(string account)
     {

@@ -76,6 +76,7 @@ public sealed class SoftwareReporterTests : IDisposable
             .ReportAsync(Enrolled, CancellationToken.None, @"PROOF-PCpptester");
 
         Assert.Equal(alias, Assert.Single(sessions.Started).File);
+        Assert.Empty(Assert.Single(sessions.PathFirst));
     }
 
     [Theory]

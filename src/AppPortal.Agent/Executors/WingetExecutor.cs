@@ -67,8 +67,8 @@ public sealed class WingetExecutor(
             {
                 progress.Report((0, $"Installing for {job.Requester}"));
                 // Their own alias where they have one: the package path is refused inside a session.
-                result = await sessions.RunAsAsync(job.Requester!, _locator.ForAccount(job.Requester!) ?? executable, arguments,
-                    dependencies, log.Write, _timeout, ct);
+                var (theirs, pathFirst) = _locator.ForSession(job.Requester!, executable);
+                result = await sessions.RunAsAsync(job.Requester!, theirs, arguments, pathFirst, log.Write, _timeout, ct);
                 if (result is null)
                 {
                     // Not a failure. The person who asked is simply not at the PC yet, and the server
@@ -122,8 +122,8 @@ public sealed class WingetExecutor(
                 return new ExecutionResult(false, "This package belongs to one person, and the removal does not say who.");
             }
 
-            result = await sessions.RunAsAsync(job.Requester, _locator.ForAccount(job.Requester) ?? executable, arguments,
-                dependencies, log.Write, _timeout, ct);
+            var (theirs, pathFirst) = _locator.ForSession(job.Requester, executable);
+            result = await sessions.RunAsAsync(job.Requester, theirs, arguments, pathFirst, log.Write, _timeout, ct);
             if (result is null)
             {
                 return new ExecutionResult(false, $"Waiting for {job.Requester} to sign in.", null, WaitingForUser: true);

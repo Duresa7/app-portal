@@ -31,10 +31,11 @@
        the full gate run on that commit.
     2. Create a standard local account, sign in to it, and sign every other account out. Windows refuses
        the client's restart command while another account is signed in (shutdown.exe exit code 1191),
-       so the script refuses to start then. In the account's Settings > Accounts > Sign-in options, turn
-       off "Use my sign-in info to automatically finish setting up after an update": shutdown /g signs
-       the account straight back in after the restart, and the parked-install check needs nobody signed
-       in. Give it a distinctive name, for example apptester: the summary replaces every occurrence of
+       so the script refuses to start then. Give the account a password, and in its Settings > Accounts
+       > Sign-in options turn off "Use my sign-in info to automatically finish setting up after an
+       update": with either one missing, Windows signs the account straight back in after the restart,
+       and the parked-install check needs nobody signed in. The script refuses to start without both.
+       Give it a distinctive name, for example apptester: the summary replaces every occurrence of
        the account name with <account>, so a short common word would blank out parts of the details.
     3. In the test account's session, open PowerShell 7 as administrator through UAC with administrator
        credentials.
@@ -388,6 +389,32 @@ function Test-AutomaticSignIn([string] $Sid) {
     return -not ($choice -and $choice.PSObject.Properties['OptOut'] -and $choice.OptOut -eq 1)
 }
 
+function Test-BlankPassword([string] $Name) {
+    <#
+    Whether the account's password is empty. Windows signs such an account straight back in after the
+    restart, whatever Sign-in options say: the fifth run for 0.9.0 found it signed in within a minute of
+    the boot with the automatic sign-in turned off. Nothing reads this without trying, so it tries once
+    with an empty password; for an account that has a password, that counts as one failed sign-in.
+    #>
+    if (-not ('ProofNative.Logon' -as [type])) {
+        Add-Type -Namespace ProofNative -Name Logon -MemberDefinition @'
+[DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+public static extern bool LogonUser(string user, string domain, string password, int type, int provider, out IntPtr token);
+[DllImport("kernel32.dll")]
+public static extern bool CloseHandle(IntPtr handle);
+'@
+    }
+    $domain, $user = $Name.Split('\', 2)
+    $token = [IntPtr]::Zero
+    # 3 is a network sign-in, which starts no session and runs nothing.
+    if ([ProofNative.Logon]::LogonUser($user, $domain, '', 3, 0, [ref] $token)) {
+        [ProofNative.Logon]::CloseHandle($token) | Out-Null
+        return $true
+    }
+    # 1327 is ERROR_ACCOUNT_RESTRICTION: Windows keeps empty passwords to the console, so this one is empty.
+    return [System.Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq 1327
+}
+
 function Get-ProfilePath([string] $Sid) {
     $userProfile = Get-CimInstance Win32_UserProfile -Filter "SID='$Sid'"
     if (-not $userProfile) { throw "No profile for the account; sign in to it once before the proof." }
@@ -716,6 +743,9 @@ function Assert-Preflight {
     if ($others.Count -gt 0) {
         # Found now rather than at the hand-over, which comes after ten minutes of checks.
         throw "Refusing: $($others -join ', ') is also signed in. Windows refuses the client's restart command while another account is signed in (shutdown.exe exit code 1191). Sign the other accounts out and run this from $($resolved.Name)'s session, as administrator through UAC."
+    }
+    if (Test-BlankPassword $resolved.Name) {
+        throw "Refusing: $($resolved.Name) has no password. Windows signs an account without one straight back in after the restart, so nobody would ever be signed out and the parked-install check could not run. Give it a password."
     }
     if (Test-AutomaticSignIn $resolved.Sid) {
         throw "Refusing: Windows will sign $($resolved.Name) back in by itself after the restart, because shutdown /g restarts into the last session while 'Use my sign-in info to automatically finish setting up after an update' is on. Nobody would ever be signed out, so the parked-install check could not run. Turn it off in $($resolved.Name)'s Settings > Accounts > Sign-in options."

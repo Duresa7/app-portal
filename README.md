@@ -93,6 +93,8 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 What is signed: `AppPortal.exe`, `AppPortal.dll`, `AppPortal.Shared.dll`, `AppPortal.Agent.exe`, the MSI and `AppPortalSetup.exe`: the project's own files and nothing a third party published.
 
+No release is signed yet. Until the first signed release, check each download against `SHA256SUMS`, as [Checking a download](docs/deploy-to-pcs.md#checking-a-download) shows.
+
 Privacy: App Portal sends data only to systems its administrator configures: the App Portal server named at install, GitHub's release feed for updates, and the package sources in the catalog. It sends nothing to the project's authors or to SignPath.
 
 ## License

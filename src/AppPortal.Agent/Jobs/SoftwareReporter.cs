@@ -41,10 +41,11 @@ public sealed class SoftwareReporter(
                 return;
             }
 
+            var dependencies = _locator.Dependencies(executable);
             ProcessResult? result;
             if (account is null)
             {
-                result = await processes.RunAsync(executable, ListArguments, null, ListTimeout, ct);
+                result = await processes.RunAsync(executable, ListArguments, dependencies, null, ListTimeout, ct);
             }
             else if (sessions is null)
             {
@@ -52,7 +53,7 @@ public sealed class SoftwareReporter(
             }
             else
             {
-                result = await sessions.RunAsAsync(account, executable, ListArguments, null, ListTimeout, ct);
+                result = await sessions.RunAsAsync(account, executable, ListArguments, dependencies, null, ListTimeout, ct);
                 if (result is null)
                 {
                     // They signed out between the install and the sweep. Their list keeps what it had.
@@ -64,7 +65,10 @@ public sealed class SoftwareReporter(
             if (software.Count == 0)
             {
                 // Sending nothing would clear the record. An unreadable table is not an empty device.
-                logger.LogWarning("Could not read the installed software list; leaving the last report alone");
+                // The exit code and the first thing winget said are what tell a missing DLL from a
+                // prompt or a table this parser does not know; without them the line is undiagnosable.
+                logger.LogWarning("Could not read the installed software list (exit code {ExitCode}, output '{Output}'); leaving the last report alone",
+                    result.ExitCode, FirstLine(result.Output));
                 return;
             }
 
@@ -77,8 +81,15 @@ public sealed class SoftwareReporter(
         catch (Exception ex)
         {
             // The install worked. Failing to describe it afterwards must not turn that into a failure.
-            logger.LogWarning("Could not report installed software ({Reason})", ex.GetType().Name);
+            logger.LogWarning("Could not report installed software ({Reason}: {Message})", ex.GetType().Name, ex.Message);
         }
+    }
+
+    /// <summary>The first line with anything on it, cut short enough for one log line.</summary>
+    internal static string FirstLine(string output)
+    {
+        var line = output.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+        return line.Length <= 200 ? line : line[..200];
     }
 
     /// <summary>

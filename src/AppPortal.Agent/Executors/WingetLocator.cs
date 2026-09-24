@@ -1,5 +1,8 @@
+using System.Security.Principal;
 using System.Xml;
 using System.Xml.Linq;
+
+using Microsoft.Win32;
 
 namespace AppPortal.Agent.Executors;
 
@@ -9,7 +12,7 @@ namespace AppPortal.Agent.Executors;
 /// sits in the package directory under Program Files, whose name carries the version, so the newest
 /// one wins and the search is a directory listing rather than a guess.
 /// </summary>
-public sealed class WingetLocator(string? windowsAppsRoot = null)
+public sealed class WingetLocator(string? windowsAppsRoot = null, Func<string, string?>? profileOf = null)
 {
     private const string PackagePrefix = "Microsoft.DesktopAppInstaller_";
 
@@ -17,6 +20,27 @@ public sealed class WingetLocator(string? windowsAppsRoot = null)
 
     private readonly string _root = windowsAppsRoot
                                     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps");
+
+    private readonly Func<string, string?> _profileOf = profileOf ?? ProfilePath;
+
+    /// <summary>
+    /// The account's own App Execution Alias for winget, or null when it has none. This, and not the
+    /// package path, is what runs in a person's session. Started by the agent into that session with
+    /// CreateProcessAsUser, the package path is refused with STATUS_ACCESS_DENIED even for an account
+    /// the App Installer is registered to; the alias is how Windows means a person to start a packaged
+    /// command line, and it starts it inside its package. The alias appears once the App Installer is
+    /// registered to the account, which is some time after its first sign-in.
+    /// </summary>
+    public string? ForAccount(string account)
+    {
+        if (_profileOf(account) is not { Length: > 0 } profile)
+        {
+            return null;
+        }
+
+        var alias = Path.Combine(profile, "AppData", "Local", "Microsoft", "WindowsApps", "winget.exe");
+        return File.Exists(alias) ? alias : null;
+    }
 
     /// <summary>The newest winget.exe on this device, or null when the App Installer is not present.</summary>
     public string? Find()
@@ -115,6 +139,37 @@ public sealed class WingetLocator(string? windowsAppsRoot = null)
                && (architecture is null
                    || string.Equals(parts[2], architecture, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(parts[2], "neutral", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// What to start in this account's session, and what to put ahead of PATH for it: their alias with
+    /// nothing added, since the alias starts winget inside its package and the package brings its own
+    /// frameworks; or, while they have no alias yet, the package path with the framework folders.
+    /// </summary>
+    public (string Executable, IReadOnlyList<string> PathFirst) ForSession(string account, string executable)
+        => ForAccount(account) is { } alias ? (alias, []) : (executable, Dependencies(executable));
+
+    /// <summary>The profile folder Windows keeps for this account, or null when it has none here.</summary>
+    private static string? ProfilePath(string account)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        try
+        {
+            var sid = ((SecurityIdentifier)new NTAccount(account).Translate(typeof(SecurityIdentifier))).Value;
+            using var profile = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + sid);
+            return profile?.GetValue("ProfileImagePath") is string path && path.Length > 0
+                ? Environment.ExpandEnvironmentVariables(path)
+                : null;
+        }
+        catch (Exception ex) when (ex is IdentityNotMappedException or System.Security.SecurityException
+                                       or UnauthorizedAccessException or IOException or SystemException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

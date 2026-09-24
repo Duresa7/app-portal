@@ -12,6 +12,7 @@ Both sign in with a local administrator account (or a [directory account](server
 | ![Admin dashboard in the Windows client, light theme](images/client-admin-dashboard-light.png) | ![Admin dashboard in the Windows client, dark theme](images/client-admin-dashboard-dark.png) |
 | ![Install history in the Windows client](images/client-admin-installs-light.png) | ![Install history in the Windows client, dark theme](images/client-admin-installs-dark.png) |
 | ![Catalog in the Windows client](images/client-admin-catalog-light.png) | ![Catalog in the Windows client, dark theme](images/client-admin-catalog-dark.png) |
+| ![Approving a request in the Windows client, with the catalog app choice](images/client-admin-requests-light.png) | ![Approving a request in the Windows client, dark theme](images/client-admin-requests-dark.png) |
 | ![Devices in the Windows client](images/client-admin-devices-light.png) | ![Devices in the Windows client, dark theme](images/client-admin-devices-dark.png) |
 
 `AppPortal.exe --demo` opens the client with sample data held in memory; the demo administrator is `admin` with the password `demo`.
@@ -38,7 +39,9 @@ Both sign in with a local administrator account (or a [directory account](server
 
 The client's **Requests** section accepts up to 500 characters describing the software needed. Each device can have 20 pending requests. The newest request appears immediately after submission; status and administrator reasons refresh with the rest of the client. When an administrator answers a request with a catalog app this PC is offered, the request shows **Show in Apps**, which opens Apps on that app so it installs from its card as usual.
 
-![Requests in the Windows client](images/requests.png)
+| | |
+|---|---|
+| ![Requests in the Windows client, one approved with a catalog app and Show in Apps](images/requests-light.png) | ![Requests in the Windows client, dark theme](images/requests-dark.png) |
 
 ## Where an app comes from
 

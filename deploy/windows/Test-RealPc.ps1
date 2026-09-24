@@ -31,9 +31,11 @@
        the full gate run on that commit.
     2. Create a standard local account, sign in to it, and sign every other account out. Windows refuses
        the client's restart command while another account is signed in (shutdown.exe exit code 1191),
-       so the script refuses to start then. Give it a distinctive name, for example apptester: the
-       summary replaces every occurrence of the account name with <account>, so a short common word
-       would blank out parts of the details.
+       so the script refuses to start then. In the account's Settings > Accounts > Sign-in options, turn
+       off "Use my sign-in info to automatically finish setting up after an update": shutdown /g signs
+       the account straight back in after the restart, and the parked-install check needs nobody signed
+       in. Give it a distinctive name, for example apptester: the summary replaces every occurrence of
+       the account name with <account>, so a short common word would blank out parts of the details.
     3. In the test account's session, open PowerShell 7 as administrator through UAC with administrator
        credentials.
     4. Run:
@@ -375,6 +377,17 @@ function Get-OtherSignedIn([string] $Sid) {
     @($names | Sort-Object -Unique)
 }
 
+function Test-AutomaticSignIn([string] $Sid) {
+    <#
+    Whether Winlogon signs this account in on its own after a restart. It is on unless the account opted
+    out in Sign-in options, which Windows keeps under UserARSO by SID, or a policy turns it off for all.
+    #>
+    $policy = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -ErrorAction SilentlyContinue
+    if ($policy -and $policy.PSObject.Properties['DisableAutomaticRestartSignOn'] -and $policy.DisableAutomaticRestartSignOn -eq 1) { return $false }
+    $choice = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\UserARSO\$Sid" -ErrorAction SilentlyContinue
+    return -not ($choice -and $choice.PSObject.Properties['OptOut'] -and $choice.OptOut -eq 1)
+}
+
 function Get-ProfilePath([string] $Sid) {
     $userProfile = Get-CimInstance Win32_UserProfile -Filter "SID='$Sid'"
     if (-not $userProfile) { throw "No profile for the account; sign in to it once before the proof." }
@@ -703,6 +716,9 @@ function Assert-Preflight {
     if ($others.Count -gt 0) {
         # Found now rather than at the hand-over, which comes after ten minutes of checks.
         throw "Refusing: $($others -join ', ') is also signed in. Windows refuses the client's restart command while another account is signed in (shutdown.exe exit code 1191). Sign the other accounts out and run this from $($resolved.Name)'s session, as administrator through UAC."
+    }
+    if (Test-AutomaticSignIn $resolved.Sid) {
+        throw "Refusing: Windows will sign $($resolved.Name) back in by itself after the restart, because shutdown /g restarts into the last session while 'Use my sign-in info to automatically finish setting up after an update' is on. Nobody would ever be signed out, so the parked-install check could not run. Turn it off in $($resolved.Name)'s Settings > Accounts > Sign-in options."
     }
 
     $build = [int] (Get-CimInstance Win32_OperatingSystem).BuildNumber

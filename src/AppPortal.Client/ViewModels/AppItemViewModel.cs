@@ -214,10 +214,12 @@ public sealed partial class AppItemViewModel : ViewModelBase
 
     /// <summary>
     /// Asks Windows to restart, with a minute's notice and a reason on screen. Nothing here forces it:
-    /// the person pressed the button, and /t 60 leaves them time to save what they were doing.
+    /// the person pressed the button, and /t 60 leaves them time to save what they were doing. For the
+    /// same reason Windows refuses it while somebody else is signed in, and shutdown.exe says so only in
+    /// its exit code, so the exit code is read rather than the restart assumed.
     /// </summary>
     [RelayCommand]
-    private void Restart()
+    private async Task RestartAsync()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -232,10 +234,35 @@ public sealed partial class AppItemViewModel : ViewModelBase
                 UseShellExecute = false,
                 CreateNoWindow = true,
             });
+            if (shutdown is null)
+            {
+                LastError = RestartError(-1);
+                return;
+            }
+
+            // It only schedules the restart, so it answers at once; the minute's notice runs in Windows.
+            using var wait = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await shutdown.WaitForExitAsync(wait.Token);
+            if (RestartError(shutdown.ExitCode) is { } error)
+            {
+                LastError = error;
+            }
         }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or System.IO.IOException)
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or System.IO.IOException
+                                       or OperationCanceledException)
         {
-            LastError = "This PC could not be restarted from here. Restart it yourself to finish.";
+            LastError = RestartError(-1);
         }
     }
+
+    /// <summary>ERROR_SHUTDOWN_USERS_LOGGED_ON: another account is signed in and the restart was not forced.</summary>
+    public const int OtherPeopleSignedIn = 1191;
+
+    /// <summary>What the card says when shutdown.exe did not schedule the restart, or null when it did.</summary>
+    public static string? RestartError(int exitCode) => exitCode switch
+    {
+        0 => null,
+        OtherPeopleSignedIn => "Someone else is signed in to this PC, and Windows will not restart it while they are. Ask them to sign out, then restart.",
+        _ => "This PC could not be restarted from here. Restart it yourself to finish.",
+    };
 }

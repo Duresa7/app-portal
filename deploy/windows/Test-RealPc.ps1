@@ -29,10 +29,12 @@
     1. Prepare a disposable Windows 11 PC or VM with PowerShell 7; the .NET 10 SDK, or the ASP.NET Core
        10 runtime plus -ServerDll; a checkout of the release commit; and the AppPortal-msi artifact from
        the full gate run on that commit.
-    2. Create a standard local account, sign in to it once, and leave it signed in. Switching user is
-       fine. Give it a distinctive name, for example apptester: the summary replaces every occurrence of
-       the account name with <account>, so a short common word would blank out parts of the details.
-    3. Open PowerShell 7 as administrator, either from another account or through UAC with administrator
+    2. Create a standard local account, sign in to it, and sign every other account out. Windows refuses
+       the client's restart command while another account is signed in (shutdown.exe exit code 1191),
+       so the script refuses to start then. Give it a distinctive name, for example apptester: the
+       summary replaces every occurrence of the account name with <account>, so a short common word
+       would blank out parts of the details.
+    3. In the test account's session, open PowerShell 7 as administrator through UAC with administrator
        credentials.
     4. Run:
            ./deploy/windows/Test-RealPc.ps1 -Msi <path> -Account <user or COMPUTER\user> -Disposable
@@ -361,6 +363,18 @@ function Get-AccountSession([string] $Sid) {
     return $null
 }
 
+function Get-OtherSignedIn([string] $Sid) {
+    <# Every other account with a desktop on this PC, as DOMAIN\user, the operator's own included. #>
+    $names = foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'")) {
+        $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid -ErrorAction SilentlyContinue
+        if ($owner -and $owner.ReturnValue -eq 0 -and $owner.Sid -ne $Sid) {
+            try { ([System.Security.Principal.SecurityIdentifier] $owner.Sid).Translate([System.Security.Principal.NTAccount]).Value }
+            catch { $owner.Sid }
+        }
+    }
+    @($names | Sort-Object -Unique)
+}
+
 function Get-ProfilePath([string] $Sid) {
     $userProfile = Get-CimInstance Win32_UserProfile -Filter "SID='$Sid'"
     if (-not $userProfile) { throw "No profile for the account; sign in to it once before the proof." }
@@ -683,7 +697,12 @@ function Assert-Preflight {
     }
     $session = Get-AccountSession $resolved.Sid
     if ($null -eq $session) {
-        throw "Refusing: $($resolved.Name) is not signed in. Sign in to it once and leave it signed in; switching user is fine."
+        throw "Refusing: $($resolved.Name) is not signed in. Sign in to it and leave it signed in."
+    }
+    $others = @(Get-OtherSignedIn $resolved.Sid)
+    if ($others.Count -gt 0) {
+        # Found now rather than at the hand-over, which comes after ten minutes of checks.
+        throw "Refusing: $($others -join ', ') is also signed in. Windows refuses the client's restart command while another account is signed in (shutdown.exe exit code 1191). Sign the other accounts out and run this from $($resolved.Name)'s session, as administrator through UAC."
     }
 
     $build = [int] (Get-CimInstance Win32_OperatingSystem).BuildNumber

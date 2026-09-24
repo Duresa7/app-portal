@@ -78,7 +78,7 @@ A per-user install and an install that finishes at a restart have both run on a 
 **Operator flow.** This is also the script's comment-based help, which is the runbook.
 
 1. Prepare a disposable Windows 11 PC or VM with PowerShell 7; the .NET 10 SDK, or the ASP.NET Core 10 runtime plus `-ServerDll`; a checkout of the release commit; and the `AppPortal-msi` artifact from the full gate run on that commit.
-2. Create a standard local account, sign in to it, and sign every other account out. Windows refuses the client's restart command while another account is signed in (`shutdown.exe` exit code 1191), which the first run for 0.9.0 found; the script refuses to start then.
+2. Create a standard local account, sign in to it, and sign every other account out. Windows refuses the client's restart command while another account is signed in (`shutdown.exe` exit code 1191), which the first run for 0.9.0 found; the script refuses to start then. Turn off "Use my sign-in info to automatically finish setting up after an update" in the account's Sign-in options too: `shutdown /g` signs the account straight back in after the restart, so the parked-install check would never see nobody signed in. The script refuses to start while it is on.
 3. In the test account's session, open PowerShell 7 as administrator through UAC with administrator credentials.
 4. Run `./deploy/windows/Test-RealPc.ps1 -Msi <path> -Account <user or COMPUTER\user> -Disposable [-ServerDll <path>] [-Port 5090]`.
 5. The PC restarts after 60 seconds. Wait at the sign-in screen for two minutes, then sign in as the test account.

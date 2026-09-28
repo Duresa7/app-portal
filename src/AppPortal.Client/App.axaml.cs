@@ -102,7 +102,7 @@ public partial class App : Application
             var size = new PixelSize((int)window.Bounds.Width, (int)window.Bounds.Height);
             using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
             bitmap.Render(window);
-            bitmap.Save(path);
+            bitmap.Save(path, PngBitmapEncoderOptions.Default);
         });
         desktop.Shutdown();
     }

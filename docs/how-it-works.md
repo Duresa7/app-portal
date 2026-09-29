@@ -23,7 +23,7 @@ App Portal has three parts:
 1. The client reads `%ProgramData%\AppPortal\client.json` for the server URL and this device's token, then shows the catalog.
 2. Install sends `POST /api/v1/installs {appId}`. The server checks the token and picks the install engine for that app on that device. For Action1, it maps the device to its Action1 endpoint ID, resolves the package version in the Software Repository, and runs a `deploy_package` automation on that one endpoint. For the agent, it queues a job that the agent on the PC picks up.
 3. The server records Queued, Running, Succeeded, Failed or Cancelled. The client shows progress on the card and the full history under Activity.
-4. Installed shows what Action1's software inventory and the agent report for the device, matched back to catalog entries.
+4. Installed shows what Action1's software inventory and the agent report for the device, matched back to catalog entries. The agent reports the machine-wide list when its service starts and after each install it runs. A person's own profile can only be read from inside their session, so the agent reports it after each install for them and about a minute after each time they sign in.
 5. Requests lets the user ask for software outside the catalog. An administrator approves or denies the request; the client shows the decision and reason on its next refresh.
 
 The client sends `X-AppPortal-User: DOMAIN\user` with API calls so installs and requests record who asked. This account name is a client-supplied label; the device token authenticates the call.

@@ -54,6 +54,7 @@ public sealed partial class CatalogSourceFormTests : IDisposable
         { "powershell-module", "Pester", "machine" },
         { "powershell5-module", "PSReadLine", "user" },
         { "direct", "", "machine" },
+        { "portable", "", "user" },
     };
 
     [Theory]
@@ -73,6 +74,9 @@ public sealed partial class CatalogSourceFormTests : IDisposable
             ["DirectSha256"] = PackageDefinitionTests.Direct.Sha256,
             ["DirectInstallerType"] = "exe",
             ["DirectSizeBytes"] = "1000",
+            ["PortableFolder"] = "An App",
+            ["PortableExecutable"] = "app.exe",
+            ["PortableShortcutName"] = "An App",
             ["__RequestVerificationToken"] = await TestDatabase.TokenOn(admin, "/admin/catalog/new"),
         };
 
@@ -93,6 +97,11 @@ public sealed partial class CatalogSourceFormTests : IDisposable
             case "direct":
                 var direct = Assert.IsType<DirectPackageDefinition>(saved.Agent);
                 Assert.Equal(PackageDefinitionTests.Direct.Url, direct.Url);
+                break;
+            case "portable":
+                var portable = Assert.IsType<PortablePackageDefinition>(saved.Agent);
+                Assert.Equal((PackageDefinitionTests.Direct.Url, 1000L, "An App", "app.exe", "An App", scope),
+                    (portable.Url, portable.SizeBytes, portable.Folder, portable.Executable, portable.ShortcutName, portable.Scope));
                 break;
             default:
                 var managed = Assert.IsType<ManagedPackageDefinition>(saved.Agent);

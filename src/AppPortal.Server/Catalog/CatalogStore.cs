@@ -112,6 +112,7 @@ public sealed class CatalogEntry
         WingetPackageDefinition => "winget",
         DirectPackageDefinition => "Direct download",
         ManagedPackageDefinition managed => PackageManagers.Find(managed.Manager)?.DisplayName ?? managed.Manager,
+        PortablePackageDefinition => "Portable app (zip)",
         _ => "",
     };
 
@@ -150,6 +151,8 @@ public sealed class CatalogEntry
             WingetPackageDefinition { Source: WingetSources.Store } => "from the Microsoft Store",
             DirectPackageDefinition direct => "with its own installer from "
                                               + (Uri.TryCreate(direct.Url, UriKind.Absolute, out var url) ? url.Host : "its download address"),
+            PortablePackageDefinition portable => "by unpacking it from "
+                                                  + (Uri.TryCreate(portable.Url, UriKind.Absolute, out var zip) ? zip.Host : "its download address"),
             _ => "through " + SourceName(agent),
         };
     }

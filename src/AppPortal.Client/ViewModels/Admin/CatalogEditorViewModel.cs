@@ -42,6 +42,7 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
 {
     public const string SourceAction1 = "action1";
     public const string SourceDirect = "direct";
+    public const string SourcePortable = "portable";
 
     /// <summary>The web form's create route. An app with this id could never be opened in a browser.</summary>
     public const string ReservedId = "new";
@@ -63,6 +64,9 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
         .. PackageManagers.All.Select(m => new CatalogSourceOption(m.Name, m.DisplayName, m.Purpose, m.Scopes, m.CanPinVersion, IsManager: true)),
         new(SourceDirect, "Direct download",
             "Any installer at a web address, checked against its SHA-256. For game launchers and vendor installers that are in no repository.",
+            BothScopes, true),
+        new(SourcePortable, "Portable app (zip)",
+            "A zip that runs from wherever it is unpacked, checked against its SHA-256. The agent unpacks it into a folder, adds a Start menu shortcut and an uninstall entry. For tools that ship without an installer.",
             BothScopes, true),
     ];
 
@@ -93,7 +97,7 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
         nameof(HelperFailed), nameof(IsConfirmingDiscard), nameof(VerifyMessage), nameof(VerifyOk),
         nameof(PackageSearchMessage), nameof(SelectedSource), nameof(SelectedScope), nameof(SelectedEngine),
         nameof(ScopeOptions), nameof(SourcePurpose), nameof(ShowPackageFields), nameof(ShowDirectFields),
-        nameof(ShowAgentFields), nameof(ShowLookup), nameof(ShowStoreHint), nameof(ShowManagerHint),
+        nameof(ShowDownloadFields), nameof(ShowPortableFields), nameof(DownloadUrlLabel), nameof(ShowAgentFields), nameof(ShowLookup), nameof(ShowStoreHint), nameof(ShowManagerHint),
         nameof(IsAction1Source), nameof(ShowEngineOverride), nameof(SourceIdLabel), nameof(SourceIdPlaceholder),
         nameof(VersionEnabled), nameof(VersionPlaceholder), nameof(Action1Heading), nameof(Title),
     ];
@@ -190,12 +194,13 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     [ObservableProperty] private string _packageVersion = "latest";
 
     /// <summary>
-    /// Where the app comes from: <c>action1</c>, <c>winget</c>, <c>msstore</c>, <c>direct</c>, or the
-    /// name of a package manager. No manager is called any of the other four, so one value is enough.
+    /// Where the app comes from: <c>action1</c>, <c>winget</c>, <c>msstore</c>, <c>direct</c>,
+    /// <c>portable</c>, or the name of a package manager. No manager is called any of the others, so
+    /// one value is enough.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedSource), nameof(SourcePurpose), nameof(ShowPackageFields), nameof(ShowDirectFields),
-        nameof(ShowAgentFields), nameof(ShowLookup), nameof(ShowStoreHint), nameof(ShowManagerHint), nameof(IsAction1Source),
+        nameof(ShowDownloadFields), nameof(ShowPortableFields), nameof(DownloadUrlLabel), nameof(ShowAgentFields), nameof(ShowLookup), nameof(ShowStoreHint), nameof(ShowManagerHint), nameof(IsAction1Source),
         nameof(ShowEngineOverride), nameof(SourceIdLabel), nameof(SourceIdPlaceholder), nameof(VersionEnabled),
         nameof(VersionPlaceholder), nameof(ScopeOptions), nameof(SelectedScope), nameof(Action1Heading))]
     private string _source = SourceAction1;
@@ -221,6 +226,13 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     [ObservableProperty] private string _directSizeBytes = "";
 
     [ObservableProperty] private string _directUninstallKey = "";
+
+    // A portable app's own fields. Its URL, hash and size are the direct download's: the same three
+    // facts about a file, filled by the same Fetch and hash, as on the web page.
+    [ObservableProperty] private string _portableFolder = "";
+    [ObservableProperty] private string _portableExecutable = "";
+    [ObservableProperty] private string _portableShortcutName = "";
+    [ObservableProperty] private string _portableVersion = "";
 
     [ObservableProperty] private bool _isBusy;
 
@@ -293,6 +305,13 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     public bool ShowPackageFields => Source is WingetSources.Winget or WingetSources.Store || Manager is not null;
 
     public bool ShowDirectFields => Source == SourceDirect;
+
+    /// <summary>The URL, hash and size, which a direct installer and a portable app both have.</summary>
+    public bool ShowDownloadFields => Source is SourceDirect or SourcePortable;
+
+    public bool ShowPortableFields => Source == SourcePortable;
+
+    public string DownloadUrlLabel => Source == SourcePortable ? "Archive URL" : "Installer URL";
 
     public bool ShowAgentFields => !IsAction1Source;
 
@@ -384,6 +403,9 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
             SourceDirect => new DirectPackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
                 DirectInstallerType, DirectSilentArgs ?? "", SizeBytes() ?? 0, EmptyToNull(DirectUninstallKey),
                 SourceScope, SourceRequiresReboot),
+            SourcePortable => new PortablePackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
+                SizeBytes() ?? 0, (PortableFolder ?? "").Trim(), (PortableExecutable ?? "").Trim(), SourceScope,
+                EmptyToNull(PortableShortcutName?.Trim()), EmptyToNull(PortableVersion?.Trim()), SourceRequiresReboot),
             // A version the manager cannot pin is not sent, as a disabled field on the web page is not posted.
             _ when Manager is not null => new ManagedPackageDefinition(Source, id, SourceScope,
                 VersionEnabled ? EmptyToNull(SourceVersion) : null, EmptyToNull(SourceExtraArgs), SourceRequiresReboot),
@@ -422,7 +444,7 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
             return $"'{ReservedId}' is reserved for the create form. Give the app another id.";
         }
 
-        if (Source == SourceDirect && SizeBytes() is null)
+        if (Source is SourceDirect or SourcePortable && SizeBytes() is null)
         {
             return "Enter sizeBytes as a positive whole number of bytes.";
         }
@@ -628,6 +650,7 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
         WingetPackageDefinition => "winget",
         DirectPackageDefinition => "Direct download",
         ManagedPackageDefinition managed => PackageManagers.Find(managed.Manager)?.DisplayName ?? managed.Manager,
+        PortablePackageDefinition => "Portable app (zip)",
         _ => "",
     };
 
@@ -670,6 +693,8 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
             WingetPackageDefinition { Source: WingetSources.Store } => "from the Microsoft Store",
             DirectPackageDefinition direct => "with its own installer from "
                                               + (Uri.TryCreate(direct.Url, UriKind.Absolute, out var url) ? url.Host : "its download address"),
+            PortablePackageDefinition portable => "by unpacking it from "
+                                                  + (Uri.TryCreate(portable.Url, UriKind.Absolute, out var zip) ? zip.Host : "its download address"),
             _ => "through " + SourceName(agent),
         };
     }
@@ -758,6 +783,16 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
                 DirectSizeBytes = direct.SizeBytes.ToString(CultureInfo.InvariantCulture);
                 DirectUninstallKey = direct.UninstallKey ?? "";
                 Source = SourceDirect;
+                break;
+            case PortablePackageDefinition portable:
+                DirectUrl = portable.Url;
+                DirectSha256 = portable.Sha256;
+                DirectSizeBytes = portable.SizeBytes.ToString(CultureInfo.InvariantCulture);
+                PortableFolder = portable.Folder;
+                PortableExecutable = portable.Executable;
+                PortableShortcutName = portable.ShortcutName ?? "";
+                PortableVersion = portable.Version ?? "";
+                Source = SourcePortable;
                 break;
             case ManagedPackageDefinition managed:
                 SourceId = managed.Id;

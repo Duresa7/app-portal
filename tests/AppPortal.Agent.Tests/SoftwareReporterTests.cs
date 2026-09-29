@@ -69,11 +69,11 @@ public sealed class SoftwareReporterTests : IDisposable
         var alias = Path.Combine(profile, "AppData", "Local", "Microsoft", "WindowsApps", "winget.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(alias)!);
         File.WriteAllText(alias, "");
-        var sessions = new FakeSessions(@"PROOF-PCpptester") { Result = new ProcessResult(0, Transcript) };
+        var sessions = new FakeSessions(@"PROOF-PC\apptester") { Result = new ProcessResult(0, Transcript) };
 
         await new SoftwareReporter(new Server().Client(), new NoProcesses(), NullLogger<SoftwareReporter>.Instance, sessions,
                 new WingetLocator(_root, _ => profile))
-            .ReportAsync(Enrolled, CancellationToken.None, @"PROOF-PCpptester");
+            .ReportAsync(Enrolled, CancellationToken.None, @"PROOF-PC\apptester");
 
         Assert.Equal(alias, Assert.Single(sessions.Started).File);
         Assert.Empty(Assert.Single(sessions.PathFirst));

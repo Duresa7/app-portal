@@ -91,6 +91,12 @@ public static class AgentRun
             stateDirectory,
             provider.GetRequiredService<IUserSessionLauncher>(),
             provider.GetRequiredService<IUninstallRegistry>()));
+        builder.Services.AddSingleton<IPackageExecutor>(provider => new PortableAppExecutor(
+            provider.GetRequiredService<ResumableDownload>(),
+            provider.GetRequiredService<IProcessRunner>(),
+            provider.GetRequiredService<ILogger<PortableAppExecutor>>(),
+            stateDirectory,
+            provider.GetRequiredService<IUserSessionLauncher>()));
         builder.Services.AddSingleton<IPackageExecutor>(provider => new WingetExecutor(
             provider.GetRequiredService<IProcessRunner>(),
             provider.GetRequiredService<ILogger<WingetExecutor>>(),

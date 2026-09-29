@@ -109,11 +109,12 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
 
     public const string SourceAction1 = "action1";
     public const string SourceDirect = "direct";
+    public const string SourcePortable = "portable";
 
     /// <summary>
     /// Where the app comes from, the first thing an administrator chooses: <c>action1</c>,
-    /// <c>winget</c>, <c>msstore</c>, <c>direct</c>, or the name of a package manager. No manager is
-    /// called any of the other four, so one value is enough.
+    /// <c>winget</c>, <c>msstore</c>, <c>direct</c>, <c>portable</c>, or the name of a package manager.
+    /// No manager is called any of the others, so one value is enough.
     /// </summary>
     [BindProperty]
     public string Source { get; set; } = SourceAction1;
@@ -152,6 +153,22 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
 
     [BindProperty]
     public string DirectUninstallKey { get; set; } = "";
+
+    /// <summary>
+    /// A portable app's own fields. Its URL, hash and size are the direct download's fields: the same
+    /// three facts about a file, filled by the same Fetch and hash button.
+    /// </summary>
+    [BindProperty]
+    public string PortableFolder { get; set; } = "";
+
+    [BindProperty]
+    public string PortableExecutable { get; set; } = "";
+
+    [BindProperty]
+    public string PortableShortcutName { get; set; } = "";
+
+    [BindProperty]
+    public string PortableVersion { get; set; } = "";
 
     public IActionResult OnGet(string id)
     {
@@ -197,7 +214,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             return Page();
         }
 
-        if (ModelState[nameof(DirectSizeBytes)]?.Errors.Count > 0 && Source == SourceDirect)
+        if (ModelState[nameof(DirectSizeBytes)]?.Errors.Count > 0 && Source is SourceDirect or SourcePortable)
         {
             Error = "Enter sizeBytes as a positive whole number of bytes.";
             LoadSourceRequest();
@@ -325,7 +342,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
         }
         catch (Exception ex) when (ex is InvalidDataException or HttpRequestException or IOException or OperationCanceledException)
         {
-            Error = "Could not fetch the installer. " + ex.Message;
+            Error = (Source == SourcePortable ? "Could not fetch the archive. " : "Could not fetch the installer. ") + ex.Message;
         }
 
         LoadSourceRequest();
@@ -416,10 +433,13 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             SourceDirect => new DirectPackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
                 DirectInstallerType, DirectSilentArgs ?? "", DirectSizeBytes ?? 0, EmptyToNull(DirectUninstallKey),
                 SourceScope, SourceRequiresReboot),
+            SourcePortable => new PortablePackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
+                DirectSizeBytes ?? 0, (PortableFolder ?? "").Trim(), (PortableExecutable ?? "").Trim(), SourceScope,
+                EmptyToNull(PortableShortcutName?.Trim()), EmptyToNull(PortableVersion?.Trim()), SourceRequiresReboot),
             _ when PackageManagers.Find(Source) is not null => new ManagedPackageDefinition(Source, id, SourceScope,
                 EmptyToNull(SourceVersion), EmptyToNull(SourceExtraArgs), SourceRequiresReboot),
             _ => throw new InvalidDataException("Choose where this app comes from: Action1, winget, the Microsoft Store, "
-                                                + "a package manager, or a direct download."),
+                                                + "a package manager, a direct download, or a portable app."),
         };
         return entry;
     }
@@ -465,6 +485,16 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
                 DirectSilentArgs = direct.SilentArgs;
                 DirectSizeBytes = direct.SizeBytes;
                 DirectUninstallKey = direct.UninstallKey ?? "";
+                break;
+            case PortablePackageDefinition portable:
+                Source = SourcePortable;
+                DirectUrl = portable.Url;
+                DirectSha256 = portable.Sha256;
+                DirectSizeBytes = portable.SizeBytes;
+                PortableFolder = portable.Folder;
+                PortableExecutable = portable.Executable;
+                PortableShortcutName = portable.ShortcutName ?? "";
+                PortableVersion = portable.Version ?? "";
                 break;
             case ManagedPackageDefinition managed:
                 Source = managed.Manager;

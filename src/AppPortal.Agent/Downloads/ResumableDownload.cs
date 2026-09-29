@@ -10,6 +10,19 @@ namespace AppPortal.Agent.Downloads;
 public sealed class DownloadFailedException(string message) : Exception(message);
 
 /// <summary>
+/// What any download needs, whatever kind of package asked for it. The extension names the cached
+/// file, so an installer and an archive with the same bytes could never be mistaken for each other.
+/// </summary>
+public sealed record DownloadRequest(string Url, string Sha256, long SizeBytes, string Extension)
+{
+    public static DownloadRequest For(DirectPackageDefinition direct)
+        => new(direct.Url, direct.Sha256, direct.SizeBytes, direct.InstallerType);
+
+    public static DownloadRequest For(PortablePackageDefinition portable)
+        => new(portable.Url, portable.Sha256, portable.SizeBytes, "zip");
+}
+
+/// <summary>
 /// Fetches an installer and proves it is the one the catalog described. A game is several gigabytes
 /// over an office connection, so the transfer has to survive a dropped connection and a service
 /// restart: the partial file stays on disk and the next attempt asks for the rest of it by range.
@@ -19,12 +32,17 @@ public sealed class ResumableDownload(HttpClient http, InstallerCache cache, ILo
     /// <summary>How often progress is worth reporting. Every chunk would be thousands of calls a minute.</summary>
     private static readonly TimeSpan ReportEvery = TimeSpan.FromSeconds(5);
 
+    /// <summary>The verified installer, downloading it first unless the cache already holds it.</summary>
+    public Task<string> FetchAsync(DirectPackageDefinition definition,
+        IProgress<(int percent, string detail)> progress, CancellationToken ct)
+        => FetchAsync(DownloadRequest.For(definition), progress, ct);
+
     /// <summary>The verified file, downloading it first unless the cache already holds it.</summary>
-    public async Task<string> FetchAsync(DirectPackageDefinition definition,
+    public async Task<string> FetchAsync(DownloadRequest definition,
         IProgress<(int percent, string detail)> progress, CancellationToken ct)
     {
         Directory.CreateDirectory(cache.Directory);
-        var final = cache.PathFor(definition.Sha256, definition.InstallerType);
+        var final = cache.PathFor(definition.Sha256, definition.Extension);
         if (File.Exists(final))
         {
             // Named after its own hash, so its presence is the proof. Touched so that the eviction
@@ -57,7 +75,7 @@ public sealed class ResumableDownload(HttpClient http, InstallerCache cache, ILo
         return final;
     }
 
-    private async Task TransferAsync(DirectPackageDefinition definition, string partial,
+    private async Task TransferAsync(DownloadRequest definition, string partial,
         IProgress<(int percent, string detail)> progress, CancellationToken ct)
     {
         var have = File.Exists(partial) ? new FileInfo(partial).Length : 0;

@@ -7,6 +7,7 @@ namespace AppPortal.Shared;
 [JsonDerivedType(typeof(WingetPackageDefinition), "winget")]
 [JsonDerivedType(typeof(DirectPackageDefinition), "direct")]
 [JsonDerivedType(typeof(ManagedPackageDefinition), "managed")]
+[JsonDerivedType(typeof(PortablePackageDefinition), "portable")]
 public abstract record PackageDefinition
 {
     public abstract void Validate();
@@ -21,6 +22,7 @@ public abstract record PackageDefinition
         WingetPackageDefinition => "winget",
         DirectPackageDefinition => "direct",
         ManagedPackageDefinition => "managed",
+        PortablePackageDefinition => "portable",
         _ => throw new InvalidOperationException($"{GetType().Name} has no kind; add it beside the JsonDerivedType attributes."),
     };
 
@@ -44,7 +46,7 @@ public abstract record PackageDefinition
     public virtual long? DownloadSizeBytes => null;
 
     /// <summary>Every kind a definition may carry, for a message that has to say which it expected.</summary>
-    public static string Kinds => "winget, direct or managed";
+    public static string Kinds => "winget, direct, managed or portable";
 
     private protected static void ValidateScope(string scope)
     {
@@ -239,5 +241,108 @@ public sealed record DirectPackageDefinition(
         }
 
         return uri;
+    }
+}
+
+/// <summary>
+/// An app that ships as a zip and runs from wherever it is unpacked: a mod manager, a monitoring tool,
+/// an emulator, a command-line utility. The agent extracts it into a folder of its own, adds a Start
+/// menu shortcut, and writes an uninstall entry, which is what makes Windows, winget and the portal all
+/// see it as installed.
+/// <para>
+/// Every text field reaches a PowerShell script, so each one is held to a list of what it may contain
+/// rather than a list of what it may not. None of them may hold a quote, which is what would let a
+/// value end the literal it is written into.
+/// </para>
+/// </summary>
+public sealed record PortablePackageDefinition(
+    string Url,
+    string Sha256,
+    long SizeBytes,
+    string Folder,
+    string Executable,
+    string Scope = "machine",
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? ShortcutName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? Version = null,
+    bool RequiresReboot = false) : PackageDefinition
+{
+    /// <summary>A folder or shortcut name: letters and digits first, then those and a few separators.</summary>
+    private static readonly Regex NameRule = new(@"\A[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}\z");
+
+    /// <summary>One segment of the path to the program inside the archive.</summary>
+    private static readonly Regex SegmentRule = new(@"\A[A-Za-z0-9][A-Za-z0-9 ._+-]{0,127}\z");
+
+    private static readonly Regex VersionRule = new(@"\A[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}\z");
+
+    /// <summary>Names Windows keeps for devices, which no file or folder can have whatever follows them.</summary>
+    private static readonly Regex Reserved = new(@"\A(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?\z", RegexOptions.IgnoreCase);
+
+    public override void Validate()
+    {
+        DirectPackageDefinition.ValidateUrl(Url);
+        if (Sha256 is null || Sha256.Length != 64 || !Sha256.All(char.IsAsciiHexDigit))
+        {
+            throw new InvalidDataException("A portable app needs a sha256 containing exactly 64 hexadecimal characters.");
+        }
+
+        if (SizeBytes <= 0)
+        {
+            throw new InvalidDataException("A portable app needs a positive sizeBytes.");
+        }
+
+        if (!IsName(Folder))
+        {
+            throw new InvalidDataException(
+                $"'{Folder}' cannot be a folder name. Use letters, digits, spaces, dots, hyphens and underscores, starting with a letter or digit.");
+        }
+
+        ValidateExecutable(Executable);
+        if (ShortcutName is { Length: > 0 } && !IsName(ShortcutName))
+        {
+            throw new InvalidDataException(
+                $"'{ShortcutName}' cannot be a shortcut name. Use letters, digits, spaces, dots, hyphens and underscores.");
+        }
+
+        if (Version is { Length: > 0 } && !VersionRule.IsMatch(Version))
+        {
+            throw new InvalidDataException($"'{Version}' is not a version. Use letters, digits, dots and hyphens.");
+        }
+
+        ValidateScope(Scope);
+    }
+
+    [JsonIgnore]
+    public override long? DownloadSizeBytes => SizeBytes;
+
+    /// <summary>What the uninstall entry and Settings call the app: its shortcut's name, or its folder's.</summary>
+    [JsonIgnore]
+    public string DisplayName => ShortcutName is { Length: > 0 } shortcut ? shortcut : Folder;
+
+    /// <summary>
+    /// A name Windows accepts for a file or folder and that ends as it is written: a trailing dot or
+    /// space is dropped by Windows without a word, so the folder on disk would not be the one named.
+    /// </summary>
+    private static bool IsName(string? name)
+        => name is not null && NameRule.IsMatch(name) && !name.EndsWith('.') && !name.EndsWith(' ') && !Reserved.IsMatch(name);
+
+    private static void ValidateExecutable(string? executable)
+    {
+        if (string.IsNullOrWhiteSpace(executable) || executable.Length > 260)
+        {
+            throw new InvalidDataException("A portable app needs the path of its program inside the archive, such as bin\\tool.exe.");
+        }
+
+        var segments = executable.Split('\\', '/');
+        if (segments.Any(segment => segment is "." or ".." || !SegmentRule.IsMatch(segment) || segment.EndsWith('.') || segment.EndsWith(' ')
+                                    || Reserved.IsMatch(segment)))
+        {
+            throw new InvalidDataException(
+                $"'{executable}' is not a path inside the archive. Name each folder and the program with letters, digits, spaces, dots, hyphens and underscores, and do not use '..'.");
+        }
+
+        if (!executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"'{executable}' is not a program. The path must end with .exe.");
+        }
     }
 }

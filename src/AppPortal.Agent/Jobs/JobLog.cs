@@ -15,7 +15,7 @@ public sealed class JobLog
         {
             var directory = Path.Combine(stateDirectory, "jobs");
             Directory.CreateDirectory(directory);
-            _path = Path.Combine(directory, Safe(jobId) + ".log");
+            _path = Path.Combine(directory, SafeName(jobId) + ".log");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -41,7 +41,7 @@ public sealed class JobLog
     }
 
     /// <summary>A job id is a server-issued identifier, but it names a file, so it is checked like one.</summary>
-    private static string Safe(string jobId)
+    internal static string SafeName(string jobId)
     {
         var cleaned = new string(jobId.Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_').ToArray());
         return cleaned.Length == 0 ? "job" : cleaned[..Math.Min(cleaned.Length, 64)];

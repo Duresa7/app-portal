@@ -125,7 +125,7 @@ public sealed class WingetLocatorTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(alias)!);
         File.WriteAllText(alias, "");
 
-        Assert.Equal(alias, new WingetLocator(_root, account => account == @"PCpptester" ? profile : null).ForAccount(@"PCpptester"));
+        Assert.Equal(alias, new WingetLocator(_root, account => account == @"PC\apptester" ? profile : null).ForAccount(@"PC\apptester"));
     }
 
     [Fact]

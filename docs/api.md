@@ -606,7 +606,7 @@ Checks that a package and version resolve in the Software Repository. Body `Admi
 
 #### POST /api/v1/admin/catalog/package/hash
 
-Downloads an installer and reports its hash and size, for a direct package. Body `AdminInstallerRequest`: `{ "url": "..." }`.
+Downloads an installer or an archive and reports its hash and size, for a direct package or a portable app. Body `AdminInstallerRequest`: `{ "url": "..." }`.
 
 | Status | When |
 |---|---|
@@ -807,7 +807,7 @@ The records below are in `AppPortal.Shared`: `Contracts.cs`, `AdminContracts.cs`
 | `iconUrl` | string? | |
 | `featured` | bool | |
 | `engines` | string[] | The engines the app has a package for: `action1`, `agent` |
-| `downloadSizeBytes` | long? | Known for a direct package only |
+| `downloadSizeBytes` | long? | Known for a direct package and a portable app only |
 | `installScope` | string? | `machine` or `user`, from the agent package; null without one |
 | `engine` | string? | The engine this device would use |
 | `requirements` | string? | Words for the person to read before installing |
@@ -937,7 +937,7 @@ An app needs an Action1 package id, an agent package, or both.
 
 ### Package definitions
 
-`PackageDefinition` is what the agent installs. It is polymorphic on `kind`, which is `winget`, `direct` or `managed`. It is the `agent` field of a catalog app and the `definition` of an agent job.
+`PackageDefinition` is what the agent installs. It is polymorphic on `kind`, which is `winget`, `direct`, `managed` or `portable`. It is the `agent` field of a catalog app and the `definition` of an agent job.
 
 The server writes `kind` as the first property. On `POST /api/v1/admin/catalog/import` and in the seed catalog, `kind` may appear anywhere in the object. On `PUT /api/v1/admin/catalog/{id}` it must come first.
 
@@ -976,6 +976,20 @@ Every kind has `scope`, which is `machine` (runs as SYSTEM, for everyone on the 
 | `scope` | string | One of the scopes the manager supports |
 | `version` | string? | Optional. Letters, digits, `.`, `+`, `_`, `-`, starting with a letter or digit. Refused for a manager that cannot pin a version. Always written. |
 | `extraArgs` | string? | Optional. Passed through as written. Always written. |
+| `requiresReboot` | bool | Optional |
+
+**`portable`** (`PortablePackageDefinition`), a zip the agent unpacks into `Program Files\App Portal Apps\<folder>` for everyone or `%LOCALAPPDATA%\Programs\App Portal Apps\<folder>` for one person, with a Start menu shortcut and an uninstall entry named `AppPortalPortable-<folder>`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `url` | string | Absolute HTTP or HTTPS, without credentials |
+| `sha256` | string | 64 hexadecimal characters |
+| `sizeBytes` | long | Greater than zero |
+| `folder` | string | Letters, digits, spaces, `.`, `-`, `_`, starting with a letter or digit, at most 64 characters, not ending in a dot or space, not a Windows device name |
+| `executable` | string | The program's path inside the zip, such as `bin\tool.exe`: segments as `folder` allows (and `+`), separated by `\` or `/`, no `..`, ending in `.exe` |
+| `scope` | string | Optional, default `machine` |
+| `shortcutName` | string? | Optional. The same rule as `folder`. Also what Settings calls the app. Always written. |
+| `version` | string? | Optional. Letters, digits, `.`, `+`, `_`, `-`. Shown in Settings. Always written. |
 | `requiresReboot` | bool | Optional |
 
 ### Package managers

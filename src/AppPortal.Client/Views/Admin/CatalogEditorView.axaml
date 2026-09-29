@@ -148,26 +148,32 @@
                         </StackPanel>
 
                         <!-- A direct download: the one source that needs a URL, a hash and a size. -->
-                        <StackPanel Spacing="12" IsVisible="{Binding ShowDirectFields}">
+                        <StackPanel Spacing="12" IsVisible="{Binding ShowDownloadFields}">
                             <StackPanel>
-                                <TextBlock Classes="label" Text="Installer URL" />
+                                <TextBlock Classes="label" Text="{Binding DownloadUrlLabel}" />
                                 <TextBox Text="{Binding DirectUrl}" />
                             </StackPanel>
                             <StackPanel>
                                 <TextBlock Classes="label" Text="SHA-256" />
                                 <TextBox Text="{Binding DirectSha256}" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="13" />
                             </StackPanel>
-                            <Grid ColumnDefinitions="*,16,*">
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Classes="label" Text="Installer type" />
-                                    <ComboBox Classes="field" ItemsSource="{x:Static admin:CatalogEditorViewModel.InstallerTypes}"
-                                              SelectedItem="{Binding DirectInstallerType}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Classes="label" Text="Download size (bytes)" />
-                                    <TextBox Text="{Binding DirectSizeBytes}" />
-                                </StackPanel>
-                            </Grid>
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="Download size (bytes)" />
+                                <TextBox Text="{Binding DirectSizeBytes}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <Button Classes="standard" HorizontalAlignment="Left" Content="Fetch and hash" Command="{Binding FetchAndHashCommand}" />
+                                <TextBlock Classes="hint"
+                                           Text="Fetch and hash has the server download the file to calculate its hash and size. For files over the server's limit, enter these values yourself." />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Spacing="12" IsVisible="{Binding ShowDirectFields}">
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="Installer type" />
+                                <ComboBox Classes="field" ItemsSource="{x:Static admin:CatalogEditorViewModel.InstallerTypes}"
+                                          SelectedItem="{Binding DirectInstallerType}" />
+                            </StackPanel>
                             <StackPanel>
                                 <TextBlock Classes="label" Text="Silent arguments" />
                                 <TextBox Text="{Binding DirectSilentArgs}" PlaceholderText="/S or /qn" />
@@ -178,11 +184,33 @@
                                 <TextBlock Classes="label" Text="Uninstall key (optional)" />
                                 <TextBox Text="{Binding DirectUninstallKey}" />
                             </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Spacing="12" IsVisible="{Binding ShowPortableFields}">
                             <StackPanel>
-                                <Button Classes="standard" HorizontalAlignment="Left" Content="Fetch and hash" Command="{Binding FetchAndHashCommand}" />
+                                <TextBlock Classes="label" Text="Folder name" />
+                                <TextBox Text="{Binding PortableFolder}" PlaceholderText="Vendor Tool" />
                                 <TextBlock Classes="hint"
-                                           Text="Fetch and hash has the server download the installer to calculate its hash and size. For files over the server's limit, enter these values yourself." />
+                                           Text="The folder the app is unpacked into, under Program Files\App Portal Apps for everyone, or under the person's own AppData for one person." />
                             </StackPanel>
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="Program inside the archive" />
+                                <TextBox Text="{Binding PortableExecutable}" PlaceholderText="bin\tool.exe" />
+                                <TextBlock Classes="hint"
+                                           Text="The path of the .exe inside the zip. The shortcut points at it, and the install fails if the zip does not have it." />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,16,*">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Classes="label" Text="Start menu shortcut (optional)" />
+                                    <TextBox Text="{Binding PortableShortcutName}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Classes="label" Text="Version (optional)" />
+                                    <TextBox Text="{Binding PortableVersion}" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Classes="hint"
+                                       Text="Letters, digits, spaces, dots, hyphens and underscores only. Settings shows the shortcut name and the version; without a shortcut name it shows the folder name." />
                         </StackPanel>
 
                         <Border Classes="infoBar informational" Classes.critical="{Binding HelperFailed}"

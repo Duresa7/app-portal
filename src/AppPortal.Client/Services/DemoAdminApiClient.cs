@@ -749,5 +749,11 @@ public sealed class DemoAdminApiClient : IAdminApiClient
             Action1: new AdminAction1Package(""),
             Agent: new DirectPackageDefinition("https://cdn.vendor.example/SteamSetup.exe",
                 "3f1c7d0e9b8a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f10", "exe", "/S", 3_145_728, "Steam", "machine")));
+        _catalog.Add(new AdminCatalogApp("hwinfo", "HWiNFO", "REALiX", "Hardware sensors and temperatures, as a portable app.", "Utilities",
+            UserRemovable: true,
+            Action1: new AdminAction1Package(""),
+            Agent: new PortablePackageDefinition("https://cdn.vendor.example/hwi_portable.zip",
+                "8d2a6c4e0b9f7a5c3e1d9b7f5a3c1e0d8b6f4a2c0e9d7b5f3a1c8e6d4b2f0a19", 11_534_336, "HWiNFO", "HWiNFO64.exe",
+                "user", "HWiNFO", "8.10")));
     }
 }

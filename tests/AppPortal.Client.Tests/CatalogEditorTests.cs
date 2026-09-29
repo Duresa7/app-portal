@@ -34,6 +34,10 @@ public sealed class CatalogEditorTests
         yield return Row(new AdminCatalogApp("steam", "Steam", "Valve", "", "Games", Hidden: true, Requires: [], UserRemovable: true,
             Match: new AdminMatchRule(null, "Steam"), Action1: new AdminAction1Package(""),
             Agent: new DirectPackageDefinition("https://cdn.vendor.example/SteamSetup.exe", Sha, "exe", "/S", 3_145_728, "Steam", "user", true)));
+        yield return Row(new AdminCatalogApp("tool", "Vendor Tool", "Vendor", "", "Utilities", Requires: [], UserRemovable: true,
+            Action1: new AdminAction1Package(""),
+            Agent: new PortablePackageDefinition("https://cdn.vendor.example/tool-2.1.zip", Sha, 8_388_608, "Vendor Tool",
+                @"Vendor Tool\bin\tool.exe", "user", "Vendor Tool", "2.1", true)));
         yield return Row(new AdminCatalogApp("both", "Firefox", Requires: [], EngineOverride: EngineLabel.Action1,
             Action1: new AdminAction1Package("Mozilla_Firefox", "128.0"), Agent: new WingetPackageDefinition("Mozilla.Firefox", "machine")));
         foreach (var manager in PackageManagers.All)
@@ -88,6 +92,8 @@ public sealed class CatalogEditorTests
             editor.DirectInstallerType = "msi";
             editor.DirectSilentArgs = "ALLUSERS=1";
             editor.DirectSizeBytes = "1024";
+            editor.PortableFolder = "Vendor App";
+            editor.PortableExecutable = @"bin\app.exe";
 
             var built = editor.Build();
             Assert.Null(editor.Validate(built));
@@ -105,6 +111,10 @@ public sealed class CatalogEditorTests
                     var direct = Assert.IsType<DirectPackageDefinition>(built.Agent);
                     Assert.Equal(1024, direct.SizeBytes);
                     Assert.Equal("msi", direct.InstallerType);
+                    break;
+                case CatalogEditorViewModel.SourcePortable:
+                    var portable = Assert.IsType<PortablePackageDefinition>(built.Agent);
+                    Assert.Equal((1024L, "Vendor App", @"bin\app.exe"), (portable.SizeBytes, portable.Folder, portable.Executable));
                     break;
                 default:
                     var managed = Assert.IsType<ManagedPackageDefinition>(built.Agent);
@@ -141,8 +151,15 @@ public sealed class CatalogEditorTests
         Assert.Equal(PackageManagers.Find("scoop")!.Purpose, editor.SourcePurpose);
 
         editor.Source = CatalogEditorViewModel.SourceDirect;
-        Assert.True(editor.ShowDirectFields && editor.ShowAgentFields);
-        Assert.False(editor.ShowPackageFields);
+        Assert.True(editor.ShowDirectFields && editor.ShowDownloadFields && editor.ShowAgentFields);
+        Assert.False(editor.ShowPackageFields || editor.ShowPortableFields);
+        Assert.Equal("Installer URL", editor.DownloadUrlLabel);
+
+        // A portable app has the download's URL, hash and size, and its own fields instead of an installer's.
+        editor.Source = CatalogEditorViewModel.SourcePortable;
+        Assert.True(editor.ShowDownloadFields && editor.ShowPortableFields && editor.ShowAgentFields);
+        Assert.False(editor.ShowDirectFields || editor.ShowPackageFields);
+        Assert.Equal("Archive URL", editor.DownloadUrlLabel);
     }
 
     [Fact]
@@ -351,6 +368,12 @@ public sealed class CatalogEditorTests
         => Assert.Equal("Installs Google Chrome for everyone on the PC, with its own installer from vendor.example.",
             CatalogEditorViewModel.Describe(App(new DirectPackageDefinition("https://vendor.example/installer.exe", new string('a', 64),
                 "exe", "/S", 5_000_000_000L, "Vendor Application"))));
+
+    [Fact]
+    public void Sentence_a_portable_app_names_where_it_is_unpacked_from()
+        => Assert.Equal("Installs Google Chrome for everyone on the PC, by unpacking it from vendor.example.",
+            CatalogEditorViewModel.Describe(App(new PortablePackageDefinition("https://vendor.example/tool-2.1.zip", new string('b', 64),
+                12_000_000, "Vendor Tool", @"Vendor Tool 2.1\bin\tool.exe", ShortcutName: "Vendor Tool", Version: "2.1.0"))));
 
     [Fact]
     public void Sentence_both_packages_say_which_device_gets_which_and_what_the_override_decides()

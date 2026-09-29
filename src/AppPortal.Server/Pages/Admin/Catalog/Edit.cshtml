@@ -99,6 +99,8 @@ else if (Model.Saved)
             </optgroup>
             <option value="@EditModel.SourceDirect" selected="@(Model.Source == EditModel.SourceDirect)"
                     data-purpose="Any installer at a web address, checked against its SHA-256. For game launchers and vendor installers that are in no repository.">Direct download</option>
+            <option value="@EditModel.SourcePortable" selected="@(Model.Source == EditModel.SourcePortable)"
+                    data-purpose="A zip that runs from wherever it is unpacked, checked against its SHA-256. The agent unpacks it into a folder, adds a Start menu shortcut and an uninstall entry. For tools that ship without an installer.">Portable app (zip)</option>
         </select>
         <p class="muted" id="source-purpose"></p>
         <p class="muted" id="source-devices"></p>
@@ -124,11 +126,18 @@ else if (Model.Saved)
             <button type="submit" class="secondary" id="lookup" asp-page-handler="LookupWinget">Look up this id</button>
         </div>
 
-        <div id="direct-fields">
-            <label for="direct-url">Installer URL</label>
+        <div id="download-fields">
+            <label for="direct-url" id="direct-url-label">Installer URL</label>
             <input id="direct-url" name="DirectUrl" value="@Model.DirectUrl" />
             <label for="direct-sha256">SHA-256</label>
             <input id="direct-sha256" name="DirectSha256" value="@Model.DirectSha256" />
+            <label for="direct-size">Download size (bytes)</label>
+            <input id="direct-size" name="DirectSizeBytes" type="number" min="1" step="1" value="@Model.DirectSizeBytes" />
+            <button type="submit" class="secondary" asp-page-handler="FetchAndHash">Fetch and hash</button>
+            <p class="muted">Fetch and hash downloads the file to calculate its hash and size. For files over the server's limit, enter these values manually.</p>
+        </div>
+
+        <div id="direct-fields">
             <label for="direct-type">Installer type</label>
             <select id="direct-type" name="DirectInstallerType">
                 <option value="exe" selected="@(Model.DirectInstallerType == "exe")">exe</option>
@@ -138,12 +147,22 @@ else if (Model.Saved)
             <label for="direct-args">Silent arguments</label>
             <input id="direct-args" name="DirectSilentArgs" value="@Model.DirectSilentArgs" placeholder="/S or /qn" />
             <p class="muted">Leave this empty for an msix, and for an exe that installs silently on its own. An msi always needs them; the agent adds /qn /norestart itself, so put here whatever else this package takes.</p>
-            <label for="direct-size">Download size (bytes)</label>
-            <input id="direct-size" name="DirectSizeBytes" type="number" min="1" step="1" value="@Model.DirectSizeBytes" />
             <label for="direct-uninstall">Uninstall key (optional)</label>
             <input id="direct-uninstall" name="DirectUninstallKey" value="@Model.DirectUninstallKey" />
-            <button type="submit" class="secondary" asp-page-handler="FetchAndHash">Fetch and hash</button>
-            <p class="muted">Fetch and hash downloads the installer to calculate its hash and size. For files over the server's limit, enter these values manually.</p>
+        </div>
+
+        <div id="portable-fields">
+            <label for="portable-folder">Folder name</label>
+            <input id="portable-folder" name="PortableFolder" value="@Model.PortableFolder" autocomplete="off" placeholder="Vendor Tool" />
+            <p class="muted">The folder the app is unpacked into, under Program Files\App Portal Apps for everyone, or under the person's own AppData for one person.</p>
+            <label for="portable-executable">Program inside the archive</label>
+            <input id="portable-executable" name="PortableExecutable" value="@Model.PortableExecutable" autocomplete="off" placeholder="bin\tool.exe" />
+            <p class="muted">The path of the .exe inside the zip. The shortcut points at it, and the install fails if the zip does not have it.</p>
+            <label for="portable-shortcut">Start menu shortcut (optional)</label>
+            <input id="portable-shortcut" name="PortableShortcutName" value="@Model.PortableShortcutName" autocomplete="off" />
+            <label for="portable-version">Version (optional)</label>
+            <input id="portable-version" name="PortableVersion" value="@Model.PortableVersion" autocomplete="off" />
+            <p class="muted">Letters, digits, spaces, dots, hyphens and underscores only. Settings shows the shortcut name and the version; without a shortcut name it shows the folder name.</p>
         </div>
 
         <div id="agent-fields">
@@ -273,7 +292,10 @@ else if (Model.Saved)
 
         document.getElementById('source-purpose').textContent = option.dataset.purpose;
         document.getElementById('package-fields').hidden = !(value === 'winget' || store || manager);
+        document.getElementById('download-fields').hidden = !(value === 'direct' || value === 'portable');
         document.getElementById('direct-fields').hidden = value !== 'direct';
+        document.getElementById('portable-fields').hidden = value !== 'portable';
+        document.getElementById('direct-url-label').textContent = value === 'portable' ? 'Archive URL' : 'Installer URL';
         document.getElementById('agent-fields').hidden = !agent;
         document.getElementById('lookup').hidden = !(value === 'winget' || store);
         document.getElementById('store-hint').hidden = !store;

@@ -53,6 +53,7 @@ An administrator adds an app by choosing its **Source** on the catalog page and 
 | winget | Windows applications, from Microsoft's community repository. The default choice for most software. | Everyone, or one person |
 | Microsoft Store | Store applications, by their twelve-character product id. Some need the person signed in to the Store before it grants a licence; say so under Requirements. | One person |
 | Direct download | Any installer at a URL, checked against its SHA-256. Game launchers and vendor installers that are in no repository. | Everyone, or one person |
+| Portable app (zip) | A zip that runs from wherever it is unpacked, checked against its SHA-256: mod managers, monitoring tools, emulators, internal tools. The agent unpacks it into a folder of its own, adds a Start menu shortcut, and writes an uninstall entry, so it shows in Settings and in the portal's Installed list. Removing it takes all three away. | Everyone, or one person |
 | Chocolatey | Windows applications and tools, from the Chocolatey community repository. The closest of these to winget. | Everyone |
 | Scoop | Developer tools, into one person's profile without administrator rights. | One person, or everyone with `--global` |
 | npm, Yarn | Node.js command line tools. Needs Node.js on the PC. | Everyone, or one person |
@@ -63,7 +64,7 @@ An administrator adds an app by choosing its **Source** on the catalog page and 
 | .NET tool | Command line tools published to NuGet. Needs the .NET SDK. | One person |
 | PowerShell module | A module from the PowerShell Gallery, for PowerShell 7 or for the Windows PowerShell 5.1 every PC already has. | Everyone, or one person |
 
-An app can have an Action1 package and one agent source at once; the catalog page then asks which to use on a device that could use either. Only Action1 and the next four are ways to put an application in front of everybody on a PC. The rest are for developer workstations: reaching for npm to deploy a web browser is a misunderstanding of what npm is.
+An app can have an Action1 package and one agent source at once; the catalog page then asks which to use on a device that could use either. Only Action1 and the next five are ways to put an application in front of everybody on a PC. The rest are for developer workstations: reaching for npm to deploy a web browser is a misunderstanding of what npm is.
 
 The portal installs applications and launchers. What a launcher then downloads for one signed-in account, a game in a Steam library or a Riot client's own updates, belongs to that launcher and that account, and is outside the portal: add Steam or the Riot client to the catalog, not the games inside them.
 

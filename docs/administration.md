@@ -33,6 +33,8 @@ Both sign in with a local administrator account (or a [directory account](server
 
 **Devices** supports renaming, disabling, token rotation and removal. Disabling or rotating a token takes effect on the next API call. Removal is refused while an install is active; afterward, install and request history remains available to administrators. A replacement device does not inherit the retired device's history.
 
+A device with the agent also shows the package managers it has and the kernel **anti-cheat** it carries: Riot Vanguard, Easy Anti-Cheat, BattlEye, FACEIT, EA Javelin, PunkBuster, nProtect GameGuard, XIGNCODE3 and HoYoverse's, each service and driver with its state and how it starts. The agent reports them when its service starts and once a day. Games install these themselves, and the portal never starts, stops or changes one. A stopped piece that should start with Windows, or a disabled one, is marked: that is the usual reason a game will not start, and one installed a moment ago, such as Vanguard's driver, needs a restart first. Stopped on-demand services, which most of them are between games, are ordinary.
+
 **Enrollment keys** lets administrators create and revoke keys with an expiry, use limit and default engine. The full key appears once.
 
 ## Requests from users

@@ -135,6 +135,12 @@ public static class AgentRun
                 provider.GetRequiredService<ILogger<ManagerReporter>>(),
                 provider.GetRequiredService<IUserSessionLauncher>(),
                 software: provider.GetRequiredService<SoftwareReporter>()));
+            // On start and once a day, like the managers: which kernel anti-cheat is here and whether
+            // it runs, for the administrator asked why a game will not start.
+            builder.Services.AddHostedService(provider => new AntiCheatReporter(
+                provider.GetRequiredService<HttpClient>(),
+                OperatingSystem.IsWindows() ? new WindowsServiceInventory() : new NoServiceInventory(),
+                provider.GetRequiredService<ILogger<AntiCheatReporter>>()));
             // Every start, because a restart and an upgrade both end in one, and those are the two
             // moments the server's picture of this device is otherwise wrong.
             builder.Services.AddHostedService(provider => new StartupSoftwareSweep(

@@ -59,10 +59,17 @@ public sealed class AdminDevicesTests
         Assert.Equal(4, page.RecentInstalls.Count);
         Assert.Equal(3, page.RecentRequests.Count);
         Assert.Equal(2, page.Managers.Count);
+        // The demo's gaming PC: Vanguard's driver stopped after an install, which is the row marked.
+        Assert.Equal(3, page.AntiCheatRows.Count);
+        var vgk = Assert.Single(page.AntiCheatRows, row => row.AntiCheat.Service == "vgk");
+        Assert.True(vgk.NeedsAttention);
+        Assert.Equal("vgk (driver)", vgk.ServiceText);
+        Assert.False(Assert.Single(page.AntiCheatRows, row => row.AntiCheat.Service == "EasyAntiCheat_EOS").NeedsAttention);
 
         await page.BackCommand.ExecuteAsync(null);
         Assert.True(page.IsListOpen);
         Assert.Empty(page.Managers);
+        Assert.Empty(page.AntiCheatRows);
         Assert.Empty(page.RecentInstalls);
     }
 

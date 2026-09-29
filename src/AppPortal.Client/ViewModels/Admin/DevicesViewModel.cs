@@ -52,6 +52,21 @@ public sealed record DeviceManagerRow(DeviceManager Manager)
     public string ForText => Manager.Account ?? "everyone on this PC";
 }
 
+/// <summary>One anti-cheat service or driver the agent found on the device.</summary>
+public sealed record DeviceAntiCheatRow(DeviceAntiCheat AntiCheat)
+{
+    public string Product => AntiCheat.Product;
+
+    public string ServiceText => $"{AntiCheat.Service} ({AntiCheat.Type})";
+
+    public string State => AntiCheat.State;
+
+    public string StartType => AntiCheat.StartType;
+
+    /// <summary>Stopped when it should start with Windows, or turned off: the rows an administrator looks at first.</summary>
+    public bool NeedsAttention => AntiCheats.NeedsAttention(AntiCheat);
+}
+
 /// <summary>One of the device's recent installs.</summary>
 public sealed record DeviceInstallRow(AdminInstall Install)
 {
@@ -92,6 +107,8 @@ public sealed partial class DevicesViewModel(IAdminApiClient api) : AdminPageVie
     public ObservableCollection<DeviceRow> Devices { get; } = [];
 
     public ObservableCollection<DeviceManagerRow> Managers { get; } = [];
+
+    public ObservableCollection<DeviceAntiCheatRow> AntiCheatRows { get; } = [];
 
     public ObservableCollection<DeviceInstallRow> RecentInstalls { get; } = [];
 
@@ -423,6 +440,8 @@ public sealed partial class DevicesViewModel(IAdminApiClient api) : AdminPageVie
         var detail = await Api.GetDeviceAsync(id, CancellationToken.None);
         Show(detail.Device);
         Replace(Managers, (detail.Managers ?? []).Select(m => new DeviceManagerRow(m)));
+        // Null from a server older than the anti-cheat report, which reads as nothing reported.
+        Replace(AntiCheatRows, (detail.AntiCheats ?? []).Select(a => new DeviceAntiCheatRow(a)));
         Replace(RecentInstalls, detail.RecentInstalls.Select(i => new DeviceInstallRow(i)));
         Replace(RecentRequests, detail.RecentRequests.Select(r => new DeviceRequestRow(r)));
     }
@@ -440,6 +459,7 @@ public sealed partial class DevicesViewModel(IAdminApiClient api) : AdminPageVie
     private void ClearDetail()
     {
         Managers.Clear();
+        AntiCheatRows.Clear();
         RecentInstalls.Clear();
         RecentRequests.Clear();
         IsRotateOpen = false;

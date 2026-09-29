@@ -20,6 +20,12 @@ public static class AgentEndpoints
     /// </summary>
     private const int MaxManagerEntries = 256;
 
+    /// <summary>
+    /// More than every anti-cheat service this server knows, and far less than a PC's whole service list,
+    /// so an agent that sent everything by mistake is told so rather than filling the table.
+    /// </summary>
+    private const int MaxAntiCheatEntries = 64;
+
     public static void MapAgentApi(this WebApplication app)
     {
         var group = app.MapGroup(ApiRoutes.Prefix + "/agent");
@@ -128,6 +134,19 @@ public static class AgentEndpoints
             }
 
             managers.Replace(device.Id, request);
+            return Results.NoContent();
+        });
+
+        group.MapPost("/anticheat", (IReadOnlyList<DeviceAntiCheat> request, HttpContext context, DeviceAntiCheatStore anticheat) =>
+        {
+            // Every known service the agent found, every time, so one that was removed leaves the record.
+            var device = DeviceAuthenticationMiddleware.Current(context);
+            if (request.Count > MaxAntiCheatEntries)
+            {
+                return Results.BadRequest(new ErrorMessage($"A device may report at most {MaxAntiCheatEntries} anti-cheat services."));
+            }
+
+            anticheat.Replace(device.Id, request);
             return Results.NoContent();
         });
 

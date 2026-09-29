@@ -30,7 +30,8 @@ public static class AdminDeviceEndpoints
             EnrollmentKeyStore keys,
             InstallStore installs,
             AppRequestStore requests,
-            DeviceManagerStore managers) =>
+            DeviceManagerStore managers,
+            DeviceAntiCheatStore anticheat) =>
         {
             if (devices.Find(id) is not { } device)
             {
@@ -44,7 +45,8 @@ public static class AdminDeviceEndpoints
                 Project(device, devices.InstallCounts(), keyNames),
                 [.. installs.ForDeviceId(device.Id).Take(RecentRows).Select(AdminInstallEndpoints.Project)],
                 [.. requests.ListForDeviceId(device.Id).Take(RecentRows).Select(AdminRequestEndpoints.Project)],
-                managers.ForDevice(device.Id)));
+                managers.ForDevice(device.Id),
+                anticheat.ForDevice(device.Id)));
         });
 
         group.MapPost("/devices", (AdminDeviceCreate body, DeviceStore devices) =>

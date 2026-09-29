@@ -116,6 +116,37 @@
 </div>
 
 <div class="card">
+    <h2>Anti-cheat</h2>
+    @if (!Model.Device.HasAgent)
+    {
+        <p class="muted">This device has no agent, so nothing reports what it has.</p>
+    }
+    else if (Model.AntiCheats.Count == 0)
+    {
+        <p class="muted">No known anti-cheat reported. The agent looks when its service starts and once a day after that.</p>
+    }
+    else
+    {
+        <p class="muted">Games install these themselves, and the portal never changes them. A stopped one that should start with Windows, or a disabled one, is the usual reason a game will not start; one installed a moment ago may need a restart.</p>
+        <table>
+            <thead><tr><th>Product</th><th>Service</th><th>State</th><th>Starts</th></tr></thead>
+            <tbody>
+                @foreach (var found in Model.AntiCheats)
+                {
+                    var attention = AppPortal.Shared.AntiCheats.NeedsAttention(found);
+                    <tr>
+                        <td>@found.Product</td>
+                        <td class="muted">@found.Service (@found.Type)</td>
+                        <td>@if (attention) { <strong>@found.State</strong> } else { @found.State }</td>
+                        <td class="muted">@found.StartType</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="card">
     <h2>Recent installs</h2>
     @if (Model.RecentInstalls.Count == 0)
     {

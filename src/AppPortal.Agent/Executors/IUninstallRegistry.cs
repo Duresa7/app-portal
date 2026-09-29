@@ -83,7 +83,7 @@ public sealed class WindowsUninstallRegistry : IUninstallRegistry
         // The person's own hive first. A per-user application writes there and nowhere else, which is
         // why a machine-wide lookup could never remove one. Falling through to the machine afterwards
         // costs one missed read and covers an installer that writes to both.
-        if (account is { Length: > 0 } && Hive(account) is { } hive)
+        if (account is { Length: > 0 } && UserHive.Open(account) is { } hive)
         {
             using (hive)
             {
@@ -149,24 +149,5 @@ public sealed class WindowsUninstallRegistry : IUninstallRegistry
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// This person's branch of HKEY_USERS, or null when it is not there to read. Windows keeps a
-    /// profile's hive loaded while that person is signed in, and a per-user removal only runs while
-    /// they are, so this is a read rather than a mount. Signed out, they have no hive and no answer.
-    /// </summary>
-    private static RegistryKey? Hive(string account)
-    {
-        try
-        {
-            var sid = (SecurityIdentifier)new NTAccount(account).Translate(typeof(SecurityIdentifier));
-            return Registry.Users.OpenSubKey(sid.Value);
-        }
-        catch (Exception ex) when (ex is IdentityNotMappedException or SecurityException
-                                       or UnauthorizedAccessException or SystemException)
-        {
-            return null;
-        }
     }
 }

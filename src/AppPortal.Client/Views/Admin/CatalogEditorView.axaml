@@ -213,6 +213,29 @@
                                        Text="Letters, digits, spaces, dots, hyphens and underscores only. Settings shows the shortcut name and the version; without a shortcut name it shows the folder name." />
                         </StackPanel>
 
+                        <StackPanel Spacing="12" IsVisible="{Binding ShowLauncherFields}">
+                            <Grid ColumnDefinitions="*,16,*">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Classes="label" Text="Launcher" />
+                                    <ComboBox Classes="field" ItemsSource="{x:Static admin:CatalogEditorViewModel.Launchers}"
+                                              SelectedItem="{Binding SelectedLauncher}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="admin:CatalogChoice">
+                                                <TextBlock Text="{Binding Label}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Classes="label" Text="Game id" />
+                                    <TextBox Text="{Binding LauncherGameId}" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Classes="hint" Text="{Binding LauncherHint}" />
+                            <TextBlock Classes="hint"
+                                       Text="The launcher has to be on the PC for the person first. Add it to the catalog, from winget, and list it under Needs first, and the portal installs it before it opens the game. A game is always for the person who asks, because it goes into their account." />
+                        </StackPanel>
+
                         <Border Classes="infoBar informational" Classes.critical="{Binding HelperFailed}"
                                 IsVisible="{Binding HelperMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
                             <TextBlock Text="{Binding HelperMessage}" TextWrapping="Wrap" />

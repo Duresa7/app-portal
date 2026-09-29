@@ -38,6 +38,8 @@ public sealed class CatalogEditorTests
             Action1: new AdminAction1Package(""),
             Agent: new PortablePackageDefinition("https://cdn.vendor.example/tool-2.1.zip", Sha, 8_388_608, "Vendor Tool",
                 @"Vendor Tool\bin\tool.exe", "user", "Vendor Tool", "2.1", true)));
+        yield return Row(new AdminCatalogApp("cs2", "Counter-Strike 2", "Valve", "", "Games", Requires: ["steam"],
+            Action1: new AdminAction1Package(""), Agent: new LauncherPackageDefinition("steam", "730", RequiresReboot: true)));
         yield return Row(new AdminCatalogApp("both", "Firefox", Requires: [], EngineOverride: EngineLabel.Action1,
             Action1: new AdminAction1Package("Mozilla_Firefox", "128.0"), Agent: new WingetPackageDefinition("Mozilla.Firefox", "machine")));
         foreach (var manager in PackageManagers.All)
@@ -94,6 +96,8 @@ public sealed class CatalogEditorTests
             editor.DirectSizeBytes = "1024";
             editor.PortableFolder = "Vendor App";
             editor.PortableExecutable = @"bin\app.exe";
+            editor.LauncherName = "epic";
+            editor.LauncherGameId = "Fortnite";
 
             var built = editor.Build();
             Assert.Null(editor.Validate(built));
@@ -115,6 +119,10 @@ public sealed class CatalogEditorTests
                 case CatalogEditorViewModel.SourcePortable:
                     var portable = Assert.IsType<PortablePackageDefinition>(built.Agent);
                     Assert.Equal((1024L, "Vendor App", @"bin\app.exe"), (portable.SizeBytes, portable.Folder, portable.Executable));
+                    break;
+                case CatalogEditorViewModel.SourceLauncher:
+                    var game = Assert.IsType<LauncherPackageDefinition>(built.Agent);
+                    Assert.Equal(("epic", "Fortnite", "user"), (game.Launcher, game.GameId, game.Scope));
                     break;
                 default:
                     var managed = Assert.IsType<ManagedPackageDefinition>(built.Agent);
@@ -160,6 +168,15 @@ public sealed class CatalogEditorTests
         Assert.True(editor.ShowDownloadFields && editor.ShowPortableFields && editor.ShowAgentFields);
         Assert.False(editor.ShowDirectFields || editor.ShowPackageFields);
         Assert.Equal("Archive URL", editor.DownloadUrlLabel);
+
+        // A game has only its launcher and id, and only the one scope a game can have.
+        editor.Source = CatalogEditorViewModel.SourceLauncher;
+        Assert.True(editor.ShowLauncherFields && editor.ShowAgentFields);
+        Assert.False(editor.ShowDownloadFields || editor.ShowPackageFields || editor.ShowPortableFields);
+        Assert.Equal(["user"], editor.ScopeOptions.Select(s => s.Value));
+        Assert.Equal("user", editor.SourceScope);
+        editor.SelectedLauncher = CatalogEditorViewModel.Launchers.Single(l => l.Value == "gog");
+        Assert.Equal(GameLaunchers.Find("gog")!.IdHint, editor.LauncherHint);
     }
 
     [Fact]
@@ -374,6 +391,11 @@ public sealed class CatalogEditorTests
         => Assert.Equal("Installs Google Chrome for everyone on the PC, by unpacking it from vendor.example.",
             CatalogEditorViewModel.Describe(App(new PortablePackageDefinition("https://vendor.example/tool-2.1.zip", new string('b', 64),
                 12_000_000, "Vendor Tool", @"Vendor Tool 2.1\bin\tool.exe", ShortcutName: "Vendor Tool", Version: "2.1.0"))));
+
+    [Fact]
+    public void Sentence_a_game_is_opened_in_its_launcher_and_not_installed()
+        => Assert.Equal("Opens Google Chrome in Steam for the person who asks for it. They finish in Steam with their own account.",
+            CatalogEditorViewModel.Describe(App(new LauncherPackageDefinition("steam", "730"))));
 
     [Fact]
     public void Sentence_both_packages_say_which_device_gets_which_and_what_the_override_decides()

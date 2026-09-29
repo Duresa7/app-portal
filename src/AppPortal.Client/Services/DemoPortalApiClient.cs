@@ -31,6 +31,12 @@ public sealed class DemoPortalApiClient : IPortalApiClient
         new("notepadpp", "Notepad++", "Don Ho", "Plain text and source editor with tabs and syntax highlighting.", "Developer tools", null, false),
         new("obs", "OBS Studio", "OBS Project", "Screen recording and live streaming.", "Media", null, false),
         new("powertoys", "Microsoft PowerToys", "Microsoft Corporation", "Window layouts, a launcher, an image resizer and other utilities.", "Utilities", null, false),
+        // A game handed to its launcher, so the card's "Opens in Steam" can be seen without a server.
+        new("cs2", "Counter-Strike 2", "Valve", "Competitive tactical shooter, free to play.", "Games", null, false)
+        {
+            InstallScope = "user",
+            HandoffTo = "Steam",
+        },
     ];
 
     private readonly List<InstallRequest> _installs = [];

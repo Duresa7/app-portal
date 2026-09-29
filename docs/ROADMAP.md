@@ -95,8 +95,8 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M7-01](plans/M7-01-client-admin-on-a-pc.md) | The client's admin flows, clicked through on a PC | M4-05 | Done |
 | [M7-02](plans/M7-02-per-user-sweep-at-sign-in.md) | A fresh per-user list when a person signs in | M3-07, M5-04 | Done |
 | [M7-03](plans/M7-03-release-0.10.0.md) | Release 0.10.0 | M7-01, M7-02 | Done |
-| [M8-01](plans/M8-01-portable-apps.md) | Portable apps | M5-05 | In review |
-| [M8-02](plans/M8-02-game-launcher-handoff.md) | Games handed to their launcher | M3-07, M5-05 | Open |
+| [M8-01](plans/M8-01-portable-apps.md) | Portable apps | M5-05 | Done |
+| [M8-02](plans/M8-02-game-launcher-handoff.md) | Games handed to their launcher | M3-07, M5-05 | In review |
 | [M8-03](plans/M8-03-anti-cheat-on-the-device.md) | Anti-cheat on the device | M2-02 | Open |
 | [M8-04](plans/M8-04-catalog-packs.md) | Catalog packs | M8-01, M8-02, M8-03 | Open |
 | [M8-05](plans/M8-05-updates.md) | Updates | M3-03, M5-01, M7-02 | Open |

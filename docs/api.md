@@ -812,6 +812,7 @@ The records below are in `AppPortal.Shared`: `Contracts.cs`, `AdminContracts.cs`
 | `engine` | string? | The engine this device would use |
 | `requirements` | string? | Words for the person to read before installing |
 | `userRemovable` | bool | |
+| `handoffTo` | string? | For a game handed to its launcher, the launcher's name, such as `Steam`; null otherwise |
 
 `DeviceInfo`: `deviceName` (string), `endpointId` (string), `endpointStatus` (string), `lastSeen` (DateTimeOffset?).
 
@@ -937,7 +938,7 @@ An app needs an Action1 package id, an agent package, or both.
 
 ### Package definitions
 
-`PackageDefinition` is what the agent installs. It is polymorphic on `kind`, which is `winget`, `direct`, `managed` or `portable`. It is the `agent` field of a catalog app and the `definition` of an agent job.
+`PackageDefinition` is what the agent installs. It is polymorphic on `kind`, which is `winget`, `direct`, `managed`, `portable` or `launcher`. It is the `agent` field of a catalog app and the `definition` of an agent job.
 
 The server writes `kind` as the first property. On `POST /api/v1/admin/catalog/import` and in the seed catalog, `kind` may appear anywhere in the object. On `PUT /api/v1/admin/catalog/{id}` it must come first.
 
@@ -991,6 +992,22 @@ Every kind has `scope`, which is `machine` (runs as SYSTEM, for everyone on the 
 | `shortcutName` | string? | Optional. The same rule as `folder`. Also what Settings calls the app. Always written. |
 | `version` | string? | Optional. Letters, digits, `.`, `+`, `_`, `-`. Shown in Settings. Always written. |
 | `requiresReboot` | bool | Optional |
+
+**`launcher`** (`LauncherPackageDefinition`), a game handed to its launcher. The agent opens the game's install page in the launcher, in the requester's session, once it has checked that the launcher's URI scheme is registered for them. It installs nothing itself.
+
+| Field | Type | Notes |
+|---|---|---|
+| `launcher` | string | `steam`, `epic`, `gog` or `ubisoft` |
+| `gameId` | string | Steam, GOG and Ubisoft: digits only. Epic: an app name, or Epic's colon-joined ids; letters, digits, `.`, `_`, `-`, `:` |
+| `scope` | string | Always `user` |
+| `requiresReboot` | bool | Optional |
+
+| Launcher | Install link | Removal |
+|---|---|---|
+| `steam` | `steam://install/<id>` | `steam://uninstall/<id>` |
+| `epic` | `com.epicgames.launcher://apps/<id>?action=launch` | In the launcher |
+| `gog` | `goggalaxy://openGameView/<id>` | In the launcher |
+| `ubisoft` | `uplay://launch/<id>/0` | In the launcher |
 
 ### Package managers
 

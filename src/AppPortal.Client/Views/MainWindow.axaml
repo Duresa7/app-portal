@@ -319,6 +319,7 @@
                                                         <TextBlock Text="{Binding Category}" Classes="caption" />
                                                         <TextBlock Text="{Binding DownloadSizeText}" IsVisible="{Binding HasDownloadSize}" Classes="caption" />
                                                         <TextBlock Text="Installs for you only" IsVisible="{Binding InstallsForYouOnly}" Classes="caption" />
+                                                        <TextBlock Text="{Binding HandoffText}" IsVisible="{Binding HasHandoff}" Classes="caption" />
                                                         <TextBlock Text="{Binding EngineText}" IsVisible="{Binding HasEngine}" Classes="caption" />
                                                         <TextBlock Text="{Binding RequirementsText}" IsVisible="{Binding HasRequirements}"
                                                                    TextWrapping="Wrap" Classes="caption" />
@@ -341,7 +342,7 @@
                                                         <PathIcon Data="{StaticResource IconError}" Width="12" Height="12" Foreground="{DynamicResource SystemFillColorCriticalBrush}" IsVisible="{Binding HasError}" />
                                                         <TextBlock Text="{Binding StatusText}" Classes="caption" TextWrapping="Wrap" MaxWidth="180" />
                                                     </StackPanel>
-                                                    <Button Grid.Column="1" Classes="accent" Content="Install" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" />
+                                                    <Button Grid.Column="1" Classes="accent" Content="{Binding InstallLabel}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" />
                                                 </Grid>
                                             </Grid>
                                         </Border>

@@ -8,6 +8,7 @@ namespace AppPortal.Shared;
 [JsonDerivedType(typeof(DirectPackageDefinition), "direct")]
 [JsonDerivedType(typeof(ManagedPackageDefinition), "managed")]
 [JsonDerivedType(typeof(PortablePackageDefinition), "portable")]
+[JsonDerivedType(typeof(LauncherPackageDefinition), "launcher")]
 public abstract record PackageDefinition
 {
     public abstract void Validate();
@@ -23,6 +24,7 @@ public abstract record PackageDefinition
         DirectPackageDefinition => "direct",
         ManagedPackageDefinition => "managed",
         PortablePackageDefinition => "portable",
+        LauncherPackageDefinition => "launcher",
         _ => throw new InvalidOperationException($"{GetType().Name} has no kind; add it beside the JsonDerivedType attributes."),
     };
 
@@ -46,7 +48,7 @@ public abstract record PackageDefinition
     public virtual long? DownloadSizeBytes => null;
 
     /// <summary>Every kind a definition may carry, for a message that has to say which it expected.</summary>
-    public static string Kinds => "winget, direct, managed or portable";
+    public static string Kinds => "winget, direct, managed, portable or launcher";
 
     private protected static void ValidateScope(string scope)
     {
@@ -345,4 +347,41 @@ public sealed record PortablePackageDefinition(
             throw new InvalidDataException($"'{executable}' is not a program. The path must end with .exe.");
         }
     }
+}
+
+/// <summary>
+/// A game handed to the launcher that sells it. The agent opens the game's install page in the
+/// launcher, in the person's own session, and the person finishes there with their own account. The
+/// portal installs nothing itself here: the account, the licence and the download stay with the
+/// launcher, which is why this is a handoff and why it is always for one person.
+/// </summary>
+public sealed record LauncherPackageDefinition(
+    string Launcher,
+    string GameId,
+    string Scope = "user",
+    bool RequiresReboot = false) : PackageDefinition
+{
+    public override void Validate()
+    {
+        var launcher = GameLaunchers.Find(Launcher)
+                       ?? throw new InvalidDataException($"The launcher must be one of: {GameLaunchers.Names}.");
+        if (string.IsNullOrWhiteSpace(GameId) || !launcher.IdRule.IsMatch(GameId))
+        {
+            throw new InvalidDataException($"'{GameId}' is not a {launcher.DisplayName} game id. {launcher.IdHint}");
+        }
+
+        if (Scope != "user")
+        {
+            throw new InvalidDataException(
+                "A game is handed to its launcher in one person's session, with their own account, so it installs for the person who asks.");
+        }
+    }
+
+    /// <summary>The launcher's row, or null for a name this build does not know.</summary>
+    [JsonIgnore]
+    public GameLauncher? Row => GameLaunchers.Find(Launcher);
+
+    /// <summary>What the person sees the game go to: Steam, GOG Galaxy.</summary>
+    [JsonIgnore]
+    public string LauncherName => Row?.DisplayName ?? Launcher;
 }

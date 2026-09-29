@@ -18,7 +18,8 @@ public sealed record CatalogApp(
     string? InstallScope = null,
     string? Engine = null,
     string? Requirements = null,
-    bool UserRemovable = false)
+    bool UserRemovable = false,
+    string? HandoffTo = null)     // the launcher the agent opens the app in, such as Steam, for a game handed to one
 {
     public CatalogApp(string id, string name, string publisher, string description, string category, string? iconUrl, bool featured)
         : this(id, name, publisher, description, category, iconUrl, featured, ["action1"], null)

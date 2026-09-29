@@ -91,6 +91,14 @@ public static class AgentRun
             stateDirectory,
             provider.GetRequiredService<IUserSessionLauncher>(),
             provider.GetRequiredService<IUninstallRegistry>()));
+        builder.Services.AddSingleton<IProtocolRegistry>(_ => OperatingSystem.IsWindows()
+            ? new WindowsProtocolRegistry()
+            : new NoProtocolRegistry());
+        builder.Services.AddSingleton<IPackageExecutor>(provider => new LauncherHandoffExecutor(
+            provider.GetRequiredService<IUserSessionLauncher>(),
+            provider.GetRequiredService<IProtocolRegistry>(),
+            provider.GetRequiredService<ILogger<LauncherHandoffExecutor>>(),
+            stateDirectory));
         builder.Services.AddSingleton<IPackageExecutor>(provider => new PortableAppExecutor(
             provider.GetRequiredService<ResumableDownload>(),
             provider.GetRequiredService<IProcessRunner>(),

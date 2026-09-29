@@ -755,5 +755,9 @@ public sealed class DemoAdminApiClient : IAdminApiClient
             Agent: new PortablePackageDefinition("https://cdn.vendor.example/hwi_portable.zip",
                 "8d2a6c4e0b9f7a5c3e1d9b7f5a3c1e0d8b6f4a2c0e9d7b5f3a1c8e6d4b2f0a19", 11_534_336, "HWiNFO", "HWiNFO64.exe",
                 "user", "HWiNFO", "8.10")));
+        _catalog.Add(new AdminCatalogApp("cs2", "Counter-Strike 2", "Valve", "Competitive tactical shooter, free to play.", "Games",
+            Requires: ["steam"],
+            Action1: new AdminAction1Package(""),
+            Agent: new LauncherPackageDefinition("steam", "730")));
     }
 }

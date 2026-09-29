@@ -90,9 +90,11 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M6-02](plans/M6-02-request-to-app.md) | From a request to an app | None | Done |
 | [M6-03](plans/M6-03-signed-releases.md) | Signed releases | M2-04, M2-06 | Done |
 | [M6-04](plans/M6-04-release-0.9.0.md) | Release 0.9.0 | M6-01, M6-02, M6-03 | Done |
-| [M7-01](plans/M7-01-client-admin-on-a-pc.md) | The client's admin flows, clicked through on a PC | M4-05 | In review |
+| [M7-01](plans/M7-01-client-admin-on-a-pc.md) | The client's admin flows, clicked through on a PC | M4-05 | Done |
 | [M7-02](plans/M7-02-per-user-sweep-at-sign-in.md) | A fresh per-user list when a person signs in | M3-07, M5-04 | Done |
-| [M7-03](plans/M7-03-release-0.10.0.md) | Release 0.10.0 | M7-01, M7-02 | Open |
+| [M7-03](plans/M7-03-release-0.10.0.md) | Release 0.10.0 | M7-01, M7-02 | In review |
+
+Milestone 7 shipped as [v0.10.0](https://github.com/Duresa7/app-portal/releases/tag/v0.10.0). The agent now reports what a person's own profile carries about a minute after each time they sign in, not only after an install for them, so a per-user Installed list is as fresh as that person's last sign-in (M7-02). The two client admin flows that 0.8.0 had proven only at the API ran in the real client window on Windows 11 Pro: a key made in the client enrolled a PC, and a session the server ended signed the client out (M7-01). The release is not signed: the owner took code signing out of this milestone, and the switch from M6-03 stays off. Check the MSI and `AppPortalSetup.exe` against `SHA256SUMS`.
 
 Milestone 6 shipped as [v0.9.0](https://github.com/Duresa7/app-portal/releases/tag/v0.9.0). The per-user install and the install that finishes at a restart have now run on a real PC. `deploy/windows/Test-RealPc.ps1` ran on Windows 11 Pro as a standard account, against the MSI the full gate built from the release commit, and passed all eight checks: a per-user install into the account's own profile, reported and then removed as that account; two installs held for a restart and confirmed after it; and an install parked until the account signed in. The proof found four defects, all fixed before the tag: winget did not start as SYSTEM ([#88](https://github.com/Duresa7/app-portal/pull/88)) or in a person's session ([#91](https://github.com/Duresa7/app-portal/pull/91)), the client's Restart button did nothing while another person was signed in ([#89](https://github.com/Duresa7/app-portal/pull/89)), and the proof itself needs a test account that Windows does not sign straight back in after the restart ([#92](https://github.com/Duresa7/app-portal/pull/92), [#93](https://github.com/Duresa7/app-portal/pull/93)). The full gate, Windows jobs included, passed on the release commit and again on the tag; the downloaded MSI and `AppPortalSetup.exe` match their `SHA256SUMS` lines and `ghcr.io/duresa7/app-portal-server:0.9.0` is readable without credentials. An approved request can now point to the catalog app it became. The release is not signed: the SignPath Foundation application is not approved yet, so the signing switch from M6-03 stays off and the first signed release is a later one. Check the MSI and `AppPortalSetup.exe` against `SHA256SUMS`.
 
@@ -158,7 +160,7 @@ graph LR
   M7-01 & M7-02 --> M7-03
 ```
 
-What can start today: milestones 1 to 6 have shipped, and M7-02 is Done. M7-03 waits for M7-01.
+What can start today: milestones 1 to 6 have shipped, M7-01 and M7-02 are Done, and M7-03 is the 0.10.0 release. Nothing is planned after it.
 
 ## Shared interface
 
@@ -179,7 +181,7 @@ Nothing is planned after milestone 7. The owner confirmed its scope on 2026-09-2
 
 ## Deferred
 
-Reviewed for milestone 7: the owner decided on 2026-09-28 not to take code signing further in this milestone. Two items drafted for it join the list: the first signed release, proven on a throwaway VM as M6-03 describes, and a check of the MSI's `UpgradeCode` by a signed agent, which only matters once an agent is signed. The signing switch from M6-03 stays off, and releases stay unsigned.
+Reviewed for milestone 7: the owner decided on 2026-09-28 not to take code signing further in this milestone. Two items drafted for it join the list: the first signed release, proven on a throwaway VM as M6-03 describes, and a check of the MSI's `UpgradeCode` by a signed agent, which only matters once an agent is signed. The signing switch from M6-03 stays off, and releases stay unsigned. Nothing else here became urgent.
 
 Reviewed for 0.9.0: nothing here became urgent. Three items M6-03 left out join the list: signing `SHA256SUMS`, signing the server image, and submitting winget manifests.
 

@@ -38,9 +38,10 @@ public sealed class RestartConfirmation(
         //
         // How fresh each list is differs, and the difference is worth knowing. The machine-wide one is
         // swept when the agent starts, which a restart guarantees, so it describes the PC as it is now.
-        // A person's own list cannot be: the sweep would have to run inside their session, and they may
-        // not have signed in yet. Theirs is as fresh as their last install, which is the moment before
-        // the restart. An empty list counts as found for exactly this reason.
+        // A person's own list cannot be: the sweep runs inside their session, a minute after they sign
+        // in, and at the first heartbeat after a restart they usually have not signed in yet. Theirs is
+        // as fresh as their last sign-in or install, which is before the restart. An empty list counts
+        // as found for exactly this reason.
         var byAccount = new Dictionary<string, IReadOnlyList<ReportedSoftware>>(StringComparer.OrdinalIgnoreCase);
         var entries = catalog.Entries;
         foreach (var install in waiting)

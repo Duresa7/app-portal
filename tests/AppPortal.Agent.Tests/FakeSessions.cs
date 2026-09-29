@@ -18,7 +18,10 @@ public sealed class FakeSessions(params string[] signedIn) : IUserSessionLaunche
     /// <summary>The directories each call asked to have ahead of PATH, in order.</summary>
     public List<IReadOnlyList<string>> PathFirst { get; } = [];
 
-    public IReadOnlyList<string> SignedInAccounts() => signedIn;
+    /// <summary>Who is signed in. A test changes it to sign somebody out or in.</summary>
+    public string[] SignedIn { get; set; } = signedIn;
+
+    public IReadOnlyList<string> SignedInAccounts() => SignedIn;
 
     public Task<ProcessResult?> RunAsAsync(string account, string file, string arguments, IReadOnlyList<string> pathFirst,
         Action<string>? onLine, TimeSpan timeout, CancellationToken ct)
@@ -31,7 +34,7 @@ public sealed class FakeSessions(params string[] signedIn) : IUserSessionLaunche
         TimeSpan timeout, CancellationToken ct)
     {
         // Windows matches account names without regard to case, and so does the real launcher.
-        if (!signedIn.Contains(account, StringComparer.OrdinalIgnoreCase))
+        if (!SignedIn.Contains(account, StringComparer.OrdinalIgnoreCase))
         {
             return Task.FromResult<ProcessResult?>(null);
         }

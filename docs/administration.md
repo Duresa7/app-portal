@@ -53,6 +53,7 @@ An administrator adds an app by choosing its **Source** on the catalog page and 
 | winget | Windows applications, from Microsoft's community repository. The default choice for most software. | Everyone, or one person |
 | Microsoft Store | Store applications, by their twelve-character product id. Some need the person signed in to the Store before it grants a licence; say so under Requirements. | One person |
 | Direct download | Any installer at a URL, checked against its SHA-256. Game launchers and vendor installers that are in no repository. | Everyone, or one person |
+| Game launcher | A game in Steam, the Epic Games Launcher, GOG Galaxy or Ubisoft Connect, by the id the launcher uses. The agent opens the game's install page in the launcher on the person's own desktop, and they finish there with their own account. The card says where it opens. | One person |
 | Portable app (zip) | A zip that runs from wherever it is unpacked, checked against its SHA-256: mod managers, monitoring tools, emulators, internal tools. The agent unpacks it into a folder of its own, adds a Start menu shortcut, and writes an uninstall entry, so it shows in Settings and in the portal's Installed list. Removing it takes all three away. | Everyone, or one person |
 | Chocolatey | Windows applications and tools, from the Chocolatey community repository. The closest of these to winget. | Everyone |
 | Scoop | Developer tools, into one person's profile without administrator rights. | One person, or everyone with `--global` |
@@ -66,7 +67,18 @@ An administrator adds an app by choosing its **Source** on the catalog page and 
 
 An app can have an Action1 package and one agent source at once; the catalog page then asks which to use on a device that could use either. Only Action1 and the next five are ways to put an application in front of everybody on a PC. The rest are for developer workstations: reaching for npm to deploy a web browser is a misunderstanding of what npm is.
 
-The portal installs applications and launchers. What a launcher then downloads for one signed-in account, a game in a Steam library or a Riot client's own updates, belongs to that launcher and that account, and is outside the portal: add Steam or the Riot client to the catalog, not the games inside them.
+The portal installs applications and launchers. What a launcher downloads for one signed-in account, a game in a Steam library or a Riot client's own updates, belongs to that launcher and that account. The portal can hand a game to its launcher, which opens the game's page there for the person to finish with their own account, but it never signs in to a launcher, never drives one, and never downloads a game itself.
+
+To offer a game: add its launcher to the catalog, from winget (`Valve.Steam`, `EpicGames.EpicGamesLauncher`, `GOG.Galaxy`, `Ubisoft.Connect`), then add the game with the source **Game launcher**, its launcher, its id, and the launcher under **Requires**. Where to find the id:
+
+| Launcher | The game's id |
+|---|---|
+| Steam | The number in the game's store address: `store.steampowered.com/app/730` is 730, Counter-Strike 2 |
+| Epic Games Launcher | The app name the launcher uses, such as `Fortnite` |
+| GOG Galaxy | The game's product id, the number in its gogdb.org address |
+| Ubisoft Connect | The game's Ubisoft Connect id, the number in Ubisoft Connect's own shortcuts |
+
+The install is finished when the launcher is open on the game. The game then appears under Installed at the next inventory sweep, like any software, because each launcher writes an uninstall entry for its games. Removing a Steam game opens Steam's own removal; the other launchers remove games themselves. Battle.net and the EA app document no link that opens a game's install, so they are offered as launchers only.
 
 A package manager has to be on the PC before anything can be installed through it, and none of them are on a fresh Windows install. Add the manager itself to the catalog, from winget or a direct download, and list it under **Requires** on the apps that need it: the portal then installs it first, once, and skips it on every PC that already has it. An install through a manager the PC lacks fails with a sentence naming the manager, rather than an exit code.
 

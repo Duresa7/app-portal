@@ -50,6 +50,16 @@ public sealed partial class AppItemViewModel : ViewModelBase
     public bool InstallsForYouOnly => App.InstallScope == "user";
 
     /// <summary>
+    /// A game the portal hands to its launcher rather than installing. The card says so before the
+    /// button is pressed, because what happens next is a launcher window, not a progress bar.
+    /// </summary>
+    public bool HasHandoff => !string.IsNullOrWhiteSpace(App.HandoffTo);
+
+    public string HandoffText => HasHandoff ? $"Opens in {App.HandoffTo}, where you finish with your own account" : "";
+
+    public string InstallLabel => HasHandoff ? "Get" : "Install";
+
+    /// <summary>
     /// Which engine would carry this out, so that a person reporting a problem and the administrator
     /// reading the history are looking at the same word.
     /// </summary>

@@ -73,7 +73,8 @@ public sealed class CatalogEntry
         Agent?.Scope,
         null,
         Requirements,
-        UserRemovable);
+        UserRemovable,
+        (Agent as LauncherPackageDefinition)?.LauncherName);
 
     [JsonIgnore]
     public bool HasAction1 => !string.IsNullOrWhiteSpace(Action1?.PackageId);
@@ -113,6 +114,7 @@ public sealed class CatalogEntry
         DirectPackageDefinition => "Direct download",
         ManagedPackageDefinition managed => PackageManagers.Find(managed.Manager)?.DisplayName ?? managed.Manager,
         PortablePackageDefinition => "Portable app (zip)",
+        LauncherPackageDefinition launcher => launcher.LauncherName,
         _ => "",
     };
 
@@ -133,7 +135,10 @@ public sealed class CatalogEntry
         var agent = $"{For(Agent.Scope)}, {Through(Agent)}";
         if (!HasAction1)
         {
-            return $"Installs {name} {agent}.";
+            // A handoff installs nothing itself, so it does not say it does.
+            return Agent is LauncherPackageDefinition game
+                ? $"Opens {name} in {game.LauncherName} for the person who asks for it. They finish in {game.LauncherName} with their own account."
+                : $"Installs {name} {agent}.";
         }
 
         var either = EngineOverride switch
@@ -153,6 +158,7 @@ public sealed class CatalogEntry
                                               + (Uri.TryCreate(direct.Url, UriKind.Absolute, out var url) ? url.Host : "its download address"),
             PortablePackageDefinition portable => "by unpacking it from "
                                                   + (Uri.TryCreate(portable.Url, UriKind.Absolute, out var zip) ? zip.Host : "its download address"),
+            LauncherPackageDefinition game => $"by opening it in {game.LauncherName} for them to finish",
             _ => "through " + SourceName(agent),
         };
     }

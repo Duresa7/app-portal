@@ -110,6 +110,7 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
     public const string SourceAction1 = "action1";
     public const string SourceDirect = "direct";
     public const string SourcePortable = "portable";
+    public const string SourceLauncher = "launcher";
 
     /// <summary>
     /// Where the app comes from, the first thing an administrator chooses: <c>action1</c>,
@@ -169,6 +170,13 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
 
     [BindProperty]
     public string PortableVersion { get; set; } = "";
+
+    /// <summary>A game's launcher, one of <see cref="GameLaunchers"/>, and the game's id in it.</summary>
+    [BindProperty]
+    public string LauncherName { get; set; } = "steam";
+
+    [BindProperty]
+    public string LauncherGameId { get; set; } = "";
 
     public IActionResult OnGet(string id)
     {
@@ -436,10 +444,14 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
             SourcePortable => new PortablePackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
                 DirectSizeBytes ?? 0, (PortableFolder ?? "").Trim(), (PortableExecutable ?? "").Trim(), SourceScope,
                 EmptyToNull(PortableShortcutName?.Trim()), EmptyToNull(PortableVersion?.Trim()), SourceRequiresReboot),
+            // Always for one person, whatever the scope box says: a launcher runs in their session with
+            // their account, and there is no such thing as handing a game to everybody at once.
+            SourceLauncher => new LauncherPackageDefinition((LauncherName ?? "").Trim(), (LauncherGameId ?? "").Trim(),
+                "user", SourceRequiresReboot),
             _ when PackageManagers.Find(Source) is not null => new ManagedPackageDefinition(Source, id, SourceScope,
                 EmptyToNull(SourceVersion), EmptyToNull(SourceExtraArgs), SourceRequiresReboot),
             _ => throw new InvalidDataException("Choose where this app comes from: Action1, winget, the Microsoft Store, "
-                                                + "a package manager, a direct download, or a portable app."),
+                                                + "a package manager, a direct download, a portable app, or a game launcher."),
         };
         return entry;
     }
@@ -495,6 +507,11 @@ public sealed class EditModel(CatalogStore catalog, IAction1Client action1, ICon
                 PortableExecutable = portable.Executable;
                 PortableShortcutName = portable.ShortcutName ?? "";
                 PortableVersion = portable.Version ?? "";
+                break;
+            case LauncherPackageDefinition game:
+                Source = SourceLauncher;
+                LauncherName = game.Launcher;
+                LauncherGameId = game.GameId;
                 break;
             case ManagedPackageDefinition managed:
                 Source = managed.Manager;

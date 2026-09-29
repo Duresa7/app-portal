@@ -55,6 +55,7 @@ public sealed partial class CatalogSourceFormTests : IDisposable
         { "powershell5-module", "PSReadLine", "user" },
         { "direct", "", "machine" },
         { "portable", "", "user" },
+        { "launcher", "", "user" },
     };
 
     [Theory]
@@ -77,6 +78,8 @@ public sealed partial class CatalogSourceFormTests : IDisposable
             ["PortableFolder"] = "An App",
             ["PortableExecutable"] = "app.exe",
             ["PortableShortcutName"] = "An App",
+            ["LauncherName"] = "gog",
+            ["LauncherGameId"] = "1207658924",
             ["__RequestVerificationToken"] = await TestDatabase.TokenOn(admin, "/admin/catalog/new"),
         };
 
@@ -103,6 +106,10 @@ public sealed partial class CatalogSourceFormTests : IDisposable
                 Assert.Equal((PackageDefinitionTests.Direct.Url, 1000L, "An App", "app.exe", "An App", scope),
                     (portable.Url, portable.SizeBytes, portable.Folder, portable.Executable, portable.ShortcutName, portable.Scope));
                 break;
+            case "launcher":
+                var game = Assert.IsType<LauncherPackageDefinition>(saved.Agent);
+                Assert.Equal(("gog", "1207658924", "user"), (game.Launcher, game.GameId, game.Scope));
+                break;
             default:
                 var managed = Assert.IsType<ManagedPackageDefinition>(saved.Agent);
                 Assert.Equal((source, id, scope), (managed.Manager, managed.Id, managed.Scope));
@@ -112,6 +119,29 @@ public sealed partial class CatalogSourceFormTests : IDisposable
         // Reopening the app shows the same source chosen.
         var html = await admin.GetStringAsync("/admin/catalog/app");
         Assert.Equal(source, Fields(html)["Source"]);
+    }
+
+    [Fact]
+    public async Task A_game_is_saved_for_one_person_whatever_the_scope_box_said()
+    {
+        var admin = await TestDatabase.SignedIn(_factory);
+        var form = new Dictionary<string, string>
+        {
+            ["Id"] = "cs2",
+            ["Name"] = "Counter-Strike 2",
+            ["Source"] = "launcher",
+            ["SourceScope"] = "machine",
+            ["LauncherName"] = "steam",
+            ["LauncherGameId"] = "730",
+            ["__RequestVerificationToken"] = await TestDatabase.TokenOn(admin, "/admin/catalog/new"),
+        };
+
+        var response = await admin.PostAsync("/admin/catalog/new", new FormUrlEncodedContent(form));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var game = Assert.IsType<LauncherPackageDefinition>(Assert.Single(_catalog.Entries).Agent);
+        Assert.Equal("user", game.Scope);
+        Assert.Contains("Opens Counter-Strike 2 in Steam", await admin.GetStringAsync("/admin/catalog/cs2"));
     }
 
     [Fact]

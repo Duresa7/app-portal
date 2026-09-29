@@ -101,6 +101,8 @@ else if (Model.Saved)
                     data-purpose="Any installer at a web address, checked against its SHA-256. For game launchers and vendor installers that are in no repository.">Direct download</option>
             <option value="@EditModel.SourcePortable" selected="@(Model.Source == EditModel.SourcePortable)"
                     data-purpose="A zip that runs from wherever it is unpacked, checked against its SHA-256. The agent unpacks it into a folder, adds a Start menu shortcut and an uninstall entry. For tools that ship without an installer.">Portable app (zip)</option>
+            <option value="@EditModel.SourceLauncher" selected="@(Model.Source == EditModel.SourceLauncher)"
+                    data-purpose="A game in Steam, the Epic Games Launcher, GOG Galaxy or Ubisoft Connect. The agent opens the game's install page in the launcher on the person's own desktop, and they finish there with their own account. The portal never signs in to a launcher or downloads a game itself.">Game launcher</option>
         </select>
         <p class="muted" id="source-purpose"></p>
         <p class="muted" id="source-devices"></p>
@@ -163,6 +165,25 @@ else if (Model.Saved)
             <label for="portable-version">Version (optional)</label>
             <input id="portable-version" name="PortableVersion" value="@Model.PortableVersion" autocomplete="off" />
             <p class="muted">Letters, digits, spaces, dots, hyphens and underscores only. Settings shows the shortcut name and the version; without a shortcut name it shows the folder name.</p>
+        </div>
+
+        <div id="launcher-fields">
+            <label for="launcher-name">Launcher</label>
+            <select id="launcher-name" name="LauncherName">
+                @foreach (var launcher in GameLaunchers.All)
+                {
+                    <option value="@launcher.Name" selected="@(string.Equals(Model.LauncherName, launcher.Name, StringComparison.OrdinalIgnoreCase))"
+                            data-hint="@launcher.IdHint">@launcher.DisplayName</option>
+                }
+            </select>
+            <label for="launcher-game">Game id</label>
+            <input id="launcher-game" name="LauncherGameId" value="@Model.LauncherGameId" autocomplete="off" />
+            <p class="muted" id="launcher-hint"></p>
+            <p class="muted">
+                The launcher has to be on the PC for the person first. Add it to the catalog, from winget, and list it under
+                Needs first, and the portal installs it before it opens the game. A game is always for the person who asks,
+                because it goes into their account.
+            </p>
         </div>
 
         <div id="agent-fields">
@@ -283,6 +304,13 @@ else if (Model.Saved)
         document.getElementById('engine-fields').hidden = source.value === 'action1' || packageId.value.trim() === '';
     }
 
+    const launcherName = document.getElementById('launcher-name');
+
+    function showLauncherHint() {
+        // Where to find the id is different for every launcher, so it follows the launcher chosen.
+        document.getElementById('launcher-hint').textContent = launcherName.options[launcherName.selectedIndex].dataset.hint;
+    }
+
     function showSource() {
         const value = source.value;
         const option = chosen();
@@ -295,6 +323,8 @@ else if (Model.Saved)
         document.getElementById('download-fields').hidden = !(value === 'direct' || value === 'portable');
         document.getElementById('direct-fields').hidden = value !== 'direct';
         document.getElementById('portable-fields').hidden = value !== 'portable';
+        document.getElementById('launcher-fields').hidden = value !== 'launcher';
+        showLauncherHint();
         document.getElementById('direct-url-label').textContent = value === 'portable' ? 'Archive URL' : 'Installer URL';
         document.getElementById('agent-fields').hidden = !agent;
         document.getElementById('lookup').hidden = !(value === 'winget' || store);
@@ -312,7 +342,8 @@ else if (Model.Saved)
 
         const devices = document.getElementById('source-devices');
         devices.textContent = '';
-        const scopes = manager ? option.dataset.scopes.split(',') : ['machine', 'user'];
+        // A game goes into one person's account, so a launcher offers only that scope.
+        const scopes = manager ? option.dataset.scopes.split(',') : value === 'launcher' ? ['user'] : ['machine', 'user'];
         for (const item of scope.options) {
             item.disabled = !scopes.includes(item.value);
         }
@@ -339,5 +370,6 @@ else if (Model.Saved)
         showSource();
     });
     packageId.addEventListener('input', showEngine);
+    launcherName.addEventListener('change', showLauncherHint);
     showSource();
 </script>

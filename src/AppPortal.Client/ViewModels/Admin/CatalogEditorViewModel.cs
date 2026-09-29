@@ -43,11 +43,14 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     public const string SourceAction1 = "action1";
     public const string SourceDirect = "direct";
     public const string SourcePortable = "portable";
+    public const string SourceLauncher = "launcher";
 
     /// <summary>The web form's create route. An app with this id could never be opened in a browser.</summary>
     public const string ReservedId = "new";
 
     private static readonly IReadOnlyList<string> BothScopes = ["machine", "user"];
+
+    private static readonly IReadOnlyList<string> OnePerson = ["user"];
 
     /// <summary>The same list and the same purpose sentences as the web page's Source selector, in its order.</summary>
     public static IReadOnlyList<CatalogSourceOption> Sources { get; } =
@@ -68,7 +71,14 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
         new(SourcePortable, "Portable app (zip)",
             "A zip that runs from wherever it is unpacked, checked against its SHA-256. The agent unpacks it into a folder, adds a Start menu shortcut and an uninstall entry. For tools that ship without an installer.",
             BothScopes, true),
+        // A game goes into one person's account, so a launcher offers only that scope.
+        new(SourceLauncher, "Game launcher",
+            "A game in Steam, the Epic Games Launcher, GOG Galaxy or Ubisoft Connect. The agent opens the game's install page in the launcher on the person's own desktop, and they finish there with their own account. The portal never signs in to a launcher or downloads a game itself.",
+            OnePerson, true),
     ];
+
+    /// <summary>The launchers a game can be handed to, as the web page lists them.</summary>
+    public static IReadOnlyList<CatalogChoice> Launchers { get; } = [.. GameLaunchers.All.Select(l => new CatalogChoice(l.Name, l.DisplayName))];
 
     public static IReadOnlyList<CatalogChoice> AllScopes { get; } =
     [
@@ -97,7 +107,9 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
         nameof(HelperFailed), nameof(IsConfirmingDiscard), nameof(VerifyMessage), nameof(VerifyOk),
         nameof(PackageSearchMessage), nameof(SelectedSource), nameof(SelectedScope), nameof(SelectedEngine),
         nameof(ScopeOptions), nameof(SourcePurpose), nameof(ShowPackageFields), nameof(ShowDirectFields),
-        nameof(ShowDownloadFields), nameof(ShowPortableFields), nameof(DownloadUrlLabel), nameof(ShowAgentFields), nameof(ShowLookup), nameof(ShowStoreHint), nameof(ShowManagerHint),
+        nameof(ShowDownloadFields), nameof(ShowPortableFields), nameof(DownloadUrlLabel), nameof(ShowAgentFields),
+        nameof(ShowLauncherFields), nameof(LauncherHint), nameof(SelectedLauncher),
+        nameof(ShowLookup), nameof(ShowStoreHint), nameof(ShowManagerHint),
         nameof(IsAction1Source), nameof(ShowEngineOverride), nameof(SourceIdLabel), nameof(SourceIdPlaceholder),
         nameof(VersionEnabled), nameof(VersionPlaceholder), nameof(Action1Heading), nameof(Title),
     ];
@@ -200,7 +212,8 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedSource), nameof(SourcePurpose), nameof(ShowPackageFields), nameof(ShowDirectFields),
-        nameof(ShowDownloadFields), nameof(ShowPortableFields), nameof(DownloadUrlLabel), nameof(ShowAgentFields), nameof(ShowLookup), nameof(ShowStoreHint), nameof(ShowManagerHint), nameof(IsAction1Source),
+        nameof(ShowDownloadFields), nameof(ShowPortableFields), nameof(DownloadUrlLabel), nameof(ShowLauncherFields),
+        nameof(ShowAgentFields), nameof(ShowLookup), nameof(ShowStoreHint), nameof(ShowManagerHint), nameof(IsAction1Source),
         nameof(ShowEngineOverride), nameof(SourceIdLabel), nameof(SourceIdPlaceholder), nameof(VersionEnabled),
         nameof(VersionPlaceholder), nameof(ScopeOptions), nameof(SelectedScope), nameof(Action1Heading))]
     private string _source = SourceAction1;
@@ -233,6 +246,13 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     [ObservableProperty] private string _portableExecutable = "";
     [ObservableProperty] private string _portableShortcutName = "";
     [ObservableProperty] private string _portableVersion = "";
+
+    /// <summary>A game's launcher, one of <see cref="GameLaunchers"/>, and the game's id in it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LauncherHint), nameof(SelectedLauncher))]
+    private string _launcherName = "steam";
+
+    [ObservableProperty] private string _launcherGameId = "";
 
     [ObservableProperty] private bool _isBusy;
 
@@ -270,7 +290,7 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     /// here simply leaves them off, which says the same thing.
     /// </summary>
     public IReadOnlyList<CatalogChoice> ScopeOptions
-        => [.. AllScopes.Where(s => SelectedSource.Scopes.Contains(s.Value) || !SelectedSource.IsManager)];
+        => [.. AllScopes.Where(s => SelectedSource.Scopes.Contains(s.Value))];
 
     public CatalogChoice? SelectedScope
     {
@@ -312,6 +332,23 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
     public bool ShowPortableFields => Source == SourcePortable;
 
     public string DownloadUrlLabel => Source == SourcePortable ? "Archive URL" : "Installer URL";
+
+    public bool ShowLauncherFields => Source == SourceLauncher;
+
+    /// <summary>Where to find a game's id, which is different for every launcher.</summary>
+    public string LauncherHint => GameLaunchers.Find(LauncherName)?.IdHint ?? "";
+
+    public CatalogChoice SelectedLauncher
+    {
+        get => Launchers.FirstOrDefault(l => string.Equals(l.Value, LauncherName, StringComparison.OrdinalIgnoreCase)) ?? Launchers[0];
+        set
+        {
+            if (value is not null)
+            {
+                LauncherName = value.Value;
+            }
+        }
+    }
 
     public bool ShowAgentFields => !IsAction1Source;
 
@@ -364,7 +401,7 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
 
         // A manager that can only install one way gets that way, as the web page does. A manager
         // app saved with a scope it cannot carry out was refused by the server, so none loads here.
-        var allowed = SelectedSource.IsManager ? SelectedSource.Scopes : BothScopes;
+        var allowed = SelectedSource.Scopes;
         if (!allowed.Contains(SourceScope))
         {
             SourceScope = allowed[0];
@@ -406,6 +443,8 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
             SourcePortable => new PortablePackageDefinition((DirectUrl ?? "").Trim(), (DirectSha256 ?? "").Trim(),
                 SizeBytes() ?? 0, (PortableFolder ?? "").Trim(), (PortableExecutable ?? "").Trim(), SourceScope,
                 EmptyToNull(PortableShortcutName?.Trim()), EmptyToNull(PortableVersion?.Trim()), SourceRequiresReboot),
+            SourceLauncher => new LauncherPackageDefinition((LauncherName ?? "").Trim(), (LauncherGameId ?? "").Trim(),
+                "user", SourceRequiresReboot),
             // A version the manager cannot pin is not sent, as a disabled field on the web page is not posted.
             _ when Manager is not null => new ManagedPackageDefinition(Source, id, SourceScope,
                 VersionEnabled ? EmptyToNull(SourceVersion) : null, EmptyToNull(SourceExtraArgs), SourceRequiresReboot),
@@ -651,6 +690,7 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
         DirectPackageDefinition => "Direct download",
         ManagedPackageDefinition managed => PackageManagers.Find(managed.Manager)?.DisplayName ?? managed.Manager,
         PortablePackageDefinition => "Portable app (zip)",
+        LauncherPackageDefinition launcher => launcher.LauncherName,
         _ => "",
     };
 
@@ -675,7 +715,10 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
         var agent = $"{For(app.Agent.Scope)}, {Through(app.Agent)}";
         if (!HasAction1(app))
         {
-            return $"Installs {name} {agent}.";
+            // A handoff installs nothing itself, so it does not say it does.
+            return app.Agent is LauncherPackageDefinition game
+                ? $"Opens {name} in {game.LauncherName} for the person who asks for it. They finish in {game.LauncherName} with their own account."
+                : $"Installs {name} {agent}.";
         }
 
         var either = app.EngineOverride switch
@@ -695,6 +738,7 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
                                               + (Uri.TryCreate(direct.Url, UriKind.Absolute, out var url) ? url.Host : "its download address"),
             PortablePackageDefinition portable => "by unpacking it from "
                                                   + (Uri.TryCreate(portable.Url, UriKind.Absolute, out var zip) ? zip.Host : "its download address"),
+            LauncherPackageDefinition game => $"by opening it in {game.LauncherName} for them to finish",
             _ => "through " + SourceName(agent),
         };
     }
@@ -793,6 +837,11 @@ public sealed partial class CatalogEditorViewModel : ViewModelBase
                 PortableShortcutName = portable.ShortcutName ?? "";
                 PortableVersion = portable.Version ?? "";
                 Source = SourcePortable;
+                break;
+            case LauncherPackageDefinition game:
+                LauncherName = game.Launcher;
+                LauncherGameId = game.GameId;
+                Source = SourceLauncher;
                 break;
             case ManagedPackageDefinition managed:
                 SourceId = managed.Id;

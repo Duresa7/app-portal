@@ -126,6 +126,12 @@ public static class AgentRun
             builder.Services.AddHostedService(provider => new StartupSoftwareSweep(
                 provider.GetRequiredService<SoftwareReporter>(),
                 provider.GetRequiredService<ILogger<StartupSoftwareSweep>>()));
+            // The start covers the machine-wide list only. A person's own list can be read only from
+            // inside their session, so it is swept when they sign in.
+            builder.Services.AddHostedService(provider => new SignInSoftwareSweep(
+                provider.GetRequiredService<SoftwareReporter>(),
+                provider.GetRequiredService<IUserSessionLauncher>(),
+                provider.GetRequiredService<ILogger<SignInSoftwareSweep>>()));
             // Same reason: the update loop starts by asking GitHub what the newest release is, and a
             // run whose only purpose is one heartbeat has no business downloading anything.
             builder.Services.AddHostedService(provider =>

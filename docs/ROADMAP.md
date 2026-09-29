@@ -11,12 +11,12 @@ Settled on 2026-09-19. Change them here first, then in the plans that depend on 
 | Audience | A product for any company, any directory or none. The author's own Action1 tenant is the first deployment, not the design limit. |
 | Identity | Devices enroll with managed enrollment keys and hold a device token. The client sends the signed-in Windows account with installs and requests; it is trusted because the PC is managed. Admins sign in with local accounts on the server; optional directory sign-in (M1-11) is an add-on, off unless configured, and local accounts are always checked first. OpenID Connect sign-in is a later add-on. No dependency on Active Directory. |
 | Storage | SQLite on the existing data volume is the source of truth for catalog, devices, installs, requests, admins and enrollment keys. `deploy/config/catalog.json` seeds an empty database; `catalog import` and `catalog export` remain. |
-| Install engines | Two: **action1** (exists) and **agent**, a Windows service running as SYSTEM. A device may have both. A server-wide preference picks the engine when both apply; each catalog app can override it. Every install is labelled with the engine that ran it. Games are ordinary catalog apps; the agent must show download progress and resume downloads. |
+| Install engines | Three: **action1** (exists), **agent**, a Windows service running as SYSTEM, and, from M9-02, **intune**, which installs through Microsoft Intune app assignments. A device may have any of them. A server-wide preference picks the engine when more than one applies; each device and each catalog app can override it. The server treats engines as a list (M9-01), so another engine is one more registration. Every install is labelled with the engine that ran it. Games are ordinary catalog apps; the agent must show download progress and resume downloads. |
 | Package sources | What the agent can install from, settled 2026-09-22 for milestone 5. A winget package, a Microsoft Store package (winget's `msstore` source, not a second mechanism), a direct installer with silent arguments and a SHA-256, or a package the PC's own package manager knows: Scoop, Chocolatey, npm, Bun, pip, Cargo, vcpkg, .NET tools, PowerShell modules, Yarn. The managers are one package kind driven by one table of manager descriptions, not one executor each. A manager the PC lacks is a readable failure and a prerequisite an administrator can declare, never something the portal installs behind their back. |
 | Agent | Installed on every device. Takes over self-update of client and agent by running the newer MSI. The scheduled-task updater and the rename swap retire with it. |
 | Install shapes | A Windows install is not one shape. A catalog app says who runs it (`scope`: SYSTEM or the signed-in person), whether a restart finishes it (`requiresReboot`), and which catalog apps come first (`requires`). The agent honours all three. |
 | Requirements | An app may also state what it needs in plain words, such as Secure Boot or a vendor account. The portal shows that text and asks the person to confirm it. It does not read TPM or Secure Boot state and never refuses an install on those grounds: installing is not running, the vendor owns the rules, and the person at the PC is better placed to judge. |
-| Launcher content | The portal installs launchers and applications. Content a launcher downloads for one signed-in account is outside it: the portal has no account there and no licence to drive one. This is a boundary in the README, not a gap to close later. |
+| Launcher content | The portal installs launchers and applications. Content a launcher downloads for one signed-in account belongs to that account: the portal has no account there and no licence to drive one. Changed on 2026-09-29 at the owner's request: from M8-02 the portal may hand a game to its launcher, which opens that game's install page in the person's own session, and the person finishes there with their own account. The portal never signs in to a launcher, never drives one, and never downloads game content itself. |
 | Requests | Free-text box in the client. Admins approve or deny with an optional reason. An approval may name the catalog app that answers it, either one already in the catalog or one the administrator creates from the request, and the requester's client then points them to it. The requester sees status and reason in the client. No email. Approving never installs anything. |
 | Admin surfaces | Razor Pages + htmx web UI on the server, and full admin parity inside the Windows client: install history, catalog, requests, devices, enrollment keys, admin accounts. |
 | Installer | A WiX MSI with `SERVERURL` and `ENROLLMENTKEY` properties for Group Policy, Intune and RMM silent installs, plus an Avalonia `Setup.exe` that collects the two values and runs the MSI. One build produces both. |
@@ -33,6 +33,8 @@ Settled on 2026-09-19. Change them here first, then in the plans that depend on 
 | 4 | 0.8.0 | Full admin parity in the Windows client over an admin JSON API |
 | 6 | 0.9.0 | Per-user and restart installs proven on a real PC, approved requests that point to an app, and releases that can be signed |
 | 7 | 0.10.0 | The client's admin flows proven on a PC, and a per-user installed list swept each time the person signs in |
+| 8 | 0.11.0 | Every kind of software, games included: portable apps, games handed to their launcher, anti-cheat on the device page, catalog packs, updates, repair and private winget sources |
+| 9 | 0.12.0 | Intune as a third engine, sign-in with Entra ID or any OpenID Connect provider, and device groups with per-group catalogs |
 
 Milestone 2 was meant to be 0.4.0. Milestone 3 finished first and shipped as 0.5.0, so 0.4.0 was never cut and milestone 2's remainder ships as 0.6.0 instead. Versions only go forwards, so the number a milestone carries is a label rather than a promise.
 
@@ -93,6 +95,19 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M7-01](plans/M7-01-client-admin-on-a-pc.md) | The client's admin flows, clicked through on a PC | M4-05 | Done |
 | [M7-02](plans/M7-02-per-user-sweep-at-sign-in.md) | A fresh per-user list when a person signs in | M3-07, M5-04 | Done |
 | [M7-03](plans/M7-03-release-0.10.0.md) | Release 0.10.0 | M7-01, M7-02 | Done |
+| [M8-01](plans/M8-01-portable-apps.md) | Portable apps | M5-05 | Open |
+| [M8-02](plans/M8-02-game-launcher-handoff.md) | Games handed to their launcher | M3-07, M5-05 | Open |
+| [M8-03](plans/M8-03-anti-cheat-on-the-device.md) | Anti-cheat on the device | M2-02 | Open |
+| [M8-04](plans/M8-04-catalog-packs.md) | Catalog packs | M8-01, M8-02, M8-03 | Open |
+| [M8-05](plans/M8-05-updates.md) | Updates | M3-03, M5-01, M7-02 | Open |
+| [M8-06](plans/M8-06-repair.md) | Repair | M8-01, M8-02, M8-05 | Open |
+| [M8-07](plans/M8-07-private-winget-sources.md) | Private winget sources | M3-03 | Open |
+| [M8-08](plans/M8-08-release-0.11.0.md) | Release 0.11.0 | M8-01, M8-02, M8-03, M8-04, M8-05, M8-06, M8-07 | Open |
+| [M9-01](plans/M9-01-engines-as-a-list.md) | Engines as a list | M3-05 | Open |
+| [M9-02](plans/M9-02-intune-engine.md) | Intune engine | M9-01 | Open |
+| [M9-03](plans/M9-03-openid-connect-sign-in.md) | Sign in with Entra ID or OpenID Connect | M1-11, M4-02 | Open |
+| [M9-04](plans/M9-04-device-groups.md) | Device groups and per-group catalogs | M1-06, M1-08, M1-09 | Open |
+| [M9-05](plans/M9-05-release-0.12.0.md) | Release 0.12.0 | M9-01, M9-02, M9-03, M9-04 | Open |
 
 Milestone 7 shipped as [v0.10.0](https://github.com/Duresa7/app-portal/releases/tag/v0.10.0). The agent now reports what a person's own profile carries about a minute after each time they sign in, not only after an install for them, so a per-user Installed list is as fresh as that person's last sign-in (M7-02). The two client admin flows that 0.8.0 had proven only at the API ran in the real client window on Windows 11 Pro: a key made in the client enrolled a PC, and a session the server ended signed the client out (M7-01). The release is not signed: the owner took code signing out of this milestone, and the switch from M6-03 stays off. The full gate, Windows jobs included, passed on the release commit (run 36504930972) and again on the tag (run 36505748470); the downloaded MSI and `AppPortalSetup.exe` match their `SHA256SUMS` lines, and `ghcr.io/duresa7/app-portal-server:0.10.0` is readable without credentials. Check the MSI and `AppPortalSetup.exe` against `SHA256SUMS`.
 
@@ -158,9 +173,21 @@ graph LR
   M4-05 --> M7-01
   M3-07 & M5-04 --> M7-02
   M7-01 & M7-02 --> M7-03
+  M5-05 --> M8-01
+  M3-07 & M5-05 --> M8-02
+  M2-02 --> M8-03
+  M8-01 & M8-02 & M8-03 --> M8-04
+  M3-03 & M5-01 & M7-02 --> M8-05
+  M8-01 & M8-02 & M8-05 --> M8-06
+  M3-03 --> M8-07
+  M8-04 & M8-06 & M8-07 --> M8-08
+  M3-05 --> M9-01 --> M9-02
+  M1-11 & M4-02 --> M9-03
+  M1-06 & M1-08 & M1-09 --> M9-04
+  M9-02 & M9-03 & M9-04 --> M9-05
 ```
 
-What can start today: milestones 1 to 7 have shipped. Nothing is planned after milestone 7.
+What can start today: milestones 1 to 7 have shipped. Milestone 8 is next: M8-01, M8-02, M8-03, M8-05 and M8-07 have no unfinished dependency. Milestone 9's M9-01, M9-03 and M9-04 have none either; the owner asked for milestone 8 first.
 
 ## Shared interface
 
@@ -177,9 +204,11 @@ Names every package must use so that parallel work fits together. Details live i
 
 ## Next
 
-Nothing is planned after milestone 7. The owner confirmed its scope on 2026-09-28 and took the two signing items out of it; they are under Deferred.
+Milestones 8 and 9 are planned above. The owner asked on 2026-09-29 for them: every kind of software, games and anti-cheat included, the Intune engine, and the deferred items that make the portal fit more companies. Email notifications stay out, at the owner's word.
 
 ## Deferred
+
+Reviewed for milestones 8 and 9: four items left this list for a milestone: repairing an install in place (M8-06), OpenID Connect admin sign-in (M9-03), per-group catalogs (M9-04) and other RMM engines, starting with Intune (M9-02). Installing the content a launcher manages stays out; handing a game to its launcher (M8-02) is the part that fits the **Launcher content** decision. Email notifications stay out at the owner's word.
 
 Reviewed for milestone 7: the owner decided on 2026-09-28 not to take code signing further in this milestone. Two items drafted for it join the list: the first signed release, proven on a throwaway VM as M6-03 describes, and a check of the MSI's `UpgradeCode` by a signed agent, which only matters once an agent is signed. The signing switch from M6-03 stays off, and releases stay unsigned. Nothing else here became urgent.
 
@@ -187,4 +216,4 @@ Reviewed for 0.9.0: nothing here became urgent. Three items M6-03 left out join 
 
 Reviewed for 0.8.0: code signing and turning a request into an app became milestone 6.
 
-Not planned in any milestone: installing the content a launcher manages, installing for every account on a device at once, repairing an install in place, version constraints on a prerequisite, OpenID Connect admin sign-in, group-to-role mapping for directory accounts, email notifications, per-group catalogs, other RMM engines such as Intune, updater rollback on Action1-only devices, signing `SHA256SUMS`, signing the server image, submitting winget manifests, the first signed release, checking the `UpgradeCode` of an update MSI.
+Not planned in any milestone: installing the content a launcher manages, installing for every account on a device at once, version constraints on a prerequisite, group-to-role mapping for directory accounts, email notifications, RMM engines other than Intune, updater rollback on Action1-only devices, signing `SHA256SUMS`, signing the server image, submitting winget manifests, the first signed release, checking the `UpgradeCode` of an update MSI.

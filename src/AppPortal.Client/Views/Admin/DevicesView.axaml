@@ -262,6 +262,44 @@
 
                     <Border Classes="card" Padding="4">
                         <StackPanel>
+                            <TextBlock Classes="bodyStrong" Text="Anti-cheat" Margin="12,12,12,8" />
+                            <TextBlock Classes="secondary" Margin="12,0,12,12" TextWrapping="Wrap" IsVisible="{Binding !SelectedRow.HasAgent, FallbackValue=False}"
+                                       Text="This device has no agent, so nothing reports what it has." />
+                            <StackPanel IsVisible="{Binding SelectedRow.HasAgent, FallbackValue=False}">
+                                <TextBlock Classes="secondary" Margin="12,0,12,12" TextWrapping="Wrap" IsVisible="{Binding !AntiCheatRows.Count}"
+                                           Text="No known anti-cheat reported. The agent looks when its service starts and once a day after that." />
+                                <StackPanel IsVisible="{Binding !!AntiCheatRows.Count}">
+                                    <TextBlock Classes="secondary" Margin="12,0,12,8" TextWrapping="Wrap"
+                                               Text="Games install these themselves, and the portal never changes them. A stopped one that should start with Windows, or a disabled one, is the usual reason a game will not start; one installed a moment ago may need a restart." />
+                                    <Grid ColumnDefinitions="*,200,110,110" Margin="12,0,12,8">
+                                        <TextBlock Grid.Column="0" Text="Product" Classes="caption" />
+                                        <TextBlock Grid.Column="1" Text="Service" Classes="caption" />
+                                        <TextBlock Grid.Column="2" Text="State" Classes="caption" />
+                                        <TextBlock Grid.Column="3" Text="Starts" Classes="caption" />
+                                    </Grid>
+                                    <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="8,0" />
+                                    <ItemsControl ItemsSource="{Binding AntiCheatRows}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="admin:DeviceAntiCheatRow">
+                                                <Border Classes="row">
+                                                    <Grid ColumnDefinitions="*,200,110,110">
+                                                        <TextBlock Grid.Column="0" Text="{Binding Product}" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding ServiceText}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding State}" VerticalAlignment="Center"
+                                                                   Classes.bodyStrong="{Binding NeedsAttention}" Classes.secondary="{Binding !NeedsAttention}" />
+                                                        <TextBlock Grid.Column="3" Text="{Binding StartType}" Classes="secondary" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card" Padding="4">
+                        <StackPanel>
                             <TextBlock Classes="bodyStrong" Text="Recent installs" Margin="12,12,12,8" />
                             <TextBlock Classes="secondary" Margin="12,0,12,12" IsVisible="{Binding !RecentInstalls.Count}"
                                        Text="Nothing has been installed on this device yet." />

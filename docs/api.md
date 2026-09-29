@@ -55,6 +55,7 @@ The device token check runs before routing for every path under `/api/v1` except
 |---|---|---|
 | Software entries in one report | 5000 | `POST /api/v1/agent/software` |
 | Package manager entries in one report | 256 | `POST /api/v1/agent/managers` |
+| Anti-cheat entries in one report | 64 | `POST /api/v1/agent/anticheat` |
 | Account name | 128 characters | `X-AppPortal-User`, `account` on software and managers reports |
 | Request text | 500 characters | `POST /api/v1/requests` |
 | Undecided requests per device | 20 | `POST /api/v1/requests` |
@@ -338,6 +339,25 @@ Body: an array of `DeviceManager`:
 |---|---|
 | 204 | Replaced. |
 | 400 | More than 256 entries, or an `account` longer than 128 characters. |
+
+### POST /api/v1/agent/anticheat
+
+Replaces the device's list of kernel anti-cheat services and drivers. The server keeps only the services it knows as anti-cheat (`Shared/AntiCheats.cs`), under its own product names, and an empty list clears the record.
+
+Body: an array of `DeviceAntiCheat`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `product` | string | The agent's name for the product; the server's own replaces it |
+| `service` | string | The service or driver name, such as `vgk` |
+| `type` | string | `service` or `driver` |
+| `state` | string | Lower case, as the service manager reports it: `running`, `stopped`, ... |
+| `startType` | string | `automatic`, `manual`, `disabled`, `boot` or `system` |
+
+| Status | When |
+|---|---|
+| 204 | Replaced. |
+| 400 | More than 64 entries. |
 
 ## Admin session
 
@@ -636,7 +656,7 @@ Paged, by name. `AdminPage<AdminDevice>`.
 
 | Status | When |
 |---|---|
-| 200 | `AdminDeviceDetail`: the device, its 20 most recent installs, its 20 most recent requests, and its package managers. |
+| 200 | `AdminDeviceDetail`: the device, its 20 most recent installs, its 20 most recent requests, its package managers, and its anti-cheat. |
 | 404 | No such device. |
 
 #### POST /api/v1/admin/devices
@@ -912,7 +932,7 @@ An app needs an Action1 package id, an agent package, or both.
 | `lastSeenAt` | DateTimeOffset? | |
 | `installCount` | int | |
 
-`AdminDeviceDetail`: `device` (`AdminDevice`), `recentInstalls` (`AdminInstall[]`), `recentRequests` (`AdminRequest[]`), `managers` (`DeviceManager[]`?).
+`AdminDeviceDetail`: `device` (`AdminDevice`), `recentInstalls` (`AdminInstall[]`), `recentRequests` (`AdminRequest[]`), `managers` (`DeviceManager[]`?), `antiCheats` (`DeviceAntiCheat[]`?, null from a server before 0.11.0).
 
 `AdminDeviceToken`: `deviceId` and `deviceToken`, strings. The server keeps only the token's SHA-256.
 

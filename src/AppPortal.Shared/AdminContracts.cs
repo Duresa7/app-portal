@@ -133,7 +133,8 @@ public sealed record AdminDeviceDetail(
     AdminDevice Device,
     IReadOnlyList<AdminInstall> RecentInstalls,
     IReadOnlyList<AdminRequest> RecentRequests,
-    IReadOnlyList<DeviceManager>? Managers = null);
+    IReadOnlyList<DeviceManager>? Managers = null,
+    IReadOnlyList<DeviceAntiCheat>? AntiCheats = null);
 
 public sealed record AdminDeviceCreate(string Name, string? Action1EndpointId = null);
 

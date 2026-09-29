@@ -11,7 +11,7 @@ namespace AppPortal.Server.Pages.Admin.Devices;
 
 [Authorize(Policy = AdminAuth.Policy)]
 public sealed class DetailModel(DeviceStore devices, InstallStore installs, AppRequestStore requests,
-    DeviceManagerStore managers) : PageModel
+    DeviceManagerStore managers, DeviceAntiCheatStore anticheat) : PageModel
 {
     /// <summary>What the engine preference dropdown offers. Empty means follow the server.</summary>
     public static readonly string[] EnginePreferences = ["", "action1", "agent"];
@@ -23,6 +23,8 @@ public sealed class DetailModel(DeviceStore devices, InstallStore installs, AppR
     public IReadOnlyList<AppRequestRecord> RecentRequests { get; private set; } = [];
 
     public IReadOnlyList<AppPortal.Shared.DeviceManager> Managers { get; private set; } = [];
+
+    public IReadOnlyList<AppPortal.Shared.DeviceAntiCheat> AntiCheats { get; private set; } = [];
 
     public string? Error { get; private set; }
 
@@ -135,6 +137,7 @@ public sealed class DetailModel(DeviceStore devices, InstallStore installs, AppR
         RecentInstalls = [.. installs.ForDeviceId(record.Id).Take(20)];
         RecentRequests = [.. requests.ListForDeviceId(record.Id).Take(20)];
         Managers = managers.ForDevice(record.Id);
+        AntiCheats = anticheat.ForDevice(record.Id);
         return true;
     }
 

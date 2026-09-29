@@ -52,6 +52,7 @@ builder.Services.AddSingleton<AppRequestStore>();
 builder.Services.AddSingleton<AgentJobStore>();
 builder.Services.AddSingleton<DeviceSoftwareStore>();
 builder.Services.AddSingleton<DeviceManagerStore>();
+builder.Services.AddSingleton<DeviceAntiCheatStore>();
 builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddSingleton<RestartConfirmation>();
 builder.Services.AddSingleton<PrerequisiteStore>();

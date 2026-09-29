@@ -32,6 +32,7 @@ public sealed class DemoAdminApiClient : IAdminApiClient
     private readonly List<AdminAccount> _admins = [];
     private readonly List<EnrollmentKeyEvent> _keyEvents = [];
     private readonly Dictionary<string, IReadOnlyList<DeviceManager>> _managers = [];
+    private readonly Dictionary<string, IReadOnlyList<DeviceAntiCheat>> _antiCheats = [];
     private AdminSettings _settings = new(EngineLabel.Agent);
 
     public DemoAdminApiClient()
@@ -293,7 +294,8 @@ public sealed class DemoAdminApiClient : IAdminApiClient
                 device,
                 [.. _installs.Where(i => i.DeviceId == id).OrderByDescending(i => i.RequestedAt).Take(10)],
                 [.. _requests.Where(r => r.DeviceName == device.Name).OrderByDescending(r => r.CreatedAt).Take(10)],
-                _managers.TryGetValue(id, out var managers) ? managers : []);
+                _managers.TryGetValue(id, out var managers) ? managers : [],
+                _antiCheats.TryGetValue(id, out var antiCheats) ? antiCheats : []);
         });
 
     public Task<AdminDeviceToken> CreateDeviceAsync(AdminDeviceCreate device, CancellationToken ct)
@@ -647,6 +649,14 @@ public sealed class DemoAdminApiClient : IAdminApiClient
         _managers["dev-2"] = [new DeviceManager("winget", "1.9.25200"), new DeviceManager("choco", "2.4.1")];
         _managers["dev-3"] = [new DeviceManager("winget", "1.8.1911"), new DeviceManager("scoop", "", @"CONTOSO\mjones")];
         _managers["dev-5"] = [new DeviceManager("winget", "1.9.25200")];
+        // A gaming PC where Vanguard was installed and the PC has not restarted since, which is the row
+        // the device page marks.
+        _antiCheats["dev-2"] =
+        [
+            new DeviceAntiCheat("Easy Anti-Cheat", "EasyAntiCheat_EOS", "service", "stopped", "manual"),
+            new DeviceAntiCheat("Riot Vanguard", "vgc", "service", "running", "manual"),
+            new DeviceAntiCheat("Riot Vanguard", "vgk", "driver", "stopped", "system"),
+        ];
 
         _admins.Add(new AdminAccount("adm-4", @"CONTOSO\jsmith", false, "directory", now.AddDays(-12), now.AddHours(-20)));
     }

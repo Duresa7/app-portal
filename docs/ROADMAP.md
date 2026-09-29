@@ -97,7 +97,7 @@ Status values: **Open**, **In progress**, **In review**, **Done**. A package may
 | [M7-03](plans/M7-03-release-0.10.0.md) | Release 0.10.0 | M7-01, M7-02 | Done |
 | [M8-01](plans/M8-01-portable-apps.md) | Portable apps | M5-05 | Done |
 | [M8-02](plans/M8-02-game-launcher-handoff.md) | Games handed to their launcher | M3-07, M5-05 | Done |
-| [M8-03](plans/M8-03-anti-cheat-on-the-device.md) | Anti-cheat on the device | M2-02 | In review |
+| [M8-03](plans/M8-03-anti-cheat-on-the-device.md) | Anti-cheat on the device | M2-02 | Done |
 | [M8-04](plans/M8-04-catalog-packs.md) | Catalog packs | M8-01, M8-02, M8-03 | Open |
 | [M8-05](plans/M8-05-updates.md) | Updates | M3-03, M5-01, M7-02 | Open |
 | [M8-06](plans/M8-06-repair.md) | Repair | M8-01, M8-02, M8-05 | Open |
@@ -187,7 +187,7 @@ graph LR
   M9-02 & M9-03 & M9-04 --> M9-05
 ```
 
-What can start today: milestones 1 to 7 have shipped. Milestone 8 is next: M8-01, M8-02, M8-03, M8-05 and M8-07 have no unfinished dependency. Milestone 9's M9-01, M9-03 and M9-04 have none either; the owner asked for milestone 8 first.
+What can start today: milestones 1 to 7 have shipped, and M8-01 to M8-03 are Done. Milestone 8 continues with M8-04, M8-05 and M8-07, which have no unfinished dependency. Milestone 9's M9-01, M9-03 and M9-04 have none either; the owner asked for milestone 8 first.
 
 ## Shared interface
 

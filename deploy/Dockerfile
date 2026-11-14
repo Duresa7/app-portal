@@ -9,7 +9,7 @@ COPY src/AppPortal.Shared/ src/AppPortal.Shared/
 COPY src/AppPortal.Server/ src/AppPortal.Server/
 RUN dotnet publish src/AppPortal.Server/AppPortal.Server.csproj -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 WORKDIR /app
 # System.DirectoryServices.Protocols loads libldap.so.2 at run time, and only when optional directory
 # sign-in is turned on. It is a few hundred kilobytes, so the image carries it rather than making the

@@ -1,5 +1,5 @@
 # Build the App Portal server.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 COPY AppPortal.sln ./
 COPY src/AppPortal.Shared/AppPortal.Shared.csproj src/AppPortal.Shared/
